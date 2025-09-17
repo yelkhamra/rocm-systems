@@ -8,16 +8,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx9
       - gfx906
       - gfx908
       - gfx90a
@@ -411,7 +408,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -422,19 +418,15 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -449,16 +441,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -467,7 +456,6 @@ rocprofiler-sdk:
       - gfx941
       - gfx942
       - gfx950
-      - gfx12
       - gfx1200
       - gfx1201
       expression: simd_count
@@ -483,7 +471,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -575,7 +562,6 @@ rocprofiler-sdk:
       - gfx906
       expression: (TCC_EA_RDREQ_32B_sum*32+(TCC_EA_RDREQ_sum-TCC_EA_RDREQ_32B_sum)*64+RDATA1_SIZE)/1024
     - architectures:
-      - gfx9
       - gfx900
       - gfx908
       - gfx90a
@@ -587,18 +573,15 @@ rocprofiler-sdk:
       - gfx950
       expression: (TCC_BUBBLE_sum*128 + (TCC_EA0_RDREQ_sum-TCC_BUBBLE_sum-TCC_EA0_RDREQ_32B_sum)*64 + TCC_EA0_RDREQ_32B_sum*32)/1024
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       expression: (GL2C_EA_RDREQ_32B_sum*32+GL2C_EA_RDREQ_64B_sum*64+GL2C_EA_RDREQ_96B_sum*96+GL2C_EA_RDREQ_128B_sum*128)/1024
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       expression: (GL2C_EA_RDREQ_32B_sum*32+GL2C_EA_RDREQ_64B_sum*64+GL2C_EA_RDREQ_128B_sum*128)/1024
@@ -621,7 +604,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -630,7 +612,6 @@ rocprofiler-sdk:
       - gfx941
       - gfx942
       - gfx950
-      - gfx12
       - gfx1200
       - gfx1201
       expression: FETCH_SIZE
@@ -640,7 +621,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -652,7 +632,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -663,16 +642,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx9
       - gfx906
       - gfx908
       - gfx90a
@@ -682,7 +658,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -693,7 +668,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: GL2C
@@ -703,7 +677,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(GL2C_EA_RDREQ,sum)
@@ -712,19 +685,16 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: GL2C
       event: 102
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: GL2C
@@ -734,16 +704,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(GL2C_EA_RDREQ_128B,sum)
@@ -752,19 +719,16 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: GL2C
       event: 99
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: GL2C
@@ -774,16 +738,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(GL2C_EA_RDREQ_32B,sum)
@@ -792,19 +753,16 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: GL2C
       event: 100
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: GL2C
@@ -814,16 +772,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(GL2C_EA_RDREQ_64B,sum)
@@ -832,12 +787,10 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
@@ -848,12 +801,10 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
@@ -864,7 +815,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: GL2C
@@ -875,7 +825,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(GL2C_EA_WRREQ,sum)
@@ -884,7 +833,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: GL2C
@@ -894,7 +842,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(GL2C_EA_WRREQ_STALL,max)
@@ -903,19 +850,16 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: GL2C
       event: 85
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: GL2C
@@ -926,16 +870,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(GL2C_EA_WRREQ_64B,sum)
@@ -944,19 +885,16 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: GL2C
       event: 42
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: GL2C
@@ -966,16 +904,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(GL2C_HIT,sum)
@@ -984,12 +919,10 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
@@ -1000,12 +933,10 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
@@ -1016,12 +947,10 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
@@ -1032,19 +961,16 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: GL2C
       event: 88
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: GL2C
@@ -1055,12 +981,10 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
@@ -1070,19 +994,16 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: GL2C
       event: 43
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: GL2C
@@ -1092,16 +1013,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(GL2C_MISS,sum)
@@ -1110,16 +1028,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(GL2C_MC_WRREQ_STALL,max)
@@ -1128,21 +1043,17 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
       - gfx90a
-      - gfx12
       - gfx1200
       - gfx1201
       expression: 100*reduce(GRBM_GUI_ACTIVE,max)/reduce(GRBM_COUNT,max)
@@ -1151,19 +1062,15 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -1178,19 +1085,15 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -1232,7 +1135,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -1250,7 +1152,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -1268,7 +1169,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -1280,7 +1180,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -1292,19 +1191,15 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -1320,7 +1215,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -1338,7 +1232,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -1408,23 +1301,19 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
       - gfx90a
       expression: 100*reduce(TCC_HIT,sum)/(reduce(TCC_HIT,sum)+reduce(TCC_MISS,sum))
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: 100*reduce(GL2C_HIT,sum)/(reduce(GL2C_HIT,sum)+reduce(GL2C_MISS,sum))
@@ -1440,21 +1329,17 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: 100*reduce(SQC_LDS_BANK_CONFLICT,sum)/reduce(SQC_LDS_IDX_ACTIVE,sum)
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -1468,7 +1353,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -1488,12 +1372,10 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
@@ -1522,7 +1404,6 @@ rocprofiler-sdk:
       - gfx950
       expression: 100*reduce(SQ_LDS_IDX_ACTIVE,sum)/(reduce(GRBM_GUI_ACTIVE,max)*CU_NUM)
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       expression: 100*reduce(SQC_LDS_IDX_ACTIVE,sum)/(reduce(GRBM_GUI_ACTIVE,max)*(SIMD_NUM/4))
@@ -1531,16 +1412,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -1555,11 +1433,9 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(SQ_WAVE_CYCLES,sum)/reduce(SQ_BUSY_CYCLES,sum)
@@ -1575,16 +1451,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(SQ_WAVE_CYCLES,sum)/reduce(GRBM_GUI_ACTIVE,max)/CU_NUM
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -1600,16 +1473,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: 100*reduce(SQ_WAVE_CYCLES,sum)/reduce(GRBM_GUI_ACTIVE,max)/CU_NUM/32
@@ -1627,20 +1497,16 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx9
       - gfx906
       - gfx908
       - gfx90a
-      - gfx12
       - gfx1200
       - gfx1201
       expression: 100*reduce(TA_TA_BUSY,max)/reduce(GRBM_GUI_ACTIVE,max)
@@ -1650,7 +1516,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -1665,7 +1530,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -1753,7 +1617,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -1768,20 +1631,16 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx9
       - gfx906
       - gfx908
       - gfx90a
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(SQ_INSTS_SALU,sum)/reduce(SQ_WAVES,sum)
@@ -1790,16 +1649,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -1808,7 +1664,6 @@ rocprofiler-sdk:
       - gfx941
       - gfx942
       - gfx950
-      - gfx12
       - gfx1200
       - gfx1201
       expression: array_count/simd_arrays_per_engine
@@ -1818,20 +1673,16 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx9
       - gfx906
       - gfx908
       - gfx90a
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(SQ_INSTS_SMEM,sum)/reduce(SQ_WAVES,sum)
@@ -2070,7 +1921,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -2774,7 +2624,6 @@ rocprofiler-sdk:
       block: SQ
       event: 271
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -2784,7 +2633,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -2840,7 +2688,6 @@ rocprofiler-sdk:
       block: SQ
       event: 270
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -2850,7 +2697,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -2858,14 +2704,12 @@ rocprofiler-sdk:
       block: SQ
       event: 285
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 256
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -2876,7 +2720,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -2884,14 +2727,12 @@ rocprofiler-sdk:
       block: SQ
       event: 290
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 261
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -2981,16 +2822,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       - gfx90a
@@ -3184,7 +3022,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: SQ
@@ -3253,16 +3090,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       - gfx90a
@@ -3401,7 +3235,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -3409,7 +3242,6 @@ rocprofiler-sdk:
       block: SQ
       event: 57
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: SQ
@@ -3429,14 +3261,12 @@ rocprofiler-sdk:
       block: SQ
       event: 62
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 56
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -3451,7 +3281,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: SQ
@@ -3470,7 +3299,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -3478,7 +3306,6 @@ rocprofiler-sdk:
       block: SQ
       event: 55
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: SQ
@@ -3498,7 +3325,6 @@ rocprofiler-sdk:
       block: SQ
       event: 66
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
@@ -3514,7 +3340,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -3522,7 +3347,6 @@ rocprofiler-sdk:
       block: SQ
       event: 59
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: SQ
@@ -3542,14 +3366,12 @@ rocprofiler-sdk:
       block: SQ
       event: 65
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 57
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -3587,7 +3409,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: SQ
@@ -3601,7 +3422,6 @@ rocprofiler-sdk:
       block: SQ
       event: 56
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -3612,14 +3432,12 @@ rocprofiler-sdk:
       block: SQ
       event: 60
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 58
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -3657,7 +3475,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: SQ
@@ -3671,7 +3488,6 @@ rocprofiler-sdk:
       block: SQ
       event: 57
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -3682,14 +3498,12 @@ rocprofiler-sdk:
       block: SQ
       event: 61
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 59
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -3729,14 +3543,12 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 66
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -3747,14 +3559,12 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 67
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -3765,7 +3575,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -3773,7 +3582,6 @@ rocprofiler-sdk:
       block: SQ
       event: 64
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -3785,14 +3593,12 @@ rocprofiler-sdk:
       block: SQ
       event: 26
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 62
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -4259,7 +4065,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: SQ
@@ -4288,7 +4093,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: SQ
@@ -4341,7 +4145,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -4349,14 +4152,12 @@ rocprofiler-sdk:
       block: SQ
       event: 71
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 70
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -4367,7 +4168,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -4375,14 +4175,12 @@ rocprofiler-sdk:
       block: SQ
       event: 74
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 72
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -4393,7 +4191,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -4401,14 +4198,12 @@ rocprofiler-sdk:
       block: SQ
       event: 75
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 73
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -4419,7 +4214,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: SQ
@@ -4472,7 +4266,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -4480,14 +4273,12 @@ rocprofiler-sdk:
       block: SQ
       event: 120
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 106
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -4545,7 +4336,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -4553,7 +4343,6 @@ rocprofiler-sdk:
       block: SQ
       event: 98
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
@@ -4567,7 +4356,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -4589,14 +4377,12 @@ rocprofiler-sdk:
       block: SQ
       event: 74
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 88
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -4719,7 +4505,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: SQ
@@ -4817,7 +4602,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -4839,7 +4623,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: SQ
@@ -4886,7 +4669,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -4908,14 +4690,12 @@ rocprofiler-sdk:
       block: SQ
       event: 90
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 35
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -4929,7 +4709,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -4951,11 +4730,9 @@ rocprofiler-sdk:
       block: SQ
       event: 93
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -4969,7 +4746,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -4977,7 +4753,6 @@ rocprofiler-sdk:
       block: SQ
       event: 31
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: SQ
@@ -4997,7 +4772,6 @@ rocprofiler-sdk:
       block: SQ
       event: 96
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
@@ -5012,7 +4786,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -5020,14 +4793,12 @@ rocprofiler-sdk:
       block: SQ
       event: 84
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 82
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -5037,7 +4808,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -5045,14 +4815,12 @@ rocprofiler-sdk:
       block: SQ
       event: 85
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
       block: SQ
       event: 83
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -5066,19 +4834,15 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -5238,19 +5002,15 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -5268,7 +5028,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -5290,11 +5049,9 @@ rocprofiler-sdk:
       block: SQ
       event: 79
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       block: SQ
@@ -5511,7 +5268,6 @@ rocprofiler-sdk:
     definitions:
     - architectures:
       - gfx1201
-      - gfx12
       - gfx1200
       block: SQ
       event: 99
@@ -5521,7 +5277,6 @@ rocprofiler-sdk:
     definitions:
     - architectures:
       - gfx1201
-      - gfx12
       - gfx1200
       block: SQ
       event: 250
@@ -5695,11 +5450,9 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       block: TA
@@ -5709,11 +5462,9 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(TA_BUFFER_LOAD_WAVEFRONTS,sum)
@@ -5750,11 +5501,9 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       block: TA
@@ -5764,11 +5513,9 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(TA_BUFFER_STORE_WAVEFRONTS,sum)
@@ -5861,19 +5608,15 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -5888,19 +5631,15 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -5915,19 +5654,15 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -5998,7 +5733,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -6010,7 +5744,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -6021,7 +5754,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -6040,7 +5772,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -6055,7 +5786,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -6067,7 +5797,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -6106,7 +5835,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -6125,7 +5853,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -6140,19 +5867,15 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -6211,7 +5934,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
@@ -7134,7 +6856,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: TCC
@@ -7149,7 +6870,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: TCC
@@ -7164,7 +6884,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -7258,7 +6977,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -7286,7 +7004,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: TCC
@@ -7301,7 +7018,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: TCC
@@ -7317,7 +7033,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -7408,7 +7123,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: TCC
@@ -7430,7 +7144,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -7459,7 +7172,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: TCC
@@ -7481,7 +7193,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -7510,7 +7221,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       block: TCC
@@ -7532,7 +7242,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -7970,7 +7679,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -9150,7 +8858,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -9166,7 +8873,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -9181,7 +8887,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -9946,7 +9651,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: TCP
@@ -9956,7 +9660,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       block: TCP
@@ -10260,7 +9963,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -10271,7 +9973,6 @@ rocprofiler-sdk:
       - gfx950
       expression: 100*reduce(SQ_ACTIVE_INST_VALU,sum)/CU_NUM/reduce(GRBM_GUI_ACTIVE,max)
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       expression: 100*reduce(SQ_INST_CYCLES_VALU,sum)/(SIMD_NUM/4)/reduce(GRBM_GUI_ACTIVE,max)
@@ -10280,20 +9981,16 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx9
       - gfx906
       - gfx908
       - gfx90a
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(SQ_INSTS_VALU,sum)/reduce(SQ_WAVES,sum)
@@ -10303,7 +10000,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -10330,7 +10026,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -10346,7 +10041,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -10368,14 +10062,12 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx90a
       - gfx940
       - gfx941
       - gfx942
       expression: 100*reduce(SQ_ACTIVE_INST_VALU,sum)/(reduce(GRBM_GUI_ACTIVE,max)*CU_NUM)
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       expression: 100*reduce(SQ_INST_CYCLES_VALU,sum)/(reduce(GRBM_GUI_ACTIVE,max)*(SIMD_NUM/4))
@@ -10402,16 +10094,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: 100*reduce(SQ_WAIT_ANY,sum)/reduce(SQ_WAVE_CYCLES,sum)
@@ -10420,16 +10109,13 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: 100*reduce(SQ_WAIT_INST_ANY,sum)/reduce(SQ_WAVE_CYCLES,sum)
@@ -10448,7 +10134,6 @@ rocprofiler-sdk:
       - gfx906
       expression: (TCC_EA_WRREQ_sum-TCC_EA_WRREQ_64B_sum)+(TCC_EA1_WRREQ_sum-TCC_EA1_WRREQ_64B_sum)+(TCC_EA_WRREQ_64B_sum+TCC_EA1_WRREQ_64B_sum)*2
     - architectures:
-      - gfx9
       - gfx900
       - gfx908
       - gfx90a
@@ -10468,18 +10153,15 @@ rocprofiler-sdk:
       - gfx906
       expression: ((TCC_EA_WRREQ_sum-TCC_EA_WRREQ_64B_sum)*32+TCC_EA_WRREQ_64B_sum*64+WDATA1_SIZE)/1024
     - architectures:
-      - gfx9
       - gfx900
       - gfx908
       - gfx90a
       expression: ((TCC_EA_WRREQ_sum-TCC_EA_WRREQ_64B_sum)*32+TCC_EA_WRREQ_64B_sum*64)/1024
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
@@ -10523,20 +10205,16 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx9
       - gfx906
       - gfx908
       - gfx90a
-      - gfx12
       - gfx1200
       - gfx1201
       expression: reduce(SQ_WAVES,sum)
@@ -10546,7 +10224,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
@@ -10561,23 +10238,19 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx9
       - gfx900
       - gfx906
       - gfx908
       - gfx90a
       expression: 100*TCC_WRREQ_STALL_max/reduce(GRBM_GUI_ACTIVE,max)
     - architectures:
-      - gfx10
       - gfx1010
       - gfx1030
       - gfx1031
       - gfx1032
-      - gfx11
       - gfx1100
       - gfx1101
       - gfx1102
-      - gfx12
       - gfx1200
       - gfx1201
       expression: 100*GL2C_WRREQ_STALL_max/reduce(GRBM_GUI_ACTIVE,max)
@@ -10691,7 +10364,6 @@ rocprofiler-sdk:
     properties: []
     definitions:
     - architectures:
-      - gfx12
       - gfx1200
       - gfx1201
       expression: (1-(reduce(TCP_REQ_MISS,sum)/reduce(TCP_REQ,sum)))*100
