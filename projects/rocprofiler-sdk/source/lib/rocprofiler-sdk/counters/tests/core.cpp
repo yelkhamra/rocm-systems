@@ -765,11 +765,9 @@ rocprofiler-sdk:
         - architectures:  
           - gfx950
           - gfx942
-          - gfx10
           - gfx1010
           - gfx1030
           - gfx1031
-          - gfx11
           - gfx1032
           - gfx1102
           - gfx906
@@ -777,8 +775,6 @@ rocprofiler-sdk:
           - gfx1101
           - gfx908
           - gfx90a
-          - gfx9
-          - gfx12
           - gfx1200
           - gfx1201
           expression: reduce(GRBM_GUI_ACTIVE,max)*CU_NUM
@@ -815,11 +811,9 @@ rocprofiler-sdk:
           - gfx950
           - gfx942
           - gfx941
-          - gfx10
           - gfx1010
           - gfx1030
           - gfx1031
-          - gfx11
           - gfx1032
           - gfx1102
           - gfx906
@@ -829,8 +823,6 @@ rocprofiler-sdk:
           - gfx908
           - gfx900
           - gfx90a
-          - gfx9
-          - gfx12
           - gfx1200
           - gfx1201
           block: GRBM
@@ -842,11 +834,9 @@ rocprofiler-sdk:
         - architectures:  
           - gfx950
           - gfx942
-          - gfx10
           - gfx1010
           - gfx1030
           - gfx1031
-          - gfx11
           - gfx1032
           - gfx1102
           - gfx906
@@ -854,8 +844,6 @@ rocprofiler-sdk:
           - gfx1101
           - gfx908
           - gfx90a
-          - gfx9
-          - gfx12
           - gfx1200
           - gfx1201
           expression: reduce(GRBM_GUI_ACTIVE,max)
