@@ -63,6 +63,10 @@
 #include <rocprofiler-register/rocprofiler-register.h>
 #endif
 
+#ifdef HSAKMT_VIRTIO_ENABLED
+#include "hsakmt/hsakmt_virtio.h"
+#endif
+
 #include "core/common/shared.h"
 #include "core/inc/amd_core_dump.hpp"
 #include "core/inc/amd_cpu_agent.h"
@@ -79,6 +83,9 @@
 #include "core/util/memory.h"
 #include "core/util/os.h"
 #include "inc/hsa_ven_amd_aqlprofile.h"
+#ifdef HSAKMT_VIRTIO_ENABLED
+#include "hsakmt/hsakmt_virtio.h"
+#endif
 
 #ifndef HSA_VERSION_MAJOR
 #define HSA_VERSION_MAJOR 1
@@ -1053,7 +1060,7 @@ hsa_status_t Runtime::PtrInfo(const void* ptr, hsa_amd_pointer_info_t* info, voi
 
     // We don't care if this returns an error code.
     // The type will be HSA_EXT_POINTER_TYPE_UNKNOWN if so.
-    auto err = HSAKMT_CALL(hsaKmtQueryPointerInfo(ptr, &thunkInfo));
+    auto err = QueryPointerInfo(ptr, &thunkInfo);
     if (err != HSAKMT_STATUS_SUCCESS || thunkInfo.Type == HSA_POINTER_UNKNOWN) {
       if (retInfo.type == HSA_EXT_POINTER_TYPE_RESERVED_ADDR) {
         /* This is an address that was reserved using hsa_amd_vmem_address_reserve with
@@ -2143,6 +2150,24 @@ void Runtime::PrintMemoryMapNear(void* ptr) {
   }
 }
 
+HSAKMT_STATUS Runtime::QueryPointerInfo(const void* ptr, HsaPointerInfo* pointer_info) {
+#ifdef HSAKMT_VIRTIO_ENABLED
+  return vhsaKmtQueryPointerInfo(ptr, pointer_info);
+#else
+  return HSAKMT_CALL(hsaKmtQueryPointerInfo(ptr, pointer_info));
+#endif
+}
+
+HSAKMT_STATUS Runtime::AllocMemoryAlign(HSAuint32 PreferredNode, HSAuint64 SizeInBytes,
+                                        HSAuint64 Alignment, HsaMemFlags MemFlags,
+                                        void** MemoryAddress) {
+#ifdef HSAKMT_VIRTIO_ENABLED
+  return vhsaKmtAllocMemoryAlign(PreferredNode, SizeInBytes, Alignment, MemFlags, MemoryAddress);
+#else
+  return HSAKMT_CALL(hsaKmtAllocMemoryAlign(PreferredNode, SizeInBytes, Alignment, MemFlags, MemoryAddress));
+#endif
+}
+
 Runtime::Runtime()
     : loader_(nullptr),
       region_gpu_(nullptr),
@@ -2386,12 +2411,21 @@ int fn_amdgpu_device_get_fd_nosupport(HsaAMDGPUDeviceHandle device_handle) {
 
 int Runtime::GetAmdgpuDeviceArgs(Agent *agent, ShareableHandle handle,
                                  int *drm_fd, uint64_t *cpu_addr) {
+#ifdef HSAKMT_VIRTIO_ENABLED
+  int renderFd = vamdgpu_device_get_fd(static_cast<AMD::GpuAgent*>(agent)->libDrmDev());
+#else
   int renderFd = fn_amdgpu_device_get_fd(static_cast<AMD::GpuAgent*>(agent)->libDrmDev());
+#endif
   if (renderFd < 0) return HSA_STATUS_ERROR;
 
   uint32_t gem_handle = 0;
+#ifdef HSAKMT_VIRTIO_ENABLED
+  if (vamdgpu_bo_export(reinterpret_cast<amdgpu_bo_handle>(handle.handle),
+                       amdgpu_bo_handle_type_kms, &gem_handle))
+#else
   if (DRM_CALL(amdgpu_bo_export(reinterpret_cast<amdgpu_bo_handle>(handle.handle),
                        amdgpu_bo_handle_type_kms, &gem_handle)))
+#endif
     return HSA_STATUS_ERROR;
 
   union drm_amdgpu_gem_mmap args;
@@ -2399,7 +2433,11 @@ int Runtime::GetAmdgpuDeviceArgs(Agent *agent, ShareableHandle handle,
   /* Query the buffer address (args.addr_ptr).
    * The kernel driver ignores the offset and size parameters. */
   args.in.handle = gem_handle;
+#ifdef HSAKMT_VIRTIO_ENABLED
+  if (vdrmCommandWriteRead(renderFd, DRM_AMDGPU_GEM_MMAP, &args, sizeof(args)))
+#else
   if (DRM_CALL(drmCommandWriteRead(renderFd, DRM_AMDGPU_GEM_MMAP, &args, sizeof(args))))
+#endif
     return HSA_STATUS_ERROR;
 
   *drm_fd = renderFd;
@@ -3327,10 +3365,10 @@ hsa_status_t Runtime::VMemoryAddressReserve(void** va, size_t size, uint64_t add
   memFlags.ui32.FixedAddress = 1;
 
   /* Try to reserving the VA requested by user */
-  if (HSAKMT_CALL(hsaKmtAllocMemoryAlign(0, size, alignment, memFlags, &addr)) != HSAKMT_STATUS_SUCCESS) {
+  if (AllocMemoryAlign(0, size, alignment, memFlags, &addr) != HSAKMT_STATUS_SUCCESS) {
     memFlags.ui32.FixedAddress = 0;
     /* Could not reserved VA requested, allocate alternate VA */
-    if (HSAKMT_CALL(hsaKmtAllocMemoryAlign(0, size, alignment, memFlags, &addr)) != HSAKMT_STATUS_SUCCESS)
+    if (AllocMemoryAlign(0, size, alignment, memFlags, &addr) != HSAKMT_STATUS_SUCCESS)
       return HSA_STATUS_ERROR_OUT_OF_RESOURCES;
   }
 
@@ -3588,11 +3626,13 @@ Runtime::MappedHandleAllowedAgent::~MappedHandleAllowedAgent() {
 
 hsa_status_t Runtime::MappedHandleAllowedAgent::EnableAccess(hsa_access_permission_t perms) {
   if (targetAgent->device_type() == core::Agent::DeviceType::kAmdCpuDevice) {
-    void* mapped_ptr =
-        mmap(va, size, PermissionsToMmapFlags(perms), MAP_SHARED | MAP_FIXED, mappedHandle->drm_fd,
-             reinterpret_cast<uint64_t>(mappedHandle->drm_cpu_addr));
-    if (mapped_ptr != va)
-      return HSA_STATUS_ERROR;
+    if (targetAgent->driver().kernel_driver_type_ != core::DriverType::KFD_VIRTIO) {
+      void* mapped_ptr =
+          mmap(va, size, PermissionsToMmapFlags(perms), MAP_SHARED | MAP_FIXED, mappedHandle->drm_fd,
+              reinterpret_cast<uint64_t>(mappedHandle->drm_cpu_addr));
+      if (mapped_ptr != va)
+        return HSA_STATUS_ERROR;
+    }
   } else {
     hsa_status_t status = targetAgent->driver().Map(
         shareable_handle, va, mappedHandle->offset, size, perms);
