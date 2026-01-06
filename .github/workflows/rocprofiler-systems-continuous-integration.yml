@@ -83,7 +83,7 @@ jobs:
         id: generate_matrix
         working-directory: projects/rocprofiler-systems/.github
         run: |
-          if [ '${{ inputs.arch }}' = 'all' ]
+          if [ '${{ inputs.arch }}' = 'all' ]; then
             ARCH_SEARCH="*"
           else
             ARCH_SEARCH=${{ inputs.arch }}
@@ -96,6 +96,7 @@ jobs:
             MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-ci.[] | select(.arch == ${ARCH_SEARCH})' -I=0 -o=json)
             MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-ci.[] | select(.arch == ${ARCH_SEARCH})' -I=0 -o=json)
           fi
+          
           echo "matrix_ubuntu=${MATRIX_UBUNTU_CONTENT}" >> $GITHUB_OUTPUT
           echo "matrix_rhel=${MATRIX_RHEL_CONTENT}" >> $GITHUB_OUTPUT
 
