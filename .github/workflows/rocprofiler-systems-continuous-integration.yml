@@ -84,7 +84,7 @@ jobs:
         working-directory: projects/rocprofiler-systems/.github
         run: |
           if [ '${{ inputs.arch }}' = 'all']
-            ARCH_SEARCH=*
+            ARCH_SEARCH="*"
           else
             ARCH_SEARCH=${{ inputs.arch }}
 
