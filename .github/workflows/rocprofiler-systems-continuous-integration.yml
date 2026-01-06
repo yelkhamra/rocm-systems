@@ -83,12 +83,11 @@ jobs:
         id: generate_matrix
         working-directory: projects/rocprofiler-systems/.github
         run: |
-          if [ '${{ inputs.arch }}' = 'all']
+          if [ '${{ inputs.arch }}' = 'all' ]
             ARCH_SEARCH="*"
           else
             ARCH_SEARCH=${{ inputs.arch }}
 
-          '.matrix-rhel-nightly.[] | select(.arch == "gfx950")'
           if [ '${{ github.event_name }}' = 'schedule' ] || [ '${{ inputs.mode }}' = 'Nightly Run' ]; then
             MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-nightly.[] | select(.arch == ${ARCH_SEARCH})' -I=0 -o=json)
             MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-nightly.[] | select(.arch == ${ARCH_SEARCH})' -I=0 -o=json)
