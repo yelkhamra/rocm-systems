@@ -87,6 +87,7 @@ jobs:
             ARCH_SEARCH="*"
           else
             ARCH_SEARCH=${{ inputs.arch }}
+          fi
 
           if [ '${{ github.event_name }}' = 'schedule' ] || [ '${{ inputs.mode }}' = 'Nightly Run' ]; then
             MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-nightly.[] | select(.arch == ${ARCH_SEARCH})' -I=0 -o=json)
