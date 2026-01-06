@@ -251,7 +251,7 @@ jobs:
           OS_RELEASE=${{ steps.setup_env.outputs.os_release }}
           wget -N -P /tmp/ https://repo.radeon.com/amdgpu-install/${ROCM_MAJOR}.${ROCM_MINOR}/rhel/${OS_RELEASE}/amdgpu-install-${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1.el${OS_VERSION_MAJOR}.noarch.rpm
           yum install -y /tmp/amdgpu-install-${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1.el8.noarch.rpm
-          yum update
+          yum update -y
           yum install -y amd-smi-lib rocjpeg-test rocdecode-test rccl-devel
           echo "✅ amdgpu and ROCm dependencies Installed!"
       
