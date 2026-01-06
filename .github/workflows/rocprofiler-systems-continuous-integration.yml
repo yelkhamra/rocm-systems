@@ -85,7 +85,7 @@ jobs:
         id: generate_matrix
         working-directory: projects/rocprofiler-systems/.github
         run: |
-          if [ '${{ steps.generate_mode.outputs.mode }})' = 'Nightly' ]; then
+          if [ '${{ steps.generate_mode.outputs.mode }}' = 'Nightly' ]; then
             MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-nightly' -I=0 -o=json)
             MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-nightly' -I=0 -o=json)
           else
