@@ -85,17 +85,17 @@ jobs:
           echo "mode=${MODE}" >> $GITHUB_OUTPUT
 
   ubuntu:
-    name: Ubuntu ${{ matrix_ubuntu.system.os-release }} • ${{ matrix_ubuntu.system.arch }}
+    name: Ubuntu ${{ matrix.system.os-release }} • ${{ matrix.system.arch }}
     needs: prepare_ci
     strategy:
       fail-fast: false
       matrix:
         system: ${{ fromJSON(needs.prepare_ci.outputs.matrix_ubuntu) }}
-    runs-on: ${{ matrix_ubuntu.system.runner }}
+    runs-on: ${{ matrix.system.runner }}
     permissions:
       packages: read
     container:
-      image: ghcr.io/rocm/rocprofiler-ubuntu:${{ matrix_ubuntu.system.os-release }}-systems-ci-${{ matrix_ubuntu.system.arch }}
+      image: ghcr.io/rocm/rocprofiler-ubuntu:${{ matrix.system.os-release }}-systems-ci-${{ matrix.system.arch }}
       options:
         --privileged
         --ipc host
@@ -112,7 +112,7 @@ jobs:
       - name: Setup Environment
         id: setup_env
         run: |
-          if [ '${{ matrix_ubuntu.system.os-release }}' = '24.04']; then
+          if [ '${{ matrix.system.os-release }}' = '24.04']; then
             CODE_NAME=noble
           else
             CODE_NAME=jammy
@@ -148,7 +148,7 @@ jobs:
         run: |
           set -e
           TARBALL_ROCM_VERSION=$(ls /opt/*.tar.gz | grep -Eo '*([0-9]\.[0-9]\.[0-9])*')
-          tar -xf ${{ env.ROCM_PATH }}-${TARBALL_ROCM_VERSION}-${{ matrix_ubuntu.system.arch }}.tar.gz -C ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}
+          tar -xf ${{ env.ROCM_PATH }}-${TARBALL_ROCM_VERSION}-${{ matrix.system.arch }}.tar.gz -C ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}
           ln -s ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} ${{ env.ROCM_PATH }}
           echo "ROCm installed to: ${{ env.ROCM_PATH }}"
           echo "✅ ROCm Installation Complete!"
@@ -164,9 +164,9 @@ jobs:
           PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$PATH \
           LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH \
           python3 ./scripts/run-ci.py -B build \
-            --name ${{ github.repository }}-${{ github.ref_name }}-ubuntu-${{ matrix_ubuntu.system.os-release }}-${{ matrix_ubuntu.system.gpu }} \
+            --name ${{ github.repository }}-${{ github.ref_name }}-ubuntu-${{ matrix.system.os-release }}-${{ matrix.system.gpu }} \
             --build-jobs 16 \
-            --site ${{ matrix_ubuntu.system.runner }} \
+            --site ${{ matrix.system.runner }} \
             --mode ${{ needs.prepare_ci.outputs.mode }} \
             -- \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
@@ -207,17 +207,17 @@ jobs:
           cat build/Testing/Temporary/LastTest*.log
 
   rhel:
-    name: RHEL ${{ matrix_rhel.system.os-release }} • ${{ matrix_rhel.system.arch }}
+    name: RHEL ${{ matrix.system.os-release }} • ${{ matrix.system.arch }}
     needs: prepare_ci
     strategy:
       fail-fast: false
       matrix:
         system: ${{ fromJSON(needs.prepare_ci.outputs.matrix_rhel) }}
-    runs-on: ${{ matrix_rhel.system.runner }}
+    runs-on: ${{ matrix.system.runner }}
     permissions:
       packages: read
     container:
-      image: ghcr.io/rocm/rocprofiler-rhel:${{ matrix_rhel.system.os-release }}-systems-ci-${{ matrix_rhel.system.arch }}
+      image: ghcr.io/rocm/rocprofiler-rhel:${{ matrix.system.os-release }}-systems-ci-${{ matrix.system.arch }}
       options:
         --privileged
         --ipc host
@@ -234,10 +234,10 @@ jobs:
       - name: Setup Environment
         id: setup_env
         run: |
-          if [ '${{ matrix_rhel.system.os-release }}' = '9']; then
+          if [ '${{ matrix.system.os-release }}' = '9']; then
             OS_RELEASE=9.6
           else
-            OS_RELEASE=${{ matrix_rhel.system.os-release }}
+            OS_RELEASE=${{ matrix.system.os-release }}
           fi
           echo "os_release=${OS_RELEASE}" >> $GITHUB_OUTPUT
 
@@ -266,7 +266,7 @@ jobs:
         run: |
           set -e
           TARBALL_ROCM_VERSION=$(ls /opt/*.tar.gz | grep -Eo '*([0-9]\.[0-9]\.[0-9])*')
-          tar -xf ${{ env.ROCM_PATH }}-${TARBALL_ROCM_VERSION}-${{ matrix_ubuntu.system.arch }}.tar.gz -C ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}
+          tar -xf ${{ env.ROCM_PATH }}-${TARBALL_ROCM_VERSION}-${{ matrix.system.arch }}.tar.gz -C ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}
           ln -s ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} ${{ env.ROCM_PATH }}
           echo "ROCm installed to: ${{ env.ROCM_PATH }}"
           echo "✅ ROCm Installation Complete!"
@@ -282,9 +282,9 @@ jobs:
           PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$PATH \
           LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH \
           python3 ./scripts/run-ci.py -B build \
-            --name ${{ github.repository }}-${{ github.ref_name }}-rhel-${{ matrix_rhel.system.os-release }}-${{ matrix_rhel.system.gpu }} \
+            --name ${{ github.repository }}-${{ github.ref_name }}-rhel-${{ matrix.system.os-release }}-${{ matrix.system.gpu }} \
             --build-jobs 16 \
-            --site ${{ matrix_rhel.system.runner }} \
+            --site ${{ matrix.system.runner }} \
             --mode ${{ needs.prepare_ci.outputs.mode }} \
             -- \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
