@@ -90,11 +90,11 @@ jobs:
           fi
 
           if [ '${{ github.event_name }}' = 'schedule' ] || [ '${{ inputs.mode }}' = 'Nightly Run' ]; then
-            MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-nightly.[] ${ARCH_SEARCH}' -I=0 -o=json)
-            MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-nightly.[] ${ARCH_SEARCH}' -I=0 -o=json)
+            MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-nightly.[] ${{ARCH_SEARCH}}' -I=0 -o=json)
+            MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-nightly.[] ${{ARCH_SEARCH}}' -I=0 -o=json)
           else
-            MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-ci.[] ${ARCH_SEARCH}' -I=0 -o=json)
-            MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-ci.[] ${ARCH_SEARCH}' -I=0 -o=json)
+            MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-ci.[] ${{ARCH_SEARCH}}' -I=0 -o=json)
+            MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-ci.[] ${{ARCH_SEARCH}}' -I=0 -o=json)
           fi
 
           echo "matrix_ubuntu=${MATRIX_UBUNTU_CONTENT}" >> $GITHUB_OUTPUT
