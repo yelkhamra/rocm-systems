@@ -61,7 +61,7 @@ jobs:
           sparse-checkout: projects/rocprofiler-systems/.github
 
       - name: Generate and output Ubuntu matrix
-        id: generate_ubuntu_matrix
+        id: generate_matrix
         working-directory: projects/rocprofiler-systems/.github
         run: |
           if [ '${{ github.event_name }}' = 'schedule' ] || [ '${{ inputs.mode }}' = 'nightly' ]; then
