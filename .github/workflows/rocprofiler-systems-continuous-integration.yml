@@ -39,50 +39,63 @@ on:
       - '!projects/rocprofiler-systems/CMakePresets.json'
 
 env:
+  HIP_PLATFORM: "amd"
   ROCPROFSYS_CI: ON
   ROCPROFSYS_TMPDIR: "%env{PWD}%/testing-tmp"
   ROCM_PATH: "/opt/rocm"
   ROCM_VERSION: "7.1.0"
+  OMPI_ALLOW_RUN_AS_ROOT: 1
+  OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
 
 jobs:
-  prepare_matrix:
+  prepare_ci:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.generate_matrix.outputs.matrix }}
+      matrix_ubuntu: ${{ steps.generate_matrix.outputs.matrix_ubuntu }}
+      matrix_rhel: ${{ steps.generate_matrix.outputs.matrix_rhel }}
+      mode: ${{ steps.generate_mode.outputs.mode }}
 
     steps:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: projects/rocprofiler-systems/.github
 
-      - name: Generate and output matrix
-        id: generate_matrix
+      - name: Generate and output Ubuntu matrix
+        id: generate_ubuntu_matrix
         working-directory: projects/rocprofiler-systems/.github
         run: |
           if [ '${{ github.event_name }}' = 'schedule' ] || [ '${{ inputs.mode }}' = 'nightly' ]; then
-            MATRIX_CONTENT=$(cat ci-matrix.yml | yq '.matrix-nightly' -I=0 -o=json)
+            MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-nightly' -I=0 -o=json)
+            MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-nightly' -I=0 -o=json)
           else
-            MATRIX_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ci' -I=0 -o=json)
+            MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-ci' -I=0 -o=json)
+            MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-ci' -I=0 -o=json)
           fi
-          echo "matrix=${MATRIX_CONTENT}" >> $GITHUB_OUTPUT
+          echo "matrix_ubuntu=${MATRIX_UBUNTU_CONTENT}" >> $GITHUB_OUTPUT
+          echo "matrix_rhel=${MATRIX_RHEL_CONTENT}" >> $GITHUB_OUTPUT
+
+      - name: Generate CI mode
+        id: generate_mode
+        run: |
+          if [ '${{ github.event_name }}' = 'schedule' ] || [ '${{ inputs.mode }}' = 'nightly' ]; then
+            MODE=Nightly
+          else
+            MODE=Continuous
+          fi
+          echo "mode=${MODE}" >> $GITHUB_OUTPUT
 
   ubuntu:
-    name: Ubuntu ${{ matrix.system.os-release }} • ${{ matrix.system.arch }}
-    needs: prepare_matrix
+    name: Ubuntu ${{ matrix_ubuntu.system.os-release }} • ${{ matrix_ubuntu.system.arch }}
+    needs: prepare_ci
     strategy:
       fail-fast: false
       matrix:
-        system: ${{ fromJSON(needs.prepare_matrix.outputs.matrix) }}
-    runs-on: ${{ matrix.system.runner }}
-    env:
-      HIP_PLATFORM: "amd"
-      ROCPROFSYS_CI: ON
-      OMPI_ALLOW_RUN_AS_ROOT: 1
-      OMPI_ALLOW_RUN_AS_ROOT_CONFIRM: 1
+        system: ${{ fromJSON(needs.prepare_ci.outputs.matrix_ubuntu) }}
+    runs-on: ${{ matrix_ubuntu.system.runner }}
     permissions:
       packages: read
     container:
-      image: ghcr.io/rocm/rocprofiler-ubuntu:${{ matrix.system.os-release }}-systems-ci-${{ matrix.system.arch }}
+      image: ghcr.io/rocm/rocprofiler-ubuntu:${{ matrix_ubuntu.system.os-release }}-systems-ci-${{ matrix_ubuntu.system.arch }}
       options:
         --privileged
         --ipc host
@@ -99,14 +112,7 @@ jobs:
       - name: Setup Environment
         id: setup_env
         run: |
-          if [ '${{ github.event_name }}' = 'schedule' ] || [ '${{ inputs.mode }}' = 'nightly' ]; then
-            MODE=Nightly
-          else
-            MODE=Continuous
-          fi
-          echo "mode=${MODE}" >> $GITHUB_OUTPUT
-
-          if [ '${{ matrix.system.os-release }}' = '24.04']; then
+          if [ '${{ matrix_ubuntu.system.os-release }}' = '24.04']; then
             CODE_NAME=noble
           else
             CODE_NAME=jammy
@@ -142,7 +148,7 @@ jobs:
         run: |
           set -e
           TARBALL_ROCM_VERSION=$(ls /opt/*.tar.gz | grep -Eo '*([0-9]\.[0-9]\.[0-9])*')
-          tar -xf ${{ env.ROCM_PATH }}-${TARBALL_ROCM_VERSION}-${{ matrix.system.arch }}.tar.gz -C ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}
+          tar -xf ${{ env.ROCM_PATH }}-${TARBALL_ROCM_VERSION}-${{ matrix_ubuntu.system.arch }}.tar.gz -C ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}
           ln -s ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} ${{ env.ROCM_PATH }}
           echo "ROCm installed to: ${{ env.ROCM_PATH }}"
           echo "✅ ROCm Installation Complete!"
@@ -158,10 +164,10 @@ jobs:
           PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$PATH \
           LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH \
           python3 ./scripts/run-ci.py -B build \
-            --name ${{ github.repository }}-${{ github.ref_name }}-ubuntu-${{ matrix.system.os-release }}-${{ matrix.system.gpu }} \
+            --name ${{ github.repository }}-${{ github.ref_name }}-ubuntu-${{ matrix_ubuntu.system.os-release }}-${{ matrix_ubuntu.system.gpu }} \
             --build-jobs 16 \
-            --site ${{ matrix.system.runner }} \
-            --mode ${{ steps.setup_env.outputs.mode }} \
+            --site ${{ matrix_ubuntu.system.runner }} \
+            --mode ${{ needs.prepare_ci.outputs.mode }} \
             -- \
             -DCMAKE_BUILD_TYPE=RelWithDebInfo \
             -DCMAKE_PREFIX_PATH=${{ env.ROCM_PATH }} \
@@ -199,3 +205,123 @@ jobs:
         run: |
           echo "❌ Run Failed: Now outputting LastTest.log files for detailed logs..."
           cat build/Testing/Temporary/LastTest*.log
+
+  rhel:
+    name: RHEL ${{ matrix_rhel.system.os-release }} • ${{ matrix_rhel.system.arch }}
+    needs: prepare_ci
+    strategy:
+      fail-fast: false
+      matrix:
+        system: ${{ fromJSON(needs.prepare_ci.outputs.matrix_rhel) }}
+    runs-on: ${{ matrix_rhel.system.runner }}
+    permissions:
+      packages: read
+    container:
+      image: ghcr.io/rocm/rocprofiler-rhel:${{ matrix_rhel.system.os-release }}-systems-ci-${{ matrix_rhel.system.arch }}
+      options:
+        --privileged
+        --ipc host
+        --group-add video
+        --device /dev/kfd
+        --device /dev/dri
+        --cap-add CAP_SYS_ADMIN
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: projects/rocprofiler-systems/
+
+      - name: Setup Environment
+        id: setup_env
+        run: |
+          if [ '${{ matrix_rhel.system.os-release }}' = '9']; then
+            OS_RELEASE=9.6
+          else
+            OS_RELEASE=${{ matrix_rhel.system.os-release }}
+          fi
+          echo "os_release=${OS_RELEASE}" >> $GITHUB_OUTPUT
+
+      - name: Install amdgpu and dependencies
+        shell: bash
+        run: |
+          ROCM_MAJOR=$(echo ${{ env.ROCM_VERSION }} | sed 's/\./ /g' | awk '{print $1}')
+          ROCM_MINOR=$(echo ${{ env.ROCM_VERSION }} | sed 's/\./ /g' | awk '{print $2}')
+          ROCM_VERSN=$(( (${ROCM_MAJOR}*10000)+(${ROCM_MINOR}*100) ))
+          OS_RELEASE=${{ steps.setup_env.outputs.os_release }}
+          wget -N -P /tmp/ https://repo.radeon.com/amdgpu-install/${ROCM_MAJOR}.${ROCM_MINOR}/rhel/${OS_RELEASE}/amdgpu-install-${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1.el${{OS_RELEASE:0:1}}.noarch.rpm
+          yum install -y /tmp/amdgpu-install-${ROCM_MAJOR}.${ROCM_MINOR}.${ROCM_VERSN}-1.el8.noarch.rpm
+          yum update
+          yum install -y amd-smi-lib rocjpeg-test rocdecode-test rccl-devel
+          echo "✅ amdgpu and ROCm dependencies Installed!"
+      
+      # TODO: Remove this and replace with TheRock tarball when runtime error is fixed
+      - name: Install ROCm
+        run: |
+          yum install -y rocm-dev
+          echo "✅ ROCm Installation Complete!"
+
+      # TODO: Enable this step and remove the above step once runtime error is fixed
+      - name: Install Latest Nightly ROCm
+        if: false
+        run: |
+          set -e
+          TARBALL_ROCM_VERSION=$(ls /opt/*.tar.gz | grep -Eo '*([0-9]\.[0-9]\.[0-9])*')
+          tar -xf ${{ env.ROCM_PATH }}-${TARBALL_ROCM_VERSION}-${{ matrix_ubuntu.system.arch }}.tar.gz -C ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}
+          ln -s ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} ${{ env.ROCM_PATH }}
+          echo "ROCm installed to: ${{ env.ROCM_PATH }}"
+          echo "✅ ROCm Installation Complete!"
+
+      - name: Configure, Build, and Test
+        id: run_ci
+        timeout-minutes: 30
+        working-directory: projects/rocprofiler-systems
+        run: |
+          set -e
+          git config --global --add safe.directory ${GITHUB_WORKSPACE}
+          git config --global --add safe.directory ${PWD}
+          PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$PATH \
+          LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH \
+          python3 ./scripts/run-ci.py -B build \
+            --name ${{ github.repository }}-${{ github.ref_name }}-rhel-${{ matrix_rhel.system.os-release }}-${{ matrix_rhel.system.gpu }} \
+            --build-jobs 16 \
+            --site ${{ matrix_rhel.system.runner }} \
+            --mode ${{ needs.prepare_ci.outputs.mode }} \
+            -- \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_PREFIX_PATH=${{ env.ROCM_PATH }} \
+            -DCMAKE_INSTALL_PREFIX=/opt/rocprofiler-systems \
+            -DROCPROFSYS_BUILD_DYNINST=ON \
+            -DROCPROFSYS_BUILD_BOOST=ON \
+            -DROCPROFSYS_BUILD_TBB=ON \
+            -DROCPROFSYS_BUILD_ELFUTILS=ON \
+            -DROCPROFSYS_BUILD_LIBIBERTY=ON \
+            -DROCPROFSYS_BUILD_CI=ON \
+            -DROCPROFSYS_BUILD_TESTING=ON \
+            -DROCPROFSYS_USE_PYTHON=ON \
+            -DROCPROFSYS_USE_ROCM=ON \
+            -DROCPROFSYS_MAX_THREADS=64 \
+            -- \
+            -L "rocm" \
+            -LE "rccl|runtime|ompvv"
+
+      - name: Check for Leftover Buffered Files
+        timeout-minutes: 5
+        working-directory: projects/rocprofiler-systems/
+        run: |
+          set -v
+          if find /tmp -maxdepth 1 -name 'buffered*' -print -quit | grep -q .; then
+            echo "Error: Found leftover buffered storage files in /tmp:"
+            ls -lh /tmp/buffered*
+            exit 1
+          else
+            echo "✓ No buffered storage files found in /tmp"
+          fi
+
+      - name: Output Logs
+        if: failure() && steps.run_ci.outcome == 'failure'
+        working-directory: projects/rocprofiler-systems
+        run: |
+          echo "❌ Run Failed: Now outputting LastTest.log files for detailed logs..."
+          cat build/Testing/Temporary/LastTest*.log
+
+        
