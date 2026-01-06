@@ -62,7 +62,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       mode: ${{ steps.generate_mode.outputs.mode }}
-      mode_lower: ${{ steps.generate_mode.outputs.mode_lower }}
       matrix_ubuntu: ${{ steps.generate_matrix.outputs.matrix_ubuntu }}
       matrix_rhel: ${{ steps.generate_matrix.outputs.matrix_rhel }}
 
@@ -76,22 +75,23 @@ jobs:
         run: |
           if [ '${{ github.event_name }}' = 'schedule' ] || [ '${{ inputs.mode }}' = 'nightly' ]; then
             MODE=Nightly
-            MODE_LOWER=nightly
           else
             MODE=Continuous
-            MODE_LOWER=continuous
           fi
 
           echo "mode=${MODE}" >> $GITHUB_OUTPUT
-          echo "mode_lower=${MODE_LOWER}" >> $GITHUB_OUTPUT
 
       - name: Generate and output Ubuntu matrix
         id: generate_matrix
         working-directory: projects/rocprofiler-systems/.github
         run: |
-          MODE_LOWER=$(echo ${{ steps.generate_mode.outputs.mode_lower }})
-          MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-$MODE_LOWER.[]' -I=0 -o=json)
-          MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-$MODE_LOWER.[]' -I=0 -o=json)
+          if [ '${{ steps.generate_mode.outputs.mode_lower }})' = 'nightly']; then
+            MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-nightly' -I=0 -o=json)
+            MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-nightly' -I=0 -o=json)
+          else
+            MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-continuous' -I=0 -o=json)
+            MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-continuous' -I=0 -o=json)
+          fi
 
           echo "matrix_ubuntu=${MATRIX_UBUNTU_CONTENT}" >> $GITHUB_OUTPUT
           echo "matrix_rhel=${MATRIX_RHEL_CONTENT}" >> $GITHUB_OUTPUT
