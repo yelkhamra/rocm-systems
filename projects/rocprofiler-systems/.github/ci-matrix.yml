@@ -8,7 +8,7 @@ matrix-ubuntu-nightly:
   # MI325
   - { os-release: '22.04', gpu: 'mi325', arch: 'gfx94X', runner: 'linux-mi325-1gpu-ossci-rocm-frac' }
   - { os-release: '24.04', gpu: 'mi325', arch: 'gfx94X', runner: 'linux-mi325-1gpu-ossci-rocm-frac' }
-matrix-ubuntu-ci:
+matrix-ubuntu-continuous:
   # MI355
   - { os-release: '24.04', gpu: 'mi355', arch: 'gfx950', runner: 'linux-mi355-1gpu-ossci-rocm' }
 
@@ -20,6 +20,6 @@ matrix-rhel-nightly:
   # MI325
   - { os-release: '8.10', gpu: 'mi325', arch: 'gfx94X', runner: 'linux-mi325-1gpu-ossci-rocm-frac' }
   - { os-release: '9', gpu: 'mi325', arch: 'gfx94X', runner: 'linux-mi325-1gpu-ossci-rocm-frac' }
-matrix-rhel-ci:
+matrix-rhel-continuous:
   # MI355
   - { os-release: '8.10', gpu: 'mi355', arch: 'gfx950', runner: 'linux-mi355-1gpu-ossci-rocm' }

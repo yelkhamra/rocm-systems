@@ -9,11 +9,11 @@ on:
       mode:
         description: 'Build Mode to run CI on.'
         required: false
-        default: 'Continuous Run'
+        default: 'continuous'
         type: choice
         options:
-          - Continuous Run
-          - Nightly Run
+          - continuous
+          - nightly
       distro:
         description: 'Distro(s) to run CI on.'
         required: false
@@ -23,15 +23,6 @@ on:
           - all
           - ubuntu
           - rhel
-      arch:
-        description: 'Architecture(s) to run CI on.'
-        required: false
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - gfx94X
-          - gfx950
 
   push:
     branches: [ develop ]
@@ -70,50 +61,43 @@ jobs:
   prepare_ci:
     runs-on: ubuntu-latest
     outputs:
+      mode: ${{ steps.generate_mode.outputs.mode }}
+      mode_lower: ${{ steps.generate_mode.outputs.mode_lower }}
       matrix_ubuntu: ${{ steps.generate_matrix.outputs.matrix_ubuntu }}
       matrix_rhel: ${{ steps.generate_matrix.outputs.matrix_rhel }}
-      mode: ${{ steps.generate_mode.outputs.mode }}
 
     steps:
       - uses: actions/checkout@v5
         with:
           sparse-checkout: projects/rocprofiler-systems/.github
 
+      - name: Generate CI mode
+        id: generate_mode
+        run: |
+          if [ '${{ github.event_name }}' = 'schedule' ] || [ '${{ inputs.mode }}' = 'nightly' ]; then
+            MODE=Nightly
+            MODE_LOWER=nightly
+          else
+            MODE=Continuous
+            MODE_LOWER=continuous
+          fi
+
+          echo "mode=${MODE}" >> $GITHUB_OUTPUT
+          echo "mode_lower=${MODE_LOWER}" >> $GITHUB_OUTPUT
+
       - name: Generate and output Ubuntu matrix
         id: generate_matrix
         working-directory: projects/rocprofiler-systems/.github
         run: |
-          if [ '${{ inputs.arch }}' = 'all' ]; then
-            ARCH_SEARCH=""
-          else
-            ARCH_SEARCH="| select(.arch == ${{ inputs.arch }})"
-          fi
-
-          if [ '${{ github.event_name }}' = 'schedule' ] || [ '${{ inputs.mode }}' = 'Nightly Run' ]; then
-            MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-nightly.[] ${{ARCH_SEARCH}}' -I=0 -o=json)
-            MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-nightly.[] ${{ARCH_SEARCH}}' -I=0 -o=json)
-          else
-            MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-ci.[] ${{ARCH_SEARCH}}' -I=0 -o=json)
-            MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-ci.[] ${{ARCH_SEARCH}}' -I=0 -o=json)
-          fi
+          MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-${MODE_LOWER}.[]' -I=0 -o=json)
+          MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-${MODE_LOWER}.[]' -I=0 -o=json)
 
           echo "matrix_ubuntu=${MATRIX_UBUNTU_CONTENT}" >> $GITHUB_OUTPUT
           echo "matrix_rhel=${MATRIX_RHEL_CONTENT}" >> $GITHUB_OUTPUT
 
-      - name: Generate CI mode
-        id: generate_mode
-        run: |
-          if [ '${{ github.event_name }}' = 'schedule' ] || [ '${{ inputs.mode }}' = 'Nightly Run' ]; then
-            MODE=Nightly
-          else
-            MODE=Continuous
-          fi
-          echo "mode=${MODE}" >> $GITHUB_OUTPUT
-
   ubuntu:
     name: Ubuntu ${{ matrix.system.os-release }} • ${{ matrix.system.arch }}
     needs: prepare_ci
-    if: ${{ github.event.inputs.distro == 'ubuntu' || github.event.inputs.distro == 'all' }}
     strategy:
       fail-fast: false
       matrix:
@@ -236,7 +220,6 @@ jobs:
   rhel:
     name: RHEL ${{ matrix.system.os-release }} • ${{ matrix.system.arch }}
     needs: prepare_ci
-    if: ${{ github.event.inputs.distro == 'rhel' || github.event.inputs.distro == 'all' }}
     strategy:
       fail-fast: false
       matrix:
