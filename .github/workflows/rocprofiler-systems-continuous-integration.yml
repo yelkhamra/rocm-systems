@@ -87,10 +87,9 @@ jobs:
 
       - name: Generate and output Ubuntu matrix
         id: generate_matrix
-        needs: generate_mode
         working-directory: projects/rocprofiler-systems/.github
         run: |
-          MODE_LOWER =$(echo ${{ needs.generate_mode.outputs.mode_lower }})
+          MODE_LOWER =$(echo ${{ steps.generate_mode.outputs.mode_lower }})
           MATRIX_UBUNTU_CONTENT=$(cat ci-matrix.yml | yq '.matrix-ubuntu-$MODE_LOWER.[]' -I=0 -o=json)
           MATRIX_RHEL_CONTENT=$(cat ci-matrix.yml | yq '.matrix-rhel-$MODE_LOWER.[]' -I=0 -o=json)
 
