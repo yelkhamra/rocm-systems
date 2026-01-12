@@ -105,11 +105,10 @@ static void vhsakmt_insert_userptr(vhsakmt_device_handle dev, vhsakmt_bo_handle 
   pthread_mutex_unlock(&dev->bo_handles_mutex);
 }
 
-static vhsakmt_bo_handle vhsakmt_find_userptr(vhsakmt_device_handle dev, unsigned long addr,
-                                              unsigned long last) {
+/* Internal function without locking - caller must hold bo_handles_mutex */
+static vhsakmt_bo_handle vhsakmt_find_userptr_locked(vhsakmt_device_handle dev, unsigned long addr,
+                                                      unsigned long last) {
   interval_tree_node_t* n;
-
-  pthread_mutex_lock(&dev->bo_handles_mutex);
 
   n = hsakmt_interval_tree_iter_first(&dev->userptr_tree, addr, last);
 
@@ -117,15 +116,23 @@ static vhsakmt_bo_handle vhsakmt_find_userptr(vhsakmt_device_handle dev, unsigne
     vhsakmt_bo_handle bo = (vhsakmt_bo_handle)((char*)n - offsetof(struct vhsakmt_bo, itn));
     if ((unsigned long)bo->cpu_addr <= addr &&
         ((unsigned long)bo->cpu_addr + bo->size - 1UL) >= last) {
-      pthread_mutex_unlock(&dev->bo_handles_mutex);
       return bo;
     }
     n = hsakmt_interval_tree_iter_next(&dev->userptr_tree, n, addr, last);
   }
 
+  return NULL;
+}
+
+static vhsakmt_bo_handle vhsakmt_find_userptr(vhsakmt_device_handle dev, unsigned long addr,
+                                              unsigned long last) {
+  vhsakmt_bo_handle bo;
+
+  pthread_mutex_lock(&dev->bo_handles_mutex);
+  bo = vhsakmt_find_userptr_locked(dev, addr, last);
   pthread_mutex_unlock(&dev->bo_handles_mutex);
 
-  return NULL;
+  return bo;
 }
 
 static void vhsakmt_destroy_userptr(vhsakmt_device_handle dev, vhsakmt_bo_handle bo) {
@@ -662,7 +669,7 @@ static vhsakmt_bo_handle vhsakmt_map_to_gpu(void* addr, size_t size, bool use_sv
   if (!userptr_handle) {
     vhsa_debug("%s: map userptr failed at address: %p, ret = %d\n", __FUNCTION__, addr, r);
     vhsakmt_destroy_handle(dev, userptr);
-    vhsakmt_remove_userptr_bo(dev, userptr);
+    free(userptr);
     return NULL;
   }
 
@@ -679,10 +686,10 @@ static vhsakmt_bo_handle vhsakmt_map_to_gpu(void* addr, size_t size, bool use_sv
         VHSA_UINT64_TO_VPTR(VHSA_VPTR_TO_UINT64(userptr->host_addr) + userptr_offset);
   }
 
-  if (use_svm) {
-    vhsakmt_insert_bo(dev, userptr, userptr->cpu_addr, userptr->size);
-  } else {
-    vhsakmt_insert_userptr(dev, userptr);
+  /* Initialize interval tree node for non-SVM case */
+  if (!use_svm) {
+    interval_tree_node_init(&userptr->itn, (unsigned long)userptr->cpu_addr,
+                            (unsigned long)userptr->cpu_addr + userptr->size - 1UL);
   }
 
   vhsa_debug("%s: gva: %p, cpu_addr: %p, hva: %p, size: %lx, offset: %lx, blob_size: 0x%lx\n",
@@ -713,7 +720,9 @@ HSAKMT_STATUS HSAKMTAPI vhsaKmtRegisterMemoryWithFlags(void* MemoryAddress,
   if (!vhsakmt_is_userptr(dev, MemoryAddress)) return HSAKMT_STATUS_SUCCESS;
 
   if (!dev->use_svm) {
-    vhsakmt_bo_handle bo = vhsakmt_find_userptr(dev, (uint64_t)MemoryAddress,
+    pthread_mutex_lock(&dev->bo_handles_mutex);
+
+    vhsakmt_bo_handle bo = vhsakmt_find_userptr_locked(dev, (uint64_t)MemoryAddress,
                                                 (uint64_t)MemoryAddress + MemorySizeInBytes - 1UL);
     if (bo) {
       vhsa_debug(
@@ -721,17 +730,31 @@ HSAKMT_STATUS HSAKMTAPI vhsaKmtRegisterMemoryWithFlags(void* MemoryAddress,
           "res_id: %d, count: %d\n",
           __FUNCTION__, MemoryAddress, bo->cpu_addr, bo->size, bo->real.res_id, bo->refcount);
       (void)vhsakmt_atomic_inc_return(&bo->refcount);
+      pthread_mutex_unlock(&dev->bo_handles_mutex);
       return HSAKMT_STATUS_SUCCESS;
     }
-  }
 
-  userptr = vhsakmt_map_to_gpu(MemoryAddress, MemorySizeInBytes, dev->use_svm);
+    userptr = vhsakmt_map_to_gpu(MemoryAddress, MemorySizeInBytes, dev->use_svm);
+    if (!userptr) {
+      vhsa_debug(
+          "%s: register memory failed at address: %p, size: %lx (vhsakmt_map_to_gpu returned NULL)\n",
+          __FUNCTION__, MemoryAddress, MemorySizeInBytes);
+      pthread_mutex_unlock(&dev->bo_handles_mutex);
+      return HSAKMT_STATUS_ERROR;
+    }
 
-  if (!userptr) {
-    vhsa_debug(
-        "%s: register memory failed at address: %p, size: %lx (vhsakmt_map_to_gpu returned %p)\n",
-        __FUNCTION__, MemoryAddress, MemorySizeInBytes, userptr);
-    return HSAKMT_STATUS_ERROR;
+    hsakmt_interval_tree_insert(&dev->userptr_tree, &userptr->itn);
+
+    pthread_mutex_unlock(&dev->bo_handles_mutex);
+  } else {
+    userptr = vhsakmt_map_to_gpu(MemoryAddress, MemorySizeInBytes, dev->use_svm);
+    if (!userptr) {
+      vhsa_debug(
+          "%s: register memory failed at address: %p, size: %lx (vhsakmt_map_to_gpu returned NULL)\n",
+          __FUNCTION__, MemoryAddress, MemorySizeInBytes);
+      return HSAKMT_STATUS_ERROR;
+    }
+    vhsakmt_insert_bo(dev, userptr, userptr->cpu_addr, userptr->size);
   }
 
   req.reg_mem_with_flag.MemoryAddress = (uint64_t)userptr->host_addr;
