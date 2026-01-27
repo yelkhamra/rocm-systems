@@ -56,7 +56,8 @@ jobs:
   prepare_ci:
     runs-on: ubuntu-latest
     outputs:
-      matrix: ${{ steps.generate_matrix.outputs.matrix }}
+      matrix_ubuntu: ${{ steps.generate_matrix.outputs.matrix_ubuntu }}
+      matrix_rhel: ${{ steps.generate_matrix.outputs.matrix_rhel }}
 
     steps:
       - uses: actions/checkout@v5
