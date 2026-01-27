@@ -161,6 +161,7 @@ jobs:
         continue-on-error: true
         timeout-minutes: ${{ steps.setup_env.outputs.mode == 'Nightly' && 120 || 90 }}
         working-directory: projects/rocprofiler-compute
+        shell: bash
         run: |
           set -e
           git config --global --add safe.directory ${GITHUB_WORKSPACE}
