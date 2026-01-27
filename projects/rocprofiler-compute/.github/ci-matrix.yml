@@ -1,5 +1,6 @@
 # Matrix definitions for rocprofiler-compute-continuous-integration
 
+# Ubuntu
 matrix-ubuntu-nightly:
   # MI355
   - { os-release: '22.04', gpu: 'mi355', arch: 'gfx950', runner: 'linux-mi355-1gpu-ossci-rocm' }
@@ -10,3 +11,15 @@ matrix-ubuntu-nightly:
 matrix-ubuntu-ci:
   # MI355
   - { os-release: '22.04', gpu: 'mi355', arch: 'gfx950', runner: 'linux-mi355-1gpu-ossci-rocm' }
+
+# RHEL
+matrix-rhel-nightly:
+  # MI355
+  - { os-release: '8.10', gpu: 'mi355', arch: 'gfx950', runner: 'linux-mi355-1gpu-ossci-rocm' }
+  - { os-release: '9', gpu: 'mi355', arch: 'gfx950', runner: 'linux-mi355-1gpu-ossci-rocm' }
+  # MI325
+  - { os-release: '8.10', gpu: 'mi325', arch: 'gfx94X', runner: 'linux-mi325-1gpu-ossci-rocm-frac' }
+  - { os-release: '9', gpu: 'mi325', arch: 'gfx94X', runner: 'linux-mi325-1gpu-ossci-rocm-frac' }
+matrix-rhel-ci:
+  # MI355
+  - { os-release: '8.10', gpu: 'mi355', arch: 'gfx950', runner: 'linux-mi355-1gpu-ossci-rocm' }
