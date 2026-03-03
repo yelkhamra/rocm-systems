@@ -212,6 +212,7 @@ def generate_summary_query(
     name_column="name",
     by_rank=False,
     by_rank_env_var=None,
+    kernel_name_option=None,
 ) -> Tuple[str, str]:
     """
     Generate a SQL statement and view name for summarizing data from a specified view.
@@ -226,10 +227,16 @@ def generate_summary_query(
         name_column (str, optional): The column name to group by (default: "name").
         by_rank (bool, optional): If True, generate a summary grouped by rank.
         by_rank_env_var (str, optional): The environment variable name to use for rank grouping.
+        kernel_name_option (str, optional): The kernel name option to use for the summary queries (default: None, mangle or truncate).
 
     Returns:
         Tuple[str, str]: A tuple containing the full view name and the generated SQL query.
     """
+
+    kernel_name_mapping = {
+        "truncate" : "KS.truncated_kernel_name",
+        "mangle" : "KS.kernel_name",
+    }
 
     if by_rank:
         view_suffix = "_summary_by_rank"
@@ -267,6 +274,11 @@ def generate_summary_query(
         additional_aggregated_columns = ""
         join_condition = "T.{name_column} = A.name".format(name_column=name_column)
         total_duration_join = "CROSS JOIN total_duration TD"
+
+    if kernel_name_option is not None and view_name == "kernels":
+        display_name = f"COALESCE((SELECT {kernel_name_mapping[kernel_name_option]} FROM kernel_symbols KS WHERE KS.display_name = AD.name LIMIT 1), AD.name)"
+    else:
+        display_name = "AD.name"
 
     full_view_name = f"{view_name}{view_suffix}"
 
@@ -313,7 +325,7 @@ def generate_summary_query(
             )
         SELECT
             {additional_select_columns}
-            AD.name AS Name,
+            {display_name} AS Name,
             AD.calls AS Calls,
             AD.total_duration AS "DURATION (nsec)",
             AD.average_duration AS "AVERAGE (nsec)",
@@ -443,7 +455,7 @@ def generate_domain_query(
     return (view_name, domain_select)
 
 
-def create_summary_queries(connection: RocpdImportData, by_rank=False):
+def create_summary_queries(connection: RocpdImportData, by_rank=False, kernel_name_option=None):
     """
     Generate and return a dictionary of summary queries for all suitable temporary views in the database.
 
@@ -454,6 +466,7 @@ def create_summary_queries(connection: RocpdImportData, by_rank=False):
     Args:
         connection (RocpdImportData): The database connection object.
         by_rank (bool, optional): If True, generate summary queries grouped by rank (default: False).
+        kernel_name_option (str, optional): The kernel name option to use for the summary queries (default: None, mangle or truncate).
 
     Returns:
         dict: A dictionary mapping summary query names to their SQL statements.
@@ -482,7 +495,7 @@ def create_summary_queries(connection: RocpdImportData, by_rank=False):
         if not by_rank:
             # Create regular summary query
             summary_query_name, summary_query = generate_summary_query(
-                view_name, "", name_column=NAME_COLUMN_MAP.get(view_name, "name")
+                view_name, "", name_column=NAME_COLUMN_MAP.get(view_name, "name"), kernel_name_option=kernel_name_option
             )
             queries[summary_query_name] = summary_query
         else:
@@ -493,6 +506,7 @@ def create_summary_queries(connection: RocpdImportData, by_rank=False):
                 name_column=NAME_COLUMN_MAP.get(view_name, "name"),
                 by_rank=True,
                 by_rank_env_var=get_rank_env_variable_name(connection),
+                kernel_name_option=kernel_name_option,
             )
             queries[per_rank_query_name] = summary_by_rank_query
 
@@ -653,6 +667,18 @@ def generate_all_summaries(connection: RocpdImportData, **kwargs: Any) -> None:
     output_path = kwargs.get("output_path", "./rocpd-output-data")
     region_categories = kwargs.get("region_categories", None)
     output_format = kwargs.get("format", "console")
+    mangled_kernels = kwargs.get("mangled_kernels", False)
+    truncate_kernels = kwargs.get("truncate_kernels", False)
+
+    if mangled_kernels and truncate_kernels:
+        raise ValueError("Only one kernel naming option can be selected")
+
+    if mangled_kernels:
+        kernel_name_option = "mangle"
+    elif truncate_kernels:
+        kernel_name_option = "truncate"
+    else:
+        kernel_name_option = None
 
     if not check_function_availability(connection, "sqrt"):
         connection.create_function(
@@ -668,7 +694,7 @@ def generate_all_summaries(connection: RocpdImportData, **kwargs: Any) -> None:
     summary_queries = {}
 
     # Create the summary queries
-    summary_queries.update(create_summary_queries(connection, by_rank))
+    summary_queries.update(create_summary_queries(connection, by_rank, kernel_name_option=kernel_name_option))
     summary_queries.update(
         create_summary_region_queries(
             connection, by_rank, region_categories=region_categories
@@ -739,8 +765,22 @@ def add_args(parser):
         help="Specify region categories to include in the summary (example: HIP, HSA, RCCL, ROCDECODE, ROCJPEG, MARKER). If not specified, categories will be automatically retrieved from the database.",
     )
 
+    kernel_name_options = parser.add_argument_group("Kernel naming options, only one selection is allowed")
+    kernel_name_options.add_argument(
+        "--mangled-kernels",
+        action="store_true",
+        default=False,
+        help="Do not demangle the kernel names",
+    )
+    kernel_name_options.add_argument(
+        "--truncate-kernels",
+        action="store_true",
+        default=False,
+        help="Truncate the demangled kernel names",
+    )
+
     def process_args(input, args):
-        valid_args = ["format", "domain_summary", "summary_by_rank", "region_categories"]
+        valid_args = ["format", "domain_summary", "summary_by_rank", "region_categories", "mangled_kernels", "truncate_kernels"]
 
         ret = {}
         for itr in valid_args:
