@@ -41,6 +41,7 @@ test_categories:
   comprehensive:
     description: "Extended testing - Run nightly (target: < 2 hours)"
     test_patterns:
+      - test_data_imputation
       - test_profile_dispatch
       - test_profile_kernel_execution
       - test_profile_join
@@ -65,6 +66,8 @@ test_categories:
       - test_utils
       - test_L1_cache_counters
       - test_roofline_calc_ai_analyze
+      - test_torch_trace
+      - test_tui_components
     exclude:
       - test_profile_live_attach_detach
     labels:
