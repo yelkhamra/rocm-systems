@@ -38,6 +38,8 @@ if (AMD_COMPUTE_WIN)
     message("Public Compute Windows build path: ${AMD_COMPUTE_WIN}, SC: ${AMD_SC_PATH}, LibElf: ${AMD_LIBELF_PATH}")
 endif()
 
+# add_compile_options(-g -fno-omit-frame-pointer -fno-inline-functions-called-once)
+
 option(CLR_BUILD_HIP "Build HIP" OFF)
 option(CLR_BUILD_OCL "Build OCL" OFF)
 
@@ -45,6 +47,10 @@ option(CLR_BUILD_OCL "Build OCL" OFF)
 if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
 endif()
+
+# Add a directory to the global include directories for all projects
+include_directories(/tf/rocr-runtime-install/include)
+
 
 #############
 # Build steps
