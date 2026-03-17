@@ -5,7 +5,7 @@ on:
   schedule:
     - cron: '0 7 * * *'
   push:
-    branches: [ develop ]
+    branches: [develop]
     paths:
       - 'projects/rocprofiler-sdk/**'
       - '.github/workflows/rocprofiler-sdk-continuous_integration.yml'
@@ -36,86 +36,77 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Needed to push/pull cached Docker layers + GHCR images
 permissions:
   contents: read
-  packages: write
+  packages: read
 
 env:
-  # TODO(jrmadsen): replace LD_RUNPATH_FLAG, GPU_TARGETS, etc. with internal handling in cmake
   ROCM_PATH: "/opt/rocm"
-  ROCM_VERSION: "7.2.0"
-  PYTHON_VENV_PATH: "rocprofiler-sdk"
-  PYTHON_VENV_ACTIVATE: "rocprofiler-sdk/bin/activate"
   GPU_TARGETS: "gfx906 gfx908 gfx90a gfx942 gfx950 gfx1030 gfx1100 gfx1101 gfx1102 gfx1201"
-  PATH: "/usr/bin:$PATH"
-
-  ## No tests should be excluded here except for extreme emergencies; tests should only be disabled in CMake
-  ## A task should be assigned directly to fix the issues
-  ## Scratch memory tests need to be fixed for ROCm 7.0 release
-  navi3_EXCLUDE_TESTS_REGEX: ""
-  vega20_EXCLUDE_TESTS_REGEX: ""
-  mi200_EXCLUDE_TESTS_REGEX: ""
-  mi300_EXCLUDE_TESTS_REGEX: ""
-  mi300a_EXCLUDE_TESTS_REGEX: ""
-  mi325_EXCLUDE_TESTS_REGEX: ""
-  mi3xx_EXCLUDE_TESTS_REGEX: ""
-  navi4_EXCLUDE_TESTS_REGEX: ""
-
-  navi3_EXCLUDE_LABEL_REGEX: ""
-  vega20_EXCLUDE_LABEL_REGEX: ""
-  mi200_EXCLUDE_LABEL_REGEX: ""
-  mi300_EXCLUDE_LABEL_REGEX: ""
-  mi300a_EXCLUDE_LABEL_REGEX: ""
-  mi325_EXCLUDE_LABEL_REGEX: ""
-  mi3xx_EXCLUDE_LABEL_REGEX: ""
-  navi4_EXCLUDE_LABEL_REGEX: ""
-
   GLOBAL_CMAKE_OPTIONS: ""
   ENABLE_ROCR_BUILD: "true"
   ENABLE_HIP_CLR_BUILD: "true"
-
   CI_MODE: ${{ github.event_name == 'schedule' && 'Nightly' || 'Continuous' }}
-
+  mi325_EXCLUDE_TESTS_REGEX: ""
+  mi325_EXCLUDE_LABEL_REGEX: ""
 
 jobs:
-  # -----------------------------------------------------------------------------
-  # Ubuntu / DEB job(s)
-  # -----------------------------------------------------------------------------
+  discover-rocm-tarball:
+    name: Discover ROCm Tarball
+    runs-on: ubuntu-latest
+    outputs:
+      tarball_version: ${{ steps.discover.outputs.tarball_version }}
+    steps:
+      - name: Discover latest nightly tarball
+        id: discover
+        run: |
+          BASE_URL="https://rocm.nightlies.amd.com/tarball/"
+          TARBALL_VERSION=$(curl -sL "${BASE_URL}" | grep -oP 'therock-dist-linux-gfx94X-dcgpu-\K[0-9]+\.[0-9]+\.[0-9a-z]+' | sort -V | tail -1)
+          if [ -z "$TARBALL_VERSION" ]; then
+            echo "ERROR: Failed to discover tarball version from ${BASE_URL}"
+            exit 1
+          fi
+          echo "tarball_version=${TARBALL_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Discovered tarball version: ${TARBALL_VERSION}"
+
   core-deb:
     name: Core • ${{ matrix.system.gpu }} • ${{ matrix.system.os }}
+    needs: [discover-rocm-tarball]
     strategy:
       fail-fast: false
       matrix:
         system:
-          # TEMPORARILY DISABLED: navi3/navi4 jobs pending CI stabilization
-          # - { gpu: 'navi4', runner: 'rocprofiler-navi4-dind', os: 'ubuntu-22.04', build-type: 'RelWithDebInfo', ci-flags: '--linter clang-tidy', gpu-target: 'gfx120X' }
-          # - { gpu: 'navi3', runner: 'rocprofiler-navi3-dind', os: 'ubuntu-22.04', build-type: 'RelWithDebInfo', ci-flags: '--linter clang-tidy', gpu-target: 'gfx110X' }
-          - { gpu: 'mi325', runner: 'linux-mi325-1gpu-ossci-rocm', os: 'ubuntu-22.04', build-type: 'RelWithDebInfo', ci-flags: '--linter clang-tidy', gpu-target: 'gfx94X' }
+          - { gpu: 'mi325', runner: 'linux-mi325-1gpu-ossci-rocm', os: 'ubuntu-22.04', build-type: 'RelWithDebInfo', ci-flags: '--linter clang-tidy', gpu-target: 'gfx94X-dcgpu' }
     runs-on: ${{ matrix.system.runner }}
     container:
-      image: docker.io/rocm/rocprofiler-private:${{ matrix.system.os }}-${{ matrix.system.gpu-target }}-latest
-      credentials:
-        username: ${{ secrets.ROCPROFILER_AZURE_CI_USER }}
-        password: ${{ secrets.ROCPROFILER_AZURE_CI_PASS }}
-      env:
-        DEBIAN_FRONTEND: noninteractive
+      image: ubuntu:22.04
       options: --privileged
     env:
       GIT_DISCOVERY_ACROSS_FILESYSTEM: 1
       CORE_EXT_RUNNER: mi325
       GPU_RUNNER: ${{ matrix.system.gpu }}
+      DEBIAN_FRONTEND: noninteractive
+      TARBALL_VERSION: ${{ needs.discover-rocm-tarball.outputs.tarball_version }}
     steps:
-      - name: Install Latest Nightly ROCm
-        shell: bash
-        working-directory: /tmp
+      - name: Install base dependencies
         run: |
-          tar -xf ${{ env.ROCM_PATH }}-${{ matrix.system.gpu-target }}.tar.gz -C ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}
-          ln -s ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} ${{ env.ROCM_PATH }}
-          echo "ROCm installed to: ${{ env.ROCM_PATH }}"
+          apt-get update && apt-get install -y --no-install-recommends \
+            ca-certificates curl wget git git-lfs build-essential g++-11 g++-12 cmake ninja-build \
+            python3 python3-pip python3-venv libelf1 libelf-dev libnuma1 libnuma-dev libunwind8 libncurses6 \
+            libdw-dev libsqlite3-dev libdrm-dev libzstd-dev perl file autoconf pkg-config rpm kmod software-properties-common ccache xxd \
+            libgl1-mesa-dev libglu1-mesa-dev libglx-dev libegl1-mesa-dev
+          apt-get install -y --no-install-recommends libssl3 || apt-get install -y --no-install-recommends libssl1.1 || true
+          update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 20 --slave /usr/bin/g++ g++ /usr/bin/g++-12 --slave /usr/bin/gcov gcov /usr/bin/gcov-12
 
-      - name: Clone ROCProfiler SDK & AQLProfile & ROCProfiler Register & ROCR-Runtime
-        uses: actions/checkout@v5
+      - name: Install ROCm from nightly tarball
+        run: |
+          TARBALL_URL="https://rocm.nightlies.amd.com/tarball/therock-dist-linux-${{ matrix.system.gpu-target }}-${{ env.TARBALL_VERSION }}.tar.gz"
+          echo "Installing ROCm from ${TARBALL_URL}"
+          curl -fsSL -o /tmp/rocm.tar.gz "$TARBALL_URL"
+          mkdir -p /opt/rocm && tar -xzf /tmp/rocm.tar.gz -C /opt/rocm --strip-components=1
+          rm -f /tmp/rocm.tar.gz
+
+      - uses: actions/checkout@v5
         with:
           sparse-checkout: |
             projects/rocprofiler-sdk
@@ -127,335 +118,147 @@ jobs:
           submodules: false
           set-safe-directory: true
 
-      - name: Compute submodule cache key
-        id: submods
-        shell: bash
+      - name: Init submodules
         run: |
-          git --version
           git config --global --add safe.directory '*'
-          git submodule status --recursive | awk '{print $1,$2}' > .git-submodules-status
-          echo "hash=$(sha256sum .git-submodules-status | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          # collect submodule paths for cache 'path'
-          git config --file .gitmodules --get-regexp path | awk '{print $2}' > .git-submodule-paths
-          { echo "paths<<EOF"; cat .git-submodule-paths; echo "EOF"; } >> "$GITHUB_OUTPUT"
+          git submodule update --init --recursive --jobs 16
 
-      - name: Restore submodule cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            .git/modules
-            ${{ steps.submods.outputs.paths }}
-          key: submods-${{ runner.os }}-${{ steps.submods.outputs.hash }}
-          restore-keys: |
-            submods-${{ runner.os }}-
-            submods-
-
-      - name: Init/Update submodules
-        run: git submodule update --init --recursive --jobs 16
-
-      - name: Clone ROCDecode
-        uses: actions/checkout@v5
-        with:
-          repository: 'ROCm/rocDecode'
-          ref: 'release/rocm-rel-7.0'
-          set-safe-directory: true
-          path: 'rocDecode'
-
-      - name: Clone ROCJPEG
-        uses: actions/checkout@v5
-        with:
-          repository: 'ROCm/rocJPEG'
-          ref: 'release/rocm-rel-7.0'
-          set-safe-directory: true
-          path: 'rocJPEG'
-
-      - name: Install requirements
-        timeout-minutes: 10
-        shell: bash
+      - name: Install Python requirements
         working-directory: projects/rocprofiler-sdk
         run: |
-          git config --global --add safe.directory '*'
-          apt-get update
-          apt-get install -y g++-11 g++-12 cmake python3-pip libdw-dev libsqlite3-dev libdrm-dev file autoconf pkg-config rpm libzstd-dev
-          update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 10 --slave /usr/bin/g++ g++ /usr/bin/g++-11 --slave /usr/bin/gcov gcov /usr/bin/gcov-11
-          update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-12 20 --slave /usr/bin/g++ g++ /usr/bin/g++-12 --slave /usr/bin/gcov gcov /usr/bin/gcov-12
-          python3 -m pip install -U --user -r requirements.txt
-          python3 -m pip install -U --user cmake==3.24.0
-          rm -rf \
-            ${{ env.ROCM_PATH }}/lib/*rocprofiler-sdk* \
-            ${{ env.ROCM_PATH }}/lib/cmake/*rocprofiler-sdk* \
-            ${{ env.ROCM_PATH }}/share/*rocprofiler-sdk* \
-            ${{ env.ROCM_PATH }}/libexec/*rocprofiler-sdk* \
-            ${{ env.ROCM_PATH }}*/lib/python*/site-packages/roctx \
-            ${{ env.ROCM_PATH }}*/lib/python*/site-packages/rocpd
+          python3 -m pip install -U --user -r requirements.txt cmake==3.24.0 CppHeaderParser
+          rm -rf /opt/rocm/lib/*rocprofiler-sdk* /opt/rocm/lib/cmake/*rocprofiler-sdk* /opt/rocm/share/*rocprofiler-sdk* /opt/rocm/libexec/*rocprofiler-sdk*
 
-      - name: Setup environment variables
-        shell: bash
+      - name: Setup environment
         run: |
-          echo "PKG_CONFIG_PATH=/opt/amdgpu/lib64/pkgconfig:/opt/amdgpu/lib/pkgconfig:/opt/amdgpu/lib/$(uname -p)-linux-gnu/pkgconfig:${PKG_CONFIG_PATH}" >> $GITHUB_ENV
-          echo "PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
+          echo "PATH=$HOME/.local/bin:/opt/rocm/bin:/opt/rocm/llvm/bin:$PATH" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/llvm/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=/opt/amdgpu/lib64/pkgconfig:/opt/amdgpu/lib/pkgconfig:${PKG_CONFIG_PATH}" >> $GITHUB_ENV
 
-      - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@63069e3931dedbf3b63792097479563182fe70d1 # v1.2.18
-        with:
-          key: ccache-${{ matrix.system.os }}-${{ matrix.system.runner }}-${{ matrix.system.gpu }}
-          max-size: 2G
-          save: true
+      - uses: hendrikmuhs/ccache-action@63069e3931dedbf3b63792097479563182fe70d1
+        with: { key: 'ccache-${{ matrix.system.os }}-${{ matrix.system.gpu }}', max-size: '2G', save: true }
 
-      - name: Install Missing ROCm Dependencies
-        shell: bash
-        run: |
-          echo -e "Building & Installing ROCDecode..."
-          cmake -B build-rocdecode \
-            -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_PREFIX_PATH=${{ env.ROCM_PATH }} \
-            -DCMAKE_CXX_COMPILER=${{ env.ROCM_PATH }}/lib/llvm/bin/amdclang++ \
-            -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache \
-            ${GITHUB_WORKSPACE}/rocDecode
-          cmake --build build-rocdecode --target all --parallel 16
-          cmake --build build-rocdecode --target install
-          echo -e "ROCDecode Installed Successfully!"
-          echo -e "Building & Installing ROCJPEG..."
-          cmake -B build-rocjpeg \
-            -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_PREFIX_PATH=${{ env.ROCM_PATH }} \
-            -DCMAKE_CXX_COMPILER=${{ env.ROCM_PATH }}/lib/llvm/bin/amdclang++ \
-            -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache \
-            ${GITHUB_WORKSPACE}/rocJPEG
-          cmake --build build-rocjpeg --target all --parallel 16
-          cmake --build build-rocjpeg --target install
-          echo -e "ROCJPEG Installed Successfully!"
-
-      - name: Build and Install ROCProfiler-Register
-        shell: bash
+      - name: Build ROCProfiler-Register
         working-directory: projects/rocprofiler-register
         run: |
-          export LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH
-          export PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$PATH
-          echo "Install ROCProfiler-Register"
-          cmake -B build-rocprofiler-register \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_PREFIX_PATH=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache \
-            .
-          cmake --build build-rocprofiler-register --target all --parallel 16
-          cmake --build build-rocprofiler-register --target install
-          echo "✅ ROCProfiler-Register Installation complete!"
+          cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_INSTALL_PREFIX=/opt/rocm \
+            -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache .
+          cmake --build build --parallel 16 && cmake --build build --target install
 
-      - name: Build and Install ROCR-Runtime
+      - name: Build ROCR-Runtime
         if: ${{ env.ENABLE_ROCR_BUILD == 'true' }}
-        shell: bash
         working-directory: projects/rocr-runtime
         run: |
-          export LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH
-          export PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$PATH
-          echo "Install ROCR-Runtime..."
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_PREFIX_PATH='${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }};${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}/llvm' \
-            -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            .
-          cmake --build build --target all --parallel 16
-          cmake --build build --target install
-          echo "✅ ROCR-Runtime Installation complete!"
+          cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH='/opt/rocm;/opt/rocm/llvm' -DCMAKE_INSTALL_PREFIX=/opt/rocm .
+          cmake --build build --parallel 16 && cmake --build build --target install
 
-      - name: Build and Install HIP
+      - name: Build HIP
         if: ${{ env.ENABLE_HIP_CLR_BUILD == 'true' }}
-        shell: bash
-        working-directory: projects
+        working-directory: projects/clr
         run: |
-          export HIP_DIR=$PWD/hip
-          export CLR_DIR=$PWD/clr
-          export LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH
-          export PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$PATH
-          echo "Install HIP..."
-          cd $CLR_DIR
-          cmake \
-            -DHIP_COMMON_DIR=$HIP_DIR \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DHIP_PLATFORM=amd \
-            -DCMAKE_PREFIX_PATH='${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }};${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}/llvm' \
-            -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DHIP_LLVM_ROOT=${{ env.ROCM_PATH }}/lib/llvm \
-            -DHIP_CATCH_TEST=0 \
-            -DCLR_BUILD_HIP=ON \
-            -DCLR_BUILD_OCL=ON \
-            -S $CLR_DIR \
-            -B build
-          cmake --build build --target all --parallel 16
-          cmake --build build --target install
-          echo "✅ HIP Installation complete!"
+          cmake -B build -DHIP_COMMON_DIR=${{ github.workspace }}/projects/hip -DCMAKE_BUILD_TYPE=RelWithDebInfo -DHIP_PLATFORM=amd \
+            -DCMAKE_PREFIX_PATH='/opt/rocm;/opt/rocm/llvm' -DCMAKE_INSTALL_PREFIX=/opt/rocm -DHIP_LLVM_ROOT=/opt/rocm/lib/llvm \
+            -DHIP_CATCH_TEST=0 -DCLR_BUILD_HIP=ON -DCLR_BUILD_OCL=OFF .
+          cmake --build build --parallel 16 && cmake --build build --target install
 
-      - name: Build and Install Aqlprofile
-        shell: bash
+      - name: Build Aqlprofile
         working-directory: projects/aqlprofile
         run: |
-          export LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH
-          export PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$PATH
-          echo "Install Aqlprofile..."
-          cmake -B build-aqlprofile \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_PREFIX_PATH=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache \
-            .
-          cmake --build build-aqlprofile --target all --parallel 16
-          cmake --build build-aqlprofile --target install
-          echo "✅ AQLProfile Installation complete!"
-
-      - name: List Files
-        shell: bash
-        working-directory: projects/rocprofiler-sdk
-        run: |
-          echo "PATH: ${PATH}"
-          echo "LD_LIBRARY_PATH: ${LD_LIBRARY_PATH}"
-          which-realpath() { echo -e "\n$1 resolves to $(realpath $(which $1))"; echo "$($(which $1) --version &> /dev/stdout | head -n 1)"; }
-          for i in python3 git cmake ctest gcc g++ gcov; do which-realpath $i; done
-          cat ${{ env.ROCM_PATH }}/.info/version
-          ls -la
-
-      - name: Enable PC Sampling
-        if: ${{ contains(matrix.system.gpu, 'mi200') || contains(matrix.system.gpu, 'mi300a') }}
-        shell: bash
-        working-directory: projects/rocprofiler-sdk
-        run: echo 'ROCPROFILER_PC_SAMPLING_BETA_ENABLED=1' >> $GITHUB_ENV
+          cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_INSTALL_PREFIX=/opt/rocm \
+            -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache .
+          cmake --build build --parallel 16 && cmake --build build --target install
 
       - name: Configure, Build, and Test
         timeout-minutes: 30
-        shell: bash
         working-directory: projects/rocprofiler-sdk
         run: |
-          LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH \
-          PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$HOME/.local/bin:$PATH \
-          python3 ./source/scripts/run-ci.py \
-            -B build \
+          python3 ./source/scripts/run-ci.py -B build \
             --name ${{ github.repository }}-${{ github.ref_name }}-${{ matrix.system.os }}-${{ matrix.system.gpu }}-core \
-            --build-jobs 16 \
-            --mode ${CI_MODE} \
-            --site ${{ matrix.system.runner }} \
-            --gpu-targets ${{ env.GPU_TARGETS }} \
-            --run-attempt ${{ github.run_attempt }} \
-            ${{ matrix.system.ci-flags }} -- \
-            -DROCPROFILER_DEP_ROCMCORE=ON \
-            -DROCPROFILER_BUILD_DOCS=OFF \
-            -DROCPROFILER_INTERNAL_RCCL_API_TRACE=ON \
-            -DCMAKE_BUILD_TYPE=${{ matrix.system.build-type }} \
-            -DCMAKE_INSTALL_PREFIX=/opt/rocprofiler-sdk \
-            -DCPACK_GENERATOR='DEB;RPM;TGZ' \
-            -DCPACK_PACKAGING_INSTALL_PREFIX="$(realpath ${{ env.ROCM_PATH }})" \
-            -DPython3_EXECUTABLE=$(which python3) \
-            -DCMAKE_PREFIX_PATH='${{ env.ROCM_PATH }};${{ env.ROCM_PATH }}/llvm' \
-            ${{ env.GLOBAL_CMAKE_OPTIONS }} \
-            -- \
-            --parallel 4 \
-            -LE "${${{ matrix.system.gpu }}_EXCLUDE_LABEL_REGEX}" \
-            -E  "${${{ matrix.system.gpu }}_EXCLUDE_TESTS_REGEX}"
+            --build-jobs 16 --mode ${CI_MODE} --site ${{ matrix.system.runner }} \
+            --gpu-targets ${{ env.GPU_TARGETS }} --run-attempt ${{ github.run_attempt }} ${{ matrix.system.ci-flags }} -- \
+            -DROCPROFILER_DEP_ROCMCORE=ON -DROCPROFILER_BUILD_DOCS=OFF -DROCPROFILER_INTERNAL_RCCL_API_TRACE=ON \
+            -DCMAKE_BUILD_TYPE=${{ matrix.system.build-type }} -DCMAKE_INSTALL_PREFIX=/opt/rocprofiler-sdk \
+            -DCPACK_GENERATOR='DEB;RPM;TGZ' -DCPACK_PACKAGING_INSTALL_PREFIX=/opt/rocm \
+            -DPython3_EXECUTABLE=$(which python3) -DCMAKE_PREFIX_PATH='/opt/rocm;/opt/rocm/llvm' ${{ env.GLOBAL_CMAKE_OPTIONS }} -- --parallel 4
 
-      - name: Install
+      - name: Install & Package
         if: ${{ contains(matrix.system.gpu, env.CORE_EXT_RUNNER) }}
-        timeout-minutes: 10
         working-directory: projects/rocprofiler-sdk
         run: |
-          export LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH
-          export PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$PATH
           cmake --build build --target install --parallel 16
-
-      - name: Build Packaging
-        if: ${{ contains(matrix.system.gpu, env.CORE_EXT_RUNNER) }}
-        timeout-minutes: 10
-        working-directory: projects/rocprofiler-sdk
-        run: |
-          export LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH
-          export PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$PATH
           cmake --build build --target package --parallel 16
 
-      - name: Test Install Build
+      - name: Test Install
         if: ${{ contains(matrix.system.gpu, env.CORE_EXT_RUNNER) }}
-        timeout-minutes: 20
-        shell: bash
         working-directory: projects/rocprofiler-sdk
         run: |
-          export LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH
-          export PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$HOME/.local/bin:$PATH
           CMAKE_PREFIX_PATH=/opt/rocprofiler-sdk cmake -B build-samples samples
           CMAKE_PREFIX_PATH=/opt/rocprofiler-sdk cmake -B build-tests -DGPU_TARGETS="gfx942" tests
           export LD_LIBRARY_PATH=/opt/rocprofiler-sdk/lib:${LD_LIBRARY_PATH}
-          cmake --build build-samples --target all --parallel 16
-          cmake --build build-tests --target all --parallel 16
-          ctest --test-dir build-samples -LE "${${{ matrix.system.gpu }}_EXCLUDE_LABEL_REGEX}" -E "${${{ matrix.system.gpu }}_EXCLUDE_TESTS_REGEX}" --output-on-failure
-          ctest --test-dir build-tests   -LE "${${{ matrix.system.gpu }}_EXCLUDE_LABEL_REGEX}" -E "${${{ matrix.system.gpu }}_EXCLUDE_TESTS_REGEX}" --output-on-failure
+          cmake --build build-samples --parallel 16 && cmake --build build-tests --parallel 16
+          ctest --test-dir build-samples --output-on-failure && ctest --test-dir build-tests --output-on-failure
 
-      - name: Install Packages
+      - name: Install & Test Packages
         if: ${{ contains(matrix.system.gpu, env.CORE_EXT_RUNNER) }}
-        timeout-minutes: 5
-        shell: bash
         working-directory: projects/rocprofiler-sdk
         run: |
-          export LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH
-          export PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$HOME/.local/bin:$PATH
-          export PATH=${PATH}:/usr/local/sbin:/usr/sbin:/sbin
-          ls -la
-          ls -la ./build
-          dpkg --force-all -i ./build/rocprofiler-sdk-roctx_*.deb
-          dpkg --force-all -i ./build/rocprofiler-sdk-rocpd_*.deb
-          for i in $(ls -S ./build/rocprofiler-sdk*.deb | egrep -v 'roctx|rocpd'); do dpkg --force-all -i ${i}; done;
+          dpkg --force-all -i ./build/rocprofiler-sdk-roctx_*.deb ./build/rocprofiler-sdk-rocpd_*.deb
+          for i in $(ls -S ./build/rocprofiler-sdk*.deb | egrep -v 'roctx|rocpd'); do dpkg --force-all -i ${i}; done
+          CMAKE_PREFIX_PATH=/opt/rocm cmake -B build-samples-deb /opt/rocm/share/rocprofiler-sdk/samples
+          cmake --build build-samples-deb --parallel 16 && ctest --test-dir build-samples-deb --output-on-failure
 
-      - name: Test Installed Packages
-        if: ${{ contains(matrix.system.gpu, env.CORE_EXT_RUNNER) }}
-        timeout-minutes: 20
-        shell: bash
-        working-directory: projects/rocprofiler-sdk
-        run: |
-          export LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH
-          export PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$HOME/.local/bin:$PATH
-          CMAKE_PREFIX_PATH=${{ env.ROCM_PATH }} cmake -B build-samples-deb ${{ env.ROCM_PATH }}/share/rocprofiler-sdk/samples
-          CMAKE_PREFIX_PATH=${{ env.ROCM_PATH }} cmake -B build-tests-deb -DGPU_TARGETS="gfx942" ${{ env.ROCM_PATH }}/share/rocprofiler-sdk/tests
-          cmake --build build-samples-deb --target all --parallel 16
-          cmake --build build-tests-deb --target all --parallel 16
-          ctest --test-dir build-samples-deb -LE "${${{ matrix.system.gpu }}_EXCLUDE_LABEL_REGEX}" -E "${${{ matrix.system.gpu }}_EXCLUDE_TESTS_REGEX}" --output-on-failure
-          ctest --test-dir build-tests-deb   -LE "${${{ matrix.system.gpu }}_EXCLUDE_LABEL_REGEX}" -E "${${{ matrix.system.gpu }}_EXCLUDE_TESTS_REGEX}" --output-on-failure
-
-      - name: Archive production artifacts
+      - uses: actions/upload-artifact@v4
         if: ${{ github.event_name == 'workflow_dispatch' && contains(matrix.system.gpu, env.CORE_EXT_RUNNER) }}
-        uses: actions/upload-artifact@v4
         with:
-          name: installers-deb
-          path: |
-            ${{github.workspace}}/build/*.deb
-            ${{github.workspace}}/build/*.rpm
-            ${{github.workspace}}/build/*.tgz
+          name: installers-deb-${{ matrix.system.os }}-${{ matrix.system.gpu }}
+          path: ${{github.workspace}}/projects/rocprofiler-sdk/build/*.deb
 
-  # -----------------------------------------------------------------------------
-  # RHEL/SLES (RPM) job(s)
-  # -----------------------------------------------------------------------------
   core-rpm:
     name: Core • ${{ matrix.system.gpu }} • ${{ matrix.system.os }}
+    needs: [discover-rocm-tarball]
     strategy:
       fail-fast: false
       matrix:
         system:
-          - { os: 'rhel-8.8', runner: 'linux-mi325-1gpu-ossci-rocm', gpu: 'mi325', gpu-target: 'gfx94X', build-type: 'RelWithDebInfo', ci-flags: '' }
-          - { os: 'rhel-9.5', runner: 'linux-mi325-1gpu-ossci-rocm', gpu: 'mi325', gpu-target: 'gfx94X', build-type: 'RelWithDebInfo', ci-flags: '' }
-          - { os: 'sles-15.6', runner: 'linux-mi325-1gpu-ossci-rocm', gpu: 'mi325', gpu-target: 'gfx94X', build-type: 'RelWithDebInfo', ci-flags: '' }
+          - { os: 'rhel-8', runner: 'linux-mi325-1gpu-ossci-rocm', gpu: 'mi325', gpu-target: 'gfx94X-dcgpu', build-type: 'RelWithDebInfo', base-image: 'rockylinux:8.8' }
+          - { os: 'rhel-9', runner: 'linux-mi325-1gpu-ossci-rocm', gpu: 'mi325', gpu-target: 'gfx94X-dcgpu', build-type: 'RelWithDebInfo', base-image: 'rockylinux:9' }
+          - { os: 'sles-15', runner: 'linux-mi325-1gpu-ossci-rocm', gpu: 'mi325', gpu-target: 'gfx94X-dcgpu', build-type: 'RelWithDebInfo', base-image: 'opensuse/leap:15.6' }
     runs-on: ${{ matrix.system.runner }}
     container:
-      image: docker.io/rocm/rocprofiler-private:${{ matrix.system.os }}-${{ matrix.system.gpu-target }}-latest
-      credentials:
-        username: ${{ secrets.ROCPROFILER_AZURE_CI_USER }}
-        password: ${{ secrets.ROCPROFILER_AZURE_CI_PASS }}
+      image: ${{ matrix.system.base-image }}
       options: --privileged
     env:
       GIT_DISCOVERY_ACROSS_FILESYSTEM: 1
-      OS_TYPE: ${{ matrix.system.os }}
-      GPU_RUNNER: ${{ matrix.system.gpu }}
+      TARBALL_VERSION: ${{ needs.discover-rocm-tarball.outputs.tarball_version }}
     steps:
-      - name: Clone ROCProfiler SDK & AQLProfile & ROCProfiler Register & ROCR-Runtime
-        uses: actions/checkout@v5
+      - name: Install dependencies (RHEL)
+        if: ${{ contains(matrix.system.os, 'rhel') }}
+        run: |
+          dnf install -y epel-release || true
+          dnf config-manager --set-enabled powertools || dnf config-manager --set-enabled crb || true
+          dnf install -y --setopt=install_weak_deps=False ca-certificates curl wget git gcc gcc-c++ make cmake \
+            python3 python3-pip python3-devel elfutils-libelf elfutils-libelf-devel numactl-libs numactl-devel ncurses-libs openssl-libs \
+            sqlite-devel libdrm-devel perl file autoconf pkgconfig rpm-build kmod libzstd-devel ccache vim-common \
+            mesa-libGL-devel mesa-libGLU-devel mesa-libEGL-devel ninja-build && dnf clean all
+
+      - name: Install dependencies (SLES)
+        if: ${{ contains(matrix.system.os, 'sles') }}
+        run: |
+          zypper --non-interactive refresh || true
+          zypper --non-interactive install -y ca-certificates curl wget git gcc gcc-c++ make cmake ninja python3 python3-pip python3-devel \
+            libelf1 libelf-devel libnuma1 libnuma-devel libncurses6 libopenssl1_1 sqlite3-devel libdrm-devel perl file autoconf pkg-config rpm-build kmod libzstd-devel ccache vim \
+            Mesa-libGL-devel Mesa-libGLU-devel Mesa-libEGL-devel
+          zypper clean --all
+
+      - name: Install ROCm from nightly tarball
+        run: |
+          TARBALL_URL="https://rocm.nightlies.amd.com/tarball/therock-dist-linux-${{ matrix.system.gpu-target }}-${{ env.TARBALL_VERSION }}.tar.gz"
+          echo "Installing ROCm from ${TARBALL_URL}"
+          curl -fsSL -o /tmp/rocm.tar.gz "$TARBALL_URL"
+          mkdir -p /opt/rocm && tar -xzf /tmp/rocm.tar.gz -C /opt/rocm --strip-components=1
+          rm -f /tmp/rocm.tar.gz
+
+      - uses: actions/checkout@v5
         with:
           sparse-checkout: |
             projects/rocprofiler-sdk
@@ -467,428 +270,176 @@ jobs:
           submodules: false
           set-safe-directory: true
 
-      - name: Compute submodule cache key
-        id: submods
-        shell: bash
-        run: |
-          git --version
-          git config --global --add safe.directory '*'
-          git submodule status --recursive | awk '{print $1,$2}' > .git-submodules-status
-          echo "hash=$(sha256sum .git-submodules-status | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          # collect submodule paths for cache 'path'
-          git config --file .gitmodules --get-regexp path | awk '{print $2}' > .git-submodule-paths
-          { echo "paths<<EOF"; cat .git-submodule-paths; echo "EOF"; } >> "$GITHUB_OUTPUT"
+      - name: Init submodules
+        run: git config --global --add safe.directory '*' && git submodule update --init --recursive --jobs 16
 
-      - name: Restore submodule cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            .git/modules
-            ${{ steps.submods.outputs.paths }}
-          key: submods-${{ runner.os }}-${{ steps.submods.outputs.hash }}
-          restore-keys: |
-            submods-${{ runner.os }}-
-            submods-
-
-      - name: Init/Update submodules
-        run: git submodule update --init --recursive --jobs 16
-
-      - name: Install Latest Nightly ROCm using TheRock Tarballs
-        shell: bash
-        working-directory: /tmp
-        run: |
-          tar -xf ${{ env.ROCM_PATH }}-${{ matrix.system.gpu-target }}.tar.gz -C ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}
-          ln -s ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} ${{ env.ROCM_PATH }}
-          echo "ROCm installed to: ${{ env.ROCM_PATH }}"
-
-      - name: Install requirements (venv)
-        timeout-minutes: 10
-        shell: bash
+      - name: Install Python requirements
         working-directory: projects/rocprofiler-sdk
         run: |
-          git config --global --add safe.directory '*'
-          python3 -m venv ${{ env.PYTHON_VENV_PATH }}
-          source ${{ env.PYTHON_VENV_ACTIVATE }}
-          export PATH=/opt/rh/gcc-toolset-11/root/usr/bin:$PATH
-          python3 -m pip install --upgrade pip
-          python3 -m pip install --upgrade -r requirements.txt
-          rm -rf \
-            ${{ env.ROCM_PATH }}/lib/*rocprofiler-sdk* \
-            ${{ env.ROCM_PATH }}/lib/cmake/*rocprofiler-sdk* \
-            ${{ env.ROCM_PATH }}/share/*rocprofiler-sdk* \
-            ${{ env.ROCM_PATH }}/libexec/*rocprofiler-sdk*
+          python3 -m pip install -U --user -r requirements.txt cmake==3.24.0 CppHeaderParser
+          rm -rf /opt/rocm/lib/*rocprofiler-sdk* /opt/rocm/lib/cmake/*rocprofiler-sdk* /opt/rocm/share/*rocprofiler-sdk* /opt/rocm/libexec/*rocprofiler-sdk*
 
-        # on RHEL 8.8, this fixes an issue with finding libdrm_amdgpu in /usr instead of /opt/amdgpu
-      - name: Setup environment variables
-        shell: bash
+      - name: Setup environment
         run: |
-          echo "PKG_CONFIG_PATH=/opt/amdgpu/lib64/pkgconfig:/opt/amdgpu/lib/pkgconfig:/opt/amdgpu/lib/$(uname -p)-linux-gnu/pkgconfig:${PKG_CONFIG_PATH}" >> $GITHUB_ENV
-          echo "PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
+          echo "PATH=$HOME/.local/bin:/opt/rocm/bin:/opt/rocm/llvm/bin:$PATH" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/llvm/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=/opt/amdgpu/lib64/pkgconfig:/opt/amdgpu/lib/pkgconfig:${PKG_CONFIG_PATH}" >> $GITHUB_ENV
 
-      - name: Install Curl for RHEL 8.8
-        if: ${{ matrix.system.os == 'rhel-8.8' }}
-        run: |
-          dnf install -y curl
-          ln -s /usr/local/bin/curl /usr/bin/curl
+      - uses: hendrikmuhs/ccache-action@63069e3931dedbf3b63792097479563182fe70d1
+        with: { key: 'ccache-${{ matrix.system.os }}-${{ matrix.system.gpu }}', max-size: '2G', save: true }
 
-      - name: Setup ccache
-        uses: hendrikmuhs/ccache-action@63069e3931dedbf3b63792097479563182fe70d1 # v1.2.18
-        with:
-          key: ccache-${{ matrix.system.os }}-${{ matrix.system.runner }}-${{ matrix.system.gpu }}
-          max-size: 2G
-          save: true
-          variant: sccache
-
-      - name: Build and Install ROCProfiler-Register
-        shell: bash
+      - name: Build ROCProfiler-Register
         working-directory: projects/rocprofiler-register
         run: |
-          echo "Install ROCProfiler-Register"
-          cmake -B build-rocprofiler-register \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_PREFIX_PATH=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_C_COMPILER_LAUNCHER=/usr/local/bin/sccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/local/bin/sccache \
-            .
-          cmake --build build-rocprofiler-register --target all --parallel 16
-          cmake --build build-rocprofiler-register --target install
-          echo "✅ ROCProfiler-Register Installation complete!"
+          cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_INSTALL_PREFIX=/opt/rocm \
+            -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache .
+          cmake --build build --parallel 16 && cmake --build build --target install
 
-      - name: Build and Install ROCR-Runtime
+      - name: Build ROCR-Runtime
         if: ${{ env.ENABLE_ROCR_BUILD == 'true' }}
-        shell: bash
         working-directory: projects/rocr-runtime
         run: |
-          python3 -m venv ${{ env.PYTHON_VENV_PATH }}
-          source ${{ env.PYTHON_VENV_ACTIVATE }}
-          export PATH=/opt/rh/gcc-toolset-11/root/usr/bin:$PATH
-          python3 -m pip install --upgrade pip
-          python3 -m pip install --upgrade cmake
-          echo "Install ROCR-Runtime..."
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_PREFIX_PATH='${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }};${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}/llvm' \
-            -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            .
-          cmake --build build --target all --parallel 16
-          cmake --build build --target install
-          echo "✅ ROCR-Runtime Installation complete!"
+          cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH='/opt/rocm;/opt/rocm/llvm' -DCMAKE_INSTALL_PREFIX=/opt/rocm .
+          cmake --build build --parallel 16 && cmake --build build --target install
 
-      - name: Build and Install HIP
+      - name: Build HIP
         if: ${{ env.ENABLE_HIP_CLR_BUILD == 'true' }}
-        shell: bash
-        working-directory: projects
+        working-directory: projects/clr
         run: |
-          export HIP_DIR=$PWD/hip
-          export CLR_DIR=$PWD/clr
-          export LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH
-          export PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$PATH
-          echo "Install HIP..."
-          cd $CLR_DIR
-          cmake \
-            -DHIP_COMMON_DIR=$HIP_DIR \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DHIP_PLATFORM=amd \
-            -DCMAKE_PREFIX_PATH='${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }};${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}/llvm' \
-            -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DHIP_LLVM_ROOT=${{ env.ROCM_PATH }}/lib/llvm \
-            -DHIP_CATCH_TEST=0 \
-            -DCLR_BUILD_HIP=ON \
-            -DCLR_BUILD_OCL=ON \
-            -S $CLR_DIR \
-            -B build
-          cmake --build build --target all --parallel 16
-          cmake --build build --target install
-          echo "✅ HIP Installation complete!"
+          cmake -B build -DHIP_COMMON_DIR=${{ github.workspace }}/projects/hip -DCMAKE_BUILD_TYPE=RelWithDebInfo -DHIP_PLATFORM=amd \
+            -DCMAKE_PREFIX_PATH='/opt/rocm;/opt/rocm/llvm' -DCMAKE_INSTALL_PREFIX=/opt/rocm -DHIP_LLVM_ROOT=/opt/rocm/lib/llvm \
+            -DHIP_CATCH_TEST=0 -DCLR_BUILD_HIP=ON -DCLR_BUILD_OCL=OFF .
+          cmake --build build --parallel 16 && cmake --build build --target install
 
-      - name: Build and Install Aqlprofile
-        shell: bash
+      - name: Build Aqlprofile
         working-directory: projects/aqlprofile
         run: |
-          echo "Install Aqlprofile."
-          python3 -m venv ${{ env.PYTHON_VENV_PATH }}
-          source ${{ env.PYTHON_VENV_ACTIVATE }}
-          export PATH=/opt/rh/gcc-toolset-11/root/usr/bin:$PATH
-          python3 -m pip install --upgrade pip
-          python3 -m pip install --upgrade cmake
-          cmake -B build-aqlprofile \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_PREFIX_PATH=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_C_COMPILER_LAUNCHER=/usr/local/bin/sccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/local/bin/sccache \
-            .
-          cmake --build build-aqlprofile --target all --parallel 16
-          cmake --build build-aqlprofile --target install
-          echo "✅ AQLProfile Installation complete!"
-
-      - name: Enable PC Sampling
-        if: ${{ contains(matrix.system.gpu, 'mi200') || contains(matrix.system.gpu, 'mi300a') }}
-        shell: bash
-        working-directory: projects/rocprofiler-sdk
-        run:
-            echo 'ROCPROFILER_PC_SAMPLING_BETA_ENABLED=1' >> $GITHUB_ENV
-
-      - name: List Files
-        shell: bash
-        working-directory: projects/rocprofiler-sdk
-        run: |
-          source ${{ env.PYTHON_VENV_ACTIVATE }}
-          echo "PATH: ${PATH}"
-          echo "LD_LIBRARY_PATH: ${LD_LIBRARY_PATH}"
-          which-realpath() { echo -e "\n$1 resolves to $(realpath $(which $1))"; echo "$($(which $1) --version &> /dev/stdout | head -n 1)"; }
-          for i in python3 git cmake ctest gcc g++ gcov; do which-realpath $i; done
-          cat ${{ env.ROCM_PATH }}/.info/version
-          ls -la
+          cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_INSTALL_PREFIX=/opt/rocm \
+            -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache .
+          cmake --build build --parallel 16 && cmake --build build --target install
 
       - name: Configure, Build, and Test
         timeout-minutes: 30
-        shell: bash
         working-directory: projects/rocprofiler-sdk
         run: |
-          source ${{ env.PYTHON_VENV_ACTIVATE }}
-          export PATH=~/.local/bin:/opt/rh/gcc-toolset-11/root/usr/bin:$PATH
           python3 ./source/scripts/run-ci.py -B build \
             --name ${{ github.repository }}-${{ github.ref_name }}-${{ matrix.system.os }}-${{ matrix.system.gpu }}-core \
-            --mode ${CI_MODE} \
-            --build-jobs 16 \
-            --site ${{ matrix.system.runner }} \
-            --gpu-targets ${{ env.GPU_TARGETS }} \
-            --run-attempt ${{ github.run_attempt }} \
-            ${{ matrix.system.ci-flags }} \
-            -- \
-            -DROCPROFILER_DEP_ROCMCORE=ON \
-            -DROCPROFILER_BUILD_DOCS=OFF \
-            -DROCPROFILER_INTERNAL_RCCL_API_TRACE=ON \
-            -DCMAKE_BUILD_TYPE=${{ matrix.system.build-type }} \
-            -DCMAKE_PREFIX_PATH='${{ env.ROCM_PATH }};${{ env.ROCM_PATH }}/llvm' \
-            -DPython3_EXECUTABLE=$(which python3) \
-            ${{ env.GLOBAL_CMAKE_OPTIONS }} \
-            -- \
-            --parallel 4 \
-            -LE "${${{ matrix.system.gpu }}_EXCLUDE_LABEL_REGEX}" \
-            -E "${${{ matrix.system.gpu }}_EXCLUDE_TESTS_REGEX}"
+            --mode ${CI_MODE} --build-jobs 16 --site ${{ matrix.system.runner }} \
+            --gpu-targets ${{ env.GPU_TARGETS }} --run-attempt ${{ github.run_attempt }} -- \
+            -DROCPROFILER_DEP_ROCMCORE=ON -DROCPROFILER_BUILD_DOCS=OFF -DROCPROFILER_INTERNAL_RCCL_API_TRACE=ON \
+            -DCMAKE_BUILD_TYPE=${{ matrix.system.build-type }} -DCMAKE_PREFIX_PATH='/opt/rocm;/opt/rocm/llvm' \
+            -DPython3_EXECUTABLE=$(which python3) ${{ env.GLOBAL_CMAKE_OPTIONS }} -- --parallel 4
 
   sanitizers:
     name: ${{ matrix.system.sanitizer }} • ${{ matrix.system.gpu }} • ${{ matrix.system.os }}
+    needs: [discover-rocm-tarball]
+    if: ${{ contains(github.event_name, 'pull_request') }}
     strategy:
       fail-fast: false
       matrix:
         system:
-          - { sanitizer: 'AddressSanitizer', os: 'ubuntu-22.04', runner: 'linux-mi325-8gpu-ossci-rocm-sandbox', gpu: 'mi325', gpu-target: 'gfx94X', build-type: 'RelWithDebInfo' }
-          - { sanitizer: 'ThreadSanitizer', os: 'ubuntu-22.04', runner: 'linux-mi325-8gpu-ossci-rocm-sandbox', gpu: 'mi325', gpu-target: 'gfx94X', build-type: 'RelWithDebInfo' }
-          - { sanitizer: 'LeakSanitizer', os: 'ubuntu-22.04', runner: 'linux-mi325-8gpu-ossci-rocm-sandbox', gpu: 'mi325', gpu-target: 'gfx94X', build-type: 'RelWithDebInfo' }
-          - { sanitizer: 'UndefinedBehaviorSanitizer', os: 'ubuntu-22.04', runner: 'linux-mi325-8gpu-ossci-rocm-sandbox', gpu: 'mi325', gpu-target: 'gfx94X', build-type: 'RelWithDebInfo' }
-
-    if: ${{ contains(github.event_name, 'pull_request') }}
+          - { sanitizer: 'AddressSanitizer', os: 'ubuntu-22.04', runner: 'linux-mi325-8gpu-ossci-rocm-sandbox', gpu: 'mi325', gpu-target: 'gfx94X-dcgpu', build-type: 'RelWithDebInfo' }
+          - { sanitizer: 'ThreadSanitizer', os: 'ubuntu-22.04', runner: 'linux-mi325-8gpu-ossci-rocm-sandbox', gpu: 'mi325', gpu-target: 'gfx94X-dcgpu', build-type: 'RelWithDebInfo' }
+          - { sanitizer: 'LeakSanitizer', os: 'ubuntu-22.04', runner: 'linux-mi325-8gpu-ossci-rocm-sandbox', gpu: 'mi325', gpu-target: 'gfx94X-dcgpu', build-type: 'RelWithDebInfo' }
+          - { sanitizer: 'UndefinedBehaviorSanitizer', os: 'ubuntu-22.04', runner: 'linux-mi325-8gpu-ossci-rocm-sandbox', gpu: 'mi325', gpu-target: 'gfx94X-dcgpu', build-type: 'RelWithDebInfo' }
     runs-on: ${{ matrix.system.runner }}
     container:
-      image: docker.io/rocm/rocprofiler-private:${{ matrix.system.os }}-${{ matrix.system.gpu-target }}-latest
-      credentials:
-        username: ${{ secrets.ROCPROFILER_AZURE_CI_USER }}
-        password: ${{ secrets.ROCPROFILER_AZURE_CI_PASS }}
-      env:
-        DEBIAN_FRONTEND: noninteractive
+      image: ubuntu:22.04
       options: --privileged --cap-add=SYS_PTRACE --security-opt seccomp=unconfined
-
-    # define this for containers
     env:
       GIT_DISCOVERY_ACROSS_FILESYSTEM: 1
+      DEBIAN_FRONTEND: noninteractive
+      TARBALL_VERSION: ${{ needs.discover-rocm-tarball.outputs.tarball_version }}
       GCC_COMPILER_VERSION: 12
-      GPU_RUNNER: ${{ matrix.system.gpu }}
-
     steps:
-    - name: Install Latest Nightly ROCm
-      shell: bash
-      working-directory: /tmp
-      run: |
-        ls -lah /opt/
-        tar -xf ${{ env.ROCM_PATH }}-${{ matrix.system.gpu-target }}.tar.gz -C ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}
-        ln -s ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} ${{ env.ROCM_PATH }}
-        echo "ROCm installed to: ${{ env.ROCM_PATH }}"
+      - name: Install dependencies
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends \
+            ca-certificates curl wget git build-essential cmake python3 python3-pip software-properties-common clang-15 \
+            libasan8 libtsan2 libdw-dev libsqlite3-dev libdrm-dev file autoconf pkg-config ccache \
+            libnuma-dev xxd libgl1-mesa-dev libglu1-mesa-dev libglx-dev libegl1-mesa-dev
+          add-apt-repository ppa:ubuntu-toolchain-r/test && apt-get update
+          apt-get install -y gcc-${{ env.GCC_COMPILER_VERSION }} g++-${{ env.GCC_COMPILER_VERSION }}
+          update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-${{ env.GCC_COMPILER_VERSION }} 100 \
+            --slave /usr/bin/g++ g++ /usr/bin/g++-${{ env.GCC_COMPILER_VERSION }} --slave /usr/bin/gcov gcov /usr/bin/gcov-${{ env.GCC_COMPILER_VERSION }}
 
-    - name: Clone ROCProfiler SDK & AQLProfile & ROCProfiler Register & ROCR-Runtime
-      uses: actions/checkout@v5
-      with:
-        sparse-checkout: |
-          projects/rocprofiler-sdk
-          projects/aqlprofile
-          projects/rocprofiler-register
-          projects/rocr-runtime
-          projects/clr
-          projects/hip
-        submodules: false
-        set-safe-directory: true
+      - name: Install ROCm from nightly tarball
+        run: |
+          TARBALL_URL="https://rocm.nightlies.amd.com/tarball/therock-dist-linux-${{ matrix.system.gpu-target }}-${{ env.TARBALL_VERSION }}.tar.gz"
+          echo "Installing ROCm from ${TARBALL_URL}"
+          curl -fsSL -o /tmp/rocm.tar.gz "$TARBALL_URL"
+          mkdir -p /opt/rocm && tar -xzf /tmp/rocm.tar.gz -C /opt/rocm --strip-components=1
+          rm -f /tmp/rocm.tar.gz
 
-    - name: Compute submodule cache key
-      id: submods
-      shell: bash
-      run: |
-        git --version
-        git config --global --add safe.directory '*'
-        git submodule status --recursive | awk '{print $1,$2}' > .git-submodules-status
-        echo "hash=$(sha256sum .git-submodules-status | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-        # collect submodule paths for cache 'path'
-        git config --file .gitmodules --get-regexp path | awk '{print $2}' > .git-submodule-paths
-        { echo "paths<<EOF"; cat .git-submodule-paths; echo "EOF"; } >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v5
+        with:
+          sparse-checkout: |
+            projects/rocprofiler-sdk
+            projects/aqlprofile
+            projects/rocprofiler-register
+            projects/rocr-runtime
+            projects/clr
+            projects/hip
+          submodules: false
+          set-safe-directory: true
 
-    - name: Restore submodule cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          .git/modules
-          ${{ steps.submods.outputs.paths }}
-        key: submods-${{ runner.os }}-${{ steps.submods.outputs.hash }}
-        restore-keys: |
-          submods-${{ runner.os }}-
-          submods-
+      - name: Init submodules
+        run: git config --global --add safe.directory '*' && git submodule update --init --recursive --jobs 16
 
-    - name: Init/Update submodules
-      run: git submodule update --init --recursive --jobs 16
+      - name: Install Python requirements
+        working-directory: projects/rocprofiler-sdk
+        run: |
+          python3 -m pip install -U --user -r requirements.txt cmake==3.24.0 CppHeaderParser
+          rm -rf /opt/rocm/lib/*rocprofiler-sdk* /opt/rocm/lib/cmake/*rocprofiler-sdk* /opt/rocm/share/*rocprofiler-sdk* /opt/rocm/libexec/*rocprofiler-sdk*
 
-    - name: Install requirements
-      timeout-minutes: 10
-      shell: bash
-      working-directory: projects/rocprofiler-sdk
-      run: |
-        git config --global --add safe.directory '*'
-        apt-get update
-        apt-get install -y build-essential cmake python3-pip libasan8 libtsan2 software-properties-common clang-15 libdw-dev libsqlite3-dev libdrm-dev file autoconf pkg-config
-        add-apt-repository ppa:ubuntu-toolchain-r/test
-        apt-get update
-        apt-get upgrade -y
-        apt-get install -y gcc-${{ env.GCC_COMPILER_VERSION }} g++-${{ env.GCC_COMPILER_VERSION }}
-        update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-${{ env.GCC_COMPILER_VERSION }} 100 --slave /usr/bin/g++ g++ /usr/bin/g++-${{ env.GCC_COMPILER_VERSION }} --slave /usr/bin/gcov gcov /usr/bin/gcov-${{ env.GCC_COMPILER_VERSION }}
-        python3 -m pip install -U --user -r requirements.txt
-        python3 -m pip install -U --user cmake==3.24.0
-        rm -rf ${{ env.ROCM_PATH }}/lib/*rocprofiler-sdk* ${{ env.ROCM_PATH }}/lib/cmake/*rocprofiler-sdk* ${{ env.ROCM_PATH }}/share/*rocprofiler-sdk* ${{ env.ROCM_PATH }}/libexec/*rocprofiler-sdk* ${{ env.ROCM_PATH }}*/lib/python*/site-packages/roctx ${{ env.ROCM_PATH }}*/lib/python*/site-packages/rocpd
+      - name: Setup environment
+        run: |
+          echo "PATH=$HOME/.local/bin:/opt/rocm/bin:/opt/rocm/llvm/bin:$PATH" >> $GITHUB_ENV
+          echo "LD_LIBRARY_PATH=/opt/rocm/lib:/opt/rocm/llvm/lib:${LD_LIBRARY_PATH}" >> $GITHUB_ENV
+          echo "PKG_CONFIG_PATH=/opt/amdgpu/lib64/pkgconfig:/opt/amdgpu/lib/pkgconfig:${PKG_CONFIG_PATH}" >> $GITHUB_ENV
 
-    - name: Setup environment variables
-      shell: bash
-      run: |
-        echo "PKG_CONFIG_PATH=/opt/amdgpu/lib64/pkgconfig:/opt/amdgpu/lib/pkgconfig:/opt/amdgpu/lib/$(uname -p)-linux-gnu/pkgconfig:${PKG_CONFIG_PATH}" >> $GITHUB_ENV
-        echo "PATH=$HOME/.local/bin:$PATH" >> $GITHUB_ENV
+      - uses: hendrikmuhs/ccache-action@63069e3931dedbf3b63792097479563182fe70d1
+        with: { key: 'ccache-${{ matrix.system.os }}-${{ matrix.system.gpu }}-${{ matrix.system.sanitizer }}', max-size: '2G', save: true }
 
-    - name: List Files
-      shell: bash
-      working-directory: projects/rocprofiler-sdk
-      run: |
-        which-realpath() { echo -e "\n$1 resolves to $(realpath $(which $1))"; echo "$($(which $1) --version &> /dev/stdout | head -n 1)"; }
-        for i in python3 git cmake ctest gcc g++ gcov; do which-realpath $i; done
-        cat ${{ env.ROCM_PATH }}/.info/version
-        ls -la
+      - name: Build ROCProfiler-Register
+        working-directory: projects/rocprofiler-register
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_INSTALL_PREFIX=/opt/rocm \
+            -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache .
+          cmake --build build --parallel 16 && cmake --build build --target install
 
-    - name: Enable PC Sampling
-      if: ${{ contains(matrix.system.gpu, 'mi200') || contains(matrix.system.gpu, 'mi300a') }}
-      shell: bash
-      working-directory: projects/rocprofiler-sdk
-      run: echo 'ROCPROFILER_PC_SAMPLING_BETA_ENABLED=1' >> $GITHUB_ENV
+      - name: Build ROCR-Runtime
+        if: ${{ env.ENABLE_ROCR_BUILD == 'true' }}
+        working-directory: projects/rocr-runtime
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH='/opt/rocm;/opt/rocm/llvm' -DCMAKE_INSTALL_PREFIX=/opt/rocm .
+          cmake --build build --parallel 16 && cmake --build build --target install
 
-    - name: Setup ccache
-      uses: hendrikmuhs/ccache-action@63069e3931dedbf3b63792097479563182fe70d1 # v1.2.18
-      with:
-        key: ccache-${{ matrix.system.os }}-${{ matrix.system.runner }}-${{ matrix.system.gpu }}-${{ matrix.system.sanitizer}}
-        max-size: 2G
-        save: true
+      - name: Build HIP
+        if: ${{ env.ENABLE_HIP_CLR_BUILD == 'true' }}
+        working-directory: projects/clr
+        run: |
+          cmake -B build -DHIP_COMMON_DIR=${{ github.workspace }}/projects/hip -DCMAKE_BUILD_TYPE=RelWithDebInfo -DHIP_PLATFORM=amd \
+            -DCMAKE_PREFIX_PATH='/opt/rocm;/opt/rocm/llvm' -DCMAKE_INSTALL_PREFIX=/opt/rocm -DHIP_LLVM_ROOT=/opt/rocm/lib/llvm \
+            -DHIP_CATCH_TEST=0 -DCLR_BUILD_HIP=ON -DCLR_BUILD_OCL=OFF .
+          cmake --build build --parallel 16 && cmake --build build --target install
 
-    - name: Build and Install ROCProfiler-Register
-      shell: bash
-      working-directory: projects/rocprofiler-register
-      run: |
-        echo "Install ROCProfiler-Register"
-        cmake -B build-rocprofiler-register \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_PREFIX_PATH=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache \
-            .
-        cmake --build build-rocprofiler-register --target all --parallel 16
-        cmake --build build-rocprofiler-register --target install
-        echo "✅ ROCProfiler-Register Installation complete!"
+      - name: Build Aqlprofile
+        working-directory: projects/aqlprofile
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DCMAKE_PREFIX_PATH=/opt/rocm -DCMAKE_INSTALL_PREFIX=/opt/rocm \
+            -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache .
+          cmake --build build --parallel 16 && cmake --build build --target install
 
-    - name: Build and Install ROCR-Runtime
-      if: ${{ env.ENABLE_ROCR_BUILD == 'true' }}
-      shell: bash
-      working-directory: projects/rocr-runtime
-      run: |
-        echo "Install ROCR-Runtime..."
-        cmake -B build \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_PREFIX_PATH='${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }};${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}/llvm' \
-            -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache \
-            .
-        cmake --build build --target all --parallel 16
-        cmake --build build --target install
-        echo "✅ ROCR-Runtime Installation complete!"
-
-    - name: Build and Install HIP
-      if: ${{ env.ENABLE_HIP_CLR_BUILD == 'true' }}
-      shell: bash
-      working-directory: projects
-      run: |
-        export HIP_DIR=$PWD/hip
-        export CLR_DIR=$PWD/clr
-        export LD_LIBRARY_PATH=${{ env.ROCM_PATH }}/lib:${{ env.ROCM_PATH }}/llvm/lib:$LD_LIBRARY_PATH
-        export PATH=${{ env.ROCM_PATH }}/bin:${{ env.ROCM_PATH }}/llvm/bin:$PATH
-        echo "Install HIP..."
-        cd $CLR_DIR
-        cmake \
-          -DHIP_COMMON_DIR=$HIP_DIR \
-          -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-          -DHIP_PLATFORM=amd \
-          -DCMAKE_PREFIX_PATH='${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }};${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }}/llvm' \
-          -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-          -DHIP_LLVM_ROOT=${{ env.ROCM_PATH }}/lib/llvm \
-          -DHIP_CATCH_TEST=0 \
-          -DCLR_BUILD_HIP=ON \
-          -DCLR_BUILD_OCL=ON \
-          -S $CLR_DIR \
-          -B build
-        cmake --build build --target all --parallel 16
-        cmake --build build --target install
-        echo "✅ HIP Installation complete!"
-
-    - name: Build and Install Aqlprofile
-      shell: bash
-      working-directory: projects/aqlprofile
-      run: |
-        echo "Install Aqlprofile."
-        cmake -B build-aqlprofile \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
-            -DCMAKE_PREFIX_PATH=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_INSTALL_PREFIX=${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} \
-            -DCMAKE_C_COMPILER_LAUNCHER=/usr/bin/ccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=/usr/bin/ccache \
-            .
-        cmake --build build-aqlprofile --target all --parallel 16
-        cmake --build build-aqlprofile --target install
-        echo "✅ Installation complete!"
-
-    - name: Configure, Build, and Test
-      timeout-minutes: 45
-      shell: bash
-      working-directory: projects/rocprofiler-sdk
-      run:
-        sudo sysctl -w vm.mmap_rnd_bits=28;
-        export PATH="$HOME/.local/bin:$PATH";
-        python3 ./source/scripts/run-ci.py -B build
-          --name ${{ github.repository }}-${{ github.ref_name }}-${{ matrix.system.os }}-${{ matrix.system.gpu }}-${{ matrix.system.sanitizer }}
-          --build-jobs 16
-          --site ${{ matrix.system.runner }}
-          --gpu-targets ${{ env.GPU_TARGETS }}
-          --memcheck ${{ matrix.system.sanitizer }}
-          --run-attempt ${{ github.run_attempt }}
-          --
-          -DROCPROFILER_INTERNAL_RCCL_API_TRACE=ON \
-          -DCMAKE_BUILD_TYPE=${{ matrix.system.build-type }}
-          -DCMAKE_INSTALL_PREFIX="${{ env.ROCM_PATH }}"
-          -DCMAKE_PREFIX_PATH='${{ env.ROCM_PATH }};${{ env.ROCM_PATH }}/llvm'
-          -DPython3_EXECUTABLE=$(which python3)
-          ${{ env.GLOBAL_CMAKE_OPTIONS }}
-          --
-          -LE "${${{ matrix.system.gpu }}_EXCLUDE_LABEL_REGEX}"
-          -E "${${{ matrix.system.gpu }}_EXCLUDE_TESTS_REGEX}"
+      - name: Configure, Build, and Test with Sanitizer
+        timeout-minutes: 45
+        working-directory: projects/rocprofiler-sdk
+        run: |
+          sudo sysctl -w vm.mmap_rnd_bits=28 || true
+          python3 ./source/scripts/run-ci.py -B build \
+            --name ${{ github.repository }}-${{ github.ref_name }}-${{ matrix.system.os }}-${{ matrix.system.gpu }}-${{ matrix.system.sanitizer }} \
+            --build-jobs 16 --site ${{ matrix.system.runner }} --gpu-targets ${{ env.GPU_TARGETS }} \
+            --memcheck ${{ matrix.system.sanitizer }} --run-attempt ${{ github.run_attempt }} -- \
+            -DROCPROFILER_INTERNAL_RCCL_API_TRACE=ON -DCMAKE_BUILD_TYPE=${{ matrix.system.build-type }} \
+            -DCMAKE_INSTALL_PREFIX=/opt/rocm -DCMAKE_PREFIX_PATH='/opt/rocm;/opt/rocm/llvm' \
+            -DPython3_EXECUTABLE=$(which python3) ${{ env.GLOBAL_CMAKE_OPTIONS }} -- --parallel 4
