@@ -9,9 +9,7 @@
 # YAML metric label for that arch (documentation / review only — runtime uses
 # ids only).
 #
-# Semantics: listed metrics get coalescing tier 0 (packed before others) and,
-# when ROCPROF_COMPUTE_PERFMON_CP_SAT=1, CP-SAT same-bin constraints so all PMCs
-# for that formula share one pmc_perf_* bucket when IP limits allow.
+# Semantics: listed metrics get coalescing tier 0 (packed before others).
 #
 # Use an empty mapping ``{}`` when an architecture has no extra policy.
 # =============================================================================
