@@ -12,12 +12,17 @@ import pandas as pd
 from tabulate import tabulate
 
 import config
-from utils import mem_chart, parser, schema
+from utils import mem_chart, mem_chart_gfx11, parser, schema
 from utils.kernel_name_shortener import (
     kernel_name_shortener,
 )
 from utils.logger import console_error, console_log, console_warning
-from utils.utils_analysis import NS_TO_MS, CallTreeNode, simplify_kernel_name
+from utils.utils_analysis import (
+    NS_TO_MS,
+    CallTreeNode,
+    get_bw_scale_and_unit,
+    simplify_kernel_name,
+)
 from utils.utils_common import (
     METRIC_ID_RE,
     convert_metric_id_to_panel_info,
@@ -37,6 +42,104 @@ KERNEL_NAME_WRAP_WIDTH = 40
 def wrap_kernel_name(name: str) -> str:
     """Wrap a kernel name at KERNEL_NAME_WRAP_WIDTH for table display."""
     return textwrap.fill(str(name), width=KERNEL_NAME_WRAP_WIDTH)
+
+
+def format_bw_columns_human_readable(
+    df: pd.DataFrame, value_columns: list[str], decimal: int = 2
+) -> pd.DataFrame:
+    """
+    Format bandwidth columns in a DataFrame to human-readable format.
+
+    Detects rows with 'Bytes/s' in Unit column and formats corresponding value columns.
+    The scaling is determined by the primary value column (Value or Avg), and all
+    related columns (Peak, etc.) are scaled to the same unit for consistency.
+    Pct of Peak is recalculated as (Value / Peak) * 100.
+
+    Args:
+        df: DataFrame with Unit column and value columns
+        value_columns: List of column names containing numeric values to format
+        decimal: Number of decimal places
+
+    Returns:
+        DataFrame with formatted bandwidth values (values and units separated)
+    """
+    if "Unit" not in df.columns:
+        return df
+
+    df_copy = df.copy()
+
+    # Find rows with Bytes/s unit (case-insensitive)
+    bw_rows = df_copy["Unit"].str.lower().str.contains("bytes/s", na=False)
+
+    if not bw_rows.any():
+        return df_copy
+
+    # Columns that hold percentage values (should be recalculated)
+    pct_cols = ["Pct of Peak", "PoP"]
+
+    for idx in df_copy.index[bw_rows]:
+        # Determine the scale based on the primary value column
+        primary_value = None
+        for col in ["Value", "Avg"]:
+            if col in df_copy.columns:
+                try:
+                    val = df_copy.loc[idx, col]
+                    if pd.notna(val) and val != "N/A":
+                        primary_value = float(val)
+                        break
+                except (ValueError, TypeError):
+                    continue
+
+        if primary_value is None or primary_value == 0:
+            continue
+
+        # Get the scale and unit based on the primary value
+        divisor, unit = get_bw_scale_and_unit(primary_value)
+
+        # Scale all numeric bandwidth columns with the same divisor
+        for col in value_columns:
+            if col not in df_copy.columns:
+                continue
+            try:
+                val = df_copy.loc[idx, col]
+                if pd.notna(val) and val != "N/A":
+                    scaled_val = float(val) / divisor
+                    df_copy.loc[idx, col] = round(scaled_val, decimal)
+            except (ValueError, TypeError):
+                pass  # Keep original value if conversion fails
+
+        # Recalculate Pct of Peak = (Value or Avg) / Peak * 100
+        for pct_col in pct_cols:
+            if pct_col not in df_copy.columns:
+                continue
+            try:
+                # Get the value and peak in the same scaled units
+                value_col = "Value" if "Value" in df_copy.columns else "Avg"
+                peak_col = (
+                    "Peak (Empirical)"
+                    if "Peak (Empirical)" in df_copy.columns
+                    else "Peak"
+                )
+
+                if value_col in df_copy.columns and peak_col in df_copy.columns:
+                    val = df_copy.loc[idx, value_col]
+                    peak = df_copy.loc[idx, peak_col]
+                    if (
+                        pd.notna(val)
+                        and pd.notna(peak)
+                        and val != "N/A"
+                        and peak != "N/A"
+                        and float(peak) != 0
+                    ):
+                        pct = (float(val) / float(peak)) * 100
+                        df_copy.loc[idx, pct_col] = round(pct, decimal)
+            except (ValueError, TypeError, ZeroDivisionError):
+                pass  # Keep original value if calculation fails
+
+        # Update the Unit column with the actual unit
+        df_copy.loc[idx, "Unit"] = unit
+
+    return df_copy
 
 
 def string_multiple_lines(source: str, width: int, max_rows: int) -> str:
@@ -548,6 +651,108 @@ def process_table_data(
     return result_df
 
 
+def _gfx115_mem_chart_heading(panel: Optional[dict[str, Any]], normal_unit: str) -> str:
+    """Section number from ``panel id // 100`` (panel 300 → ``3. Memory Chart``)."""
+    panel_id = int((panel or {}).get("id", 300))
+    return mem_chart_gfx11.format_mem_chart_heading(normal_unit, panel_id=panel_id)
+
+
+def _panel_is_mem_chart_only(panel: dict[str, Any]) -> bool:
+    """True when every table uses ``cli_style: mem_chart`` (one merged chart)."""
+    sources = panel.get("data source") or []
+    if not sources:
+        return False
+    for ds in sources:
+        for _ttype, tcfg in ds.items():
+            if tcfg.get("cli_style") != "mem_chart":
+                return False
+    return True
+
+
+def flatten_mem_chart_tables(
+    args: argparse.Namespace,
+    runs: dict[str, Any],
+    panel: dict[str, Any],
+    table_config: dict[str, Any],
+    mem_data: dict[str, Any],
+    comparable_columns: list[str],
+    hidden_cols: list[str],
+) -> tuple[str, bool]:
+    """
+    Flatten multiple mem_chart tables into a single combined memory chart.
+
+    Returns:
+        tuple: (content string, should_skip boolean)
+            - content: The formatted memory chart output (empty if should skip)
+            - should_skip: True if this table should be skipped (not the first table)
+    """
+    # Collect all mem_chart table IDs from the panel
+    mem_chart_table_ids = []
+    for ds in panel["data source"]:
+        for ttype, tconfig in ds.items():
+            if tconfig.get("cli_style") == "mem_chart":
+                mem_chart_table_ids.append(tconfig["id"])
+
+    # Sort to ensure we process in order
+    mem_chart_table_ids.sort()
+
+    # Check if this is the first mem_chart table
+    if mem_chart_table_ids and table_config["id"] == mem_chart_table_ids[0]:
+        # Initialize combined mem_data with current table
+        combined_mem_data = mem_data.copy()
+
+        # Iterate through remaining mem_chart tables and merge their data
+        for table_id in mem_chart_table_ids[1:]:
+            # Find the table config for this ID
+            for ds in panel["data source"]:
+                for ttype, tconfig in ds.items():
+                    if tconfig["id"] == table_id:
+                        # Get the dataframe for this table
+                        table_df = process_table_data(
+                            args,
+                            runs,
+                            tconfig,
+                            ttype,
+                            comparable_columns,
+                            hidden_cols,
+                        )
+                        if (
+                            not table_df.empty
+                            and "Metric" in table_df.columns
+                            and "Value" in table_df.columns
+                        ):
+                            # Convert to dict and merge
+                            table_mem_data = (
+                                pd
+                                .DataFrame([table_df["Metric"], table_df["Value"]])
+                                .transpose()
+                                .set_index("Metric")
+                                .to_dict()["Value"]
+                            )
+                            combined_mem_data.update(table_mem_data)
+                        break
+
+        # Plot the combined memory chart
+        content = (
+            mem_chart_gfx11.plot_mem_chart(
+                "",
+                args.normal_unit,
+                combined_mem_data,
+                chart_title=_gfx115_mem_chart_heading(panel, args.normal_unit),
+            )
+            + "\n"
+        )
+        return content, False
+
+    # Skip plotting for subsequent mem_chart tables as they're already included
+    # in the first table's plot
+    elif mem_chart_table_ids and table_config["id"] in mem_chart_table_ids[1:]:
+        return "", True
+
+    # Not a mem_chart table or no other mem_chart tables found
+    return "", False
+
+
 def format_table_output(
     args: argparse.Namespace,
     table_config: dict[str, Any],
@@ -555,6 +760,10 @@ def format_table_output(
     table_type: str,
     runs: dict[str, Any],
     csv_dir: Optional[Path] = None,
+    gpu_arch: Optional[str] = None,
+    panel: Optional[dict[str, Any]] = None,
+    comparable_columns: Optional[list[str]] = None,
+    hidden_cols: Optional[list[str]] = None,
 ) -> str:
     """Format table for output, handling special cases and saving to files if needed."""
 
@@ -573,7 +782,12 @@ def format_table_output(
         console_log(f"Not showing table with empty column(s): {table_id_str} {title}")
         return content
 
-    if "title" in table_config and table_config["title"]:
+    # mem_chart diagram mode: one merged chart, no per-table titles (3.1, 3.2, …).
+    # With --view table, keep titles so tabular output stays navigable.
+    skip_mem_chart_title = table_config.get(
+        "cli_style"
+    ) == "mem_chart" and not _tty_view_is_table(args)
+    if "title" in table_config and table_config["title"] and not skip_mem_chart_title:
         content += f"{table_id_str} {table_config['title']}\n"
 
     if args.output_format == "csv" and csv_dir and csv_dir.is_dir():
@@ -600,6 +814,16 @@ def format_table_output(
     # fash for now.
     transpose = table_type != "raw_csv_table" and table_config.get("columnwise", False)
 
+    # For single run and gfx115x, format BW metrics (Bytes/s) to human-readable
+    # For multiple runs (baseline comparison), keep Bytes for accurate comparison
+    is_single_run = len(runs) == 1
+    is_gfx115x = gpu_arch and gpu_arch.startswith("gfx115")
+
+    if is_single_run and is_gfx115x and "Unit" in df.columns:
+        # Identify value columns to format
+        value_cols = ["Value", "Avg", "Min", "Max", "Peak", "Peak (Empirical)"]
+        df = format_bw_columns_human_readable(df, value_cols, args.decimal)
+
     # When --view table is set, force table output and ignore cli_style from config
     use_mem_chart = (
         not _tty_view_is_table(args)
@@ -617,7 +841,41 @@ def format_table_output(
             .set_index("Metric")
             .to_dict()["Value"]
         )
-        content += mem_chart.plot_mem_chart("", args.normal_unit, mem_data) + "\n"
+        # Select appropriate mem_chart module based on GPU architecture
+        if (
+            gpu_arch
+            and gpu_arch.startswith("gfx115")
+            and panel
+            and comparable_columns
+            and hidden_cols
+        ):
+            # For gfx115x, flatten all mem_chart tables in the panel into a single
+            # mem_data dict
+            chart_content, should_skip = flatten_mem_chart_tables(
+                args,
+                runs,
+                panel,
+                table_config,
+                mem_data,
+                comparable_columns,
+                hidden_cols,
+            )
+            if should_skip:
+                return ""  # Already merged into the first mem_chart table's output
+            elif chart_content:
+                content += chart_content
+            else:
+                content += (
+                    mem_chart_gfx11.plot_mem_chart(
+                        "",
+                        args.normal_unit,
+                        mem_data,
+                        chart_title=_gfx115_mem_chart_heading(panel, args.normal_unit),
+                    )
+                    + "\n"
+                )
+        else:
+            content += mem_chart.plot_mem_chart("", args.normal_unit, mem_data) + "\n"
     else:
         content += (
             get_table_string(df, transpose=transpose, decimal=args.decimal) + "\n"
@@ -640,6 +898,14 @@ def show_all(
     comparable_columns = parser.build_comparable_columns(args.time_unit)
     raw_filter_panel_ids = profiling_config.get("filter_blocks", [])
     csv_dir = None
+
+    # Get gpu_arch from the first run's sys_info
+    first_run = next(iter(runs.values()))
+    gpu_arch = (
+        first_run.sys_info.iloc[0]["gpu_arch"]
+        if hasattr(first_run, "sys_info") and not first_run.sys_info.empty
+        else None
+    )
 
     if isinstance(raw_filter_panel_ids, dict):
         # For backward compatibility
@@ -784,18 +1050,29 @@ def show_all(
 
                 if not processed_df.empty:
                     panel_content += format_table_output(
-                        args, table_config, processed_df, table_type, runs, csv_dir
+                        args,
+                        table_config,
+                        processed_df,
+                        table_type,
+                        runs,
+                        csv_dir,
+                        gpu_arch,
+                        panel,
+                        comparable_columns,
+                        hidden_cols,
                     )
 
         # Roofline printing is handled separately above in is_roofline_shown.
-        # When --view table is set, roofline tables (401/402) are rendered as normal
-        # tables.
+        # With --view table, roofline tables (401/402) render as normal tables.
         if panel_content and (
             table_config["id"] not in [401, 402] or _tty_view_is_table(args)
         ):
-            print(f"\n{'-' * 80}", file=output)
-            print(f"{panel_id // 100}. {panel['title']}", file=output)
-            print(panel_content, file=output)
+            if _panel_is_mem_chart_only(panel) and not _tty_view_is_table(args):
+                print(panel_content, file=output)
+            else:
+                print(f"\n{'-' * 80}", file=output)
+                print(f"{panel_id // 100}. {panel['title']}", file=output)
+                print(panel_content, file=output)
 
 
 def show_roof_plot(roof_plot: str) -> None:

@@ -98,6 +98,21 @@ def convert_dbs_to_csv(
                         )
 
 
+def _is_cycle_counter(name: str) -> bool:
+    """Identify counters that measure cycles (scale with kernel duration).
+
+    Cycle-based counters accumulate proportionally to wall-clock time and
+    need cross-pass normalization. Event-based counters (instruction counts,
+    cache request counts, wave counts) are deterministic per dispatch and
+    must not be scaled.
+    """
+    upper = name.upper()
+    if upper.startswith("GRBM_"):
+        return True
+    cycle_keywords = ("CYCLES", "BUSY", "ACTIVE", "STALL", "WAIT", "ACCUM")
+    return any(kw in upper for kw in cycle_keywords)
+
+
 def update_rocpd_pmc_events(counter_info: list[dict], rocpd_db_path: str) -> None:
     """Updates pmc_event table in the given rocpd database path."""
     try:
