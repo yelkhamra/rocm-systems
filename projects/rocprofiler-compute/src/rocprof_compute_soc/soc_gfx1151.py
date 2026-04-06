@@ -1,17 +1,6 @@
 # Copyright (c) Advanced Micro Devices, Inc.
 # SPDX-License-Identifier:  MIT
 
-"""
-gfx1151 SoC Support - RDNA 3.5 Architecture
-
-RDNA 3.5 (Strix / Strix Halo class) APU iGPU featuring:
-- Workgroup Processors (WGPs) with 2 CUs each
-- 2 SIMD32 units per CU (Wave32 primary wavefront size)
-- Cache hierarchy: TCP (L0) → GL1C (L1) → GL2C (L2)
-- VALU (vector ALU) throughput
-- WMMA (wave matrix multiply-accumulate): gfx12-family ops (e.g. FP16/BF16/INT8)
-"""
-
 import argparse
 from typing import Any, Optional
 
@@ -30,10 +19,9 @@ class gfx1151_soc(OmniSoC_Base):
         self.set_perfmon_config(mi_gpu_specs.get_perfmon_config("gfx1151"))
 
         # Set arch specific specs for RDNA3.5
-        # These values may need adjustment based on actual hardware
-        self._mspec.l2_banks = 8  # Typical for APU
-        self._mspec.lds_banks_per_cu = 32  # Standard RDNA3.5 LDS config
-        self._mspec.pipes_per_gpu = 2  # APU typically has fewer pipes
+        self._mspec.l2_banks = 8
+        self._mspec.lds_banks_per_cu = 32
+        self._mspec.pipes_per_gpu = 2
 
     # -----------------------
     # Required child methods

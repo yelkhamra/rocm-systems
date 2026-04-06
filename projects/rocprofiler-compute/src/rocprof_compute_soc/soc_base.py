@@ -468,7 +468,7 @@ class OmniSoC_Base:
                     break
             if placed:
                 continue
-            new_bucket = CounterFile(f"pmc_perf_{file_count}.txt", cfg)
+            new_bucket = CounterFile(str(file_count), cfg)
             trial = _trial_counter_file_with_extra(new_bucket, cfg, need_sorted)
             if trial is not None and _flat_counters_in_perfmon_file(trial):
                 output_files.append(trial)
@@ -590,7 +590,7 @@ class OmniSoC_Base:
         file_count = file_count_start
         for bucket_items in partition:
             bucket = CounterFile(
-                f"pmc_perf_{file_count}.txt",
+                str(file_count),
                 self.__perfmon_config,
             )
             file_count += 1
@@ -756,9 +756,7 @@ class OmniSoC_Base:
                 and not is_tcc_channel_counter(counter)
             ):
                 work.remove(counter)
-                output_files.append(
-                    CounterFile(counter + ".txt", self.__perfmon_config)
-                )
+                output_files.append(CounterFile(counter, self.__perfmon_config))
                 output_files[-1].add(counter)
                 output_files[-1].add(f"{counter}_ACCUM")
                 accu_file_count += 1
@@ -795,9 +793,7 @@ class OmniSoC_Base:
                     break
 
             if not added:
-                output_files.append(
-                    CounterFile(f"pmc_perf_{file_count}.txt", self.__perfmon_config)
-                )
+                output_files.append(CounterFile(str(file_count), self.__perfmon_config))
                 file_count += 1
                 output_files[-1].add(ctr)
 
@@ -1372,11 +1368,9 @@ class LimitedSet:
 # block limited according to perfmon config.
 class CounterFile:
     def __init__(self, name: str, perfmon_config: dict[str, int]) -> None:
-        # ``name`` is a logical bucket id, often ``pmc_perf_N.txt`` or ``<LEVEL>.txt``.
-        stem = name.split(".")[0]
-        self.file_name_txt: str = f"{stem}.txt"
-        self.pmc_filename: str = f"{stem}.yaml"
-        self.counter_def_filename: str = f"counter_def_{stem}.yaml"
+        self.file_name_txt: str = f"pmc_perf_{name}.txt"
+        self.pmc_filename: str = f"pmc_perf_{name}.yaml"
+        self.counter_def_filename: str = f"counter_def_{name}.yaml"
         self.blocks: dict[str, LimitedSet] = {
             block: LimitedSet(capacity) for block, capacity in perfmon_config.items()
         }
@@ -1395,14 +1389,16 @@ class CounterFile:
 
 def _is_general_perfmon_bucket(bucket: CounterFile) -> bool:
     """True for standard multi-counter passes; false for LEVEL-only files."""
-    return bucket.file_name_txt.startswith("pmc_perf_")
+    return "LEVEL" not in bucket.file_name_txt
 
 
 def _clone_counter_file(
     source: CounterFile,
     perfmon_config: dict[str, int],
 ) -> CounterFile:
-    duplicate = CounterFile(source.file_name_txt, perfmon_config)
+    # Strip pmc_perf_ prefix and .txt suffix to recover the original name.
+    original_name = source.file_name_txt.removeprefix("pmc_perf_").removesuffix(".txt")
+    duplicate = CounterFile(original_name, perfmon_config)
     for ctr in _flat_counters_in_perfmon_file(source):
         if not duplicate.add(ctr):
             msg = f"clone replay failed for {ctr!r} in {source.file_name_txt}"
