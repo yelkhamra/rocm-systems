@@ -237,48 +237,6 @@ def _apply_soc_derived_mspec_fields(specs: MachineSpecs) -> None:
 
 
 @demarcate
-def machine_specs_for_arch_yaml_preview(args: argparse.Namespace) -> MachineSpecs:
-    """
-    Minimal MachineSpecs for ``--dry-run --arch``: YAML/config for that GPU only —
-    no rocminfo, AMDGPU, or amd-smi queries.
-    """
-    raw_arch = args.profile_arch_override
-    arch = canonical_gpu_arch(raw_arch)
-    if arch is None:
-        console_error(f"Invalid GPU architecture for yaml preview: {raw_arch!r}")
-
-    now = datetime.now()
-    local_now = now.astimezone()
-    local_tzname = local_now.tzinfo.tzname(local_now)  # type: ignore
-    timestamp = f"{now.strftime('%c')} ({local_tzname}) [yaml-preview]"
-
-    version = get_version(config.rocprof_compute_home)["version"]
-    specs_version = version[: version.find(".")]
-
-    # rocminfo_lines=None marks yaml-preview: downstream must not parse AMDGPU text.
-    specs = MachineSpecs(
-        version=specs_version,
-        timestamp=timestamp,
-        hostname=socket.gethostname(),
-        gpu_arch=arch,
-        rocminfo_lines=None,
-    )
-
-    try:
-        # Construct SoC once so arch-specific defaults populate MachineSpecs fields.
-        soc_module = importlib.import_module(f"rocprof_compute_soc.soc_{arch}")
-        soc_class = getattr(soc_module, f"{arch}_soc")
-        soc_class(args, specs)
-    except (ModuleNotFoundError, AttributeError) as e:
-        console_error(
-            f"Architecture {arch} is not available for yaml-only preview: {e}"
-        )
-
-    _apply_soc_derived_mspec_fields(specs)
-    return specs
-
-
-@demarcate
 def extract_machine_info() -> dict[str, Any]:
     result: dict[str, Optional[str]] = {
         "cpu_model": None,

@@ -25,9 +25,7 @@ from utils.logger import (
 from utils.mi_gpu_spec import mi_gpu_specs
 from utils.specs import (
     MachineSpecs,
-    canonical_gpu_arch,
     generate_machine_specs,
-    machine_specs_for_arch_yaml_preview,
 )
 from utils.utils_common import (
     build_metric_list,
@@ -81,22 +79,7 @@ class RocProfCompute:
         )
 
         if self.__mode != "analyze" and not skip_machine_specs:
-            arch_override = getattr(self.__args, "profile_arch_override", None)
-            profile_dry_run = getattr(self.__args, "profile_dry_run", False)
-            # profile + --dry-run + --arch: build MachineSpecs from SoC YAML only so
-            # bucket planning works off-host without rocminfo or a live GPU.
-            if (
-                self.__mode == "profile"
-                and profile_dry_run
-                and arch_override is not None
-            ):
-                self.__mspec = machine_specs_for_arch_yaml_preview(self.__args)
-            else:
-                self.generate_machine_specs()
-                if arch_override is not None and self.__mode == "profile":
-                    coerced = canonical_gpu_arch(arch_override)
-                    if coerced is not None:
-                        self.__mspec.gpu_arch = coerced
+            self.generate_machine_specs()
 
         self.handle_list_args()
 
@@ -130,11 +113,6 @@ class RocProfCompute:
         )
 
     def detect_profiler(self) -> None:
-        if getattr(self.__args, "profile_dry_run", False):
-            # Dry-run never launches rocprofiler-sdk; skip tool path checks.
-            self.__profiler_mode = "rocprofiler-sdk"
-            return
-
         profiler_mode = detect_rocprof(self.__args)
         if str(profiler_mode).endswith("rocprofv3"):
             self.__profiler_mode = "rocprofv3"
@@ -183,19 +161,6 @@ class RocProfCompute:
         ) and block:
             console_error("Cannot use --list-available-metrics with --blocks")
 
-        # profile --dry-run: arch must be explicit (YAML-only path); same idea as
-        # --list-metrics <arch>, which also requires an arch argument.
-        if (
-            self.__mode == "profile"
-            and getattr(self.__args, "profile_dry_run", False)
-            and getattr(self.__args, "profile_arch_override", None) is None
-        ):
-            console_error(
-                "profile --dry-run requires --arch <GFX> (e.g. gfx1151). "
-                "The arch selects analysis_configs/<arch> for bucket planning without "
-                "rocminfo or a live GPU, like --list-metrics <arch> for metric listing."
-            )
-
         # Validate block 30 requires --membw-analysis and --experimental
         filter_list: list[str] = []
         if hasattr(self.__args, "filter_blocks") and self.__args.filter_blocks:
@@ -217,11 +182,7 @@ class RocProfCompute:
                     )
 
         # fallback to csv output format, if rocpd public api not available
-        if (
-            self.__mode == "profile"
-            and self.__args.format_rocprof_output == "rocpd"
-            and not getattr(self.__args, "profile_dry_run", False)
-        ):
+        if self.__mode == "profile" and self.__args.format_rocprof_output == "rocpd":
             rocpd_path = resolve_rocm_library_path(
                 str(
                     Path(self.__args.rocprofiler_sdk_tool_path).parents[1]
@@ -237,11 +198,10 @@ class RocProfCompute:
                 self.__args.format_rocprof_output = "csv"
 
         # Validate name and output directory arguments in profiling mode
-        # Skip validation if only listing metrics or sets (or dry-run: no workload dir)
+        # Skip validation if only listing metrics or sets
         if self.__mode == "profile" and (
             self.__args.list_metrics is None
             and not getattr(self.__args, "list_available_metrics", False)
-            and not getattr(self.__args, "profile_dry_run", False)
             and not getattr(self.__args, "list_sets", False)
             and not getattr(self.__args, "list_blocks", False)
             and not getattr(self.__args, "specs", False)
@@ -268,17 +228,6 @@ class RocProfCompute:
 
     def replace_parameters_in_output_directory(self) -> None:
         """Replace parameters in output directory path"""
-        if getattr(self.__args, "profile_dry_run", False):
-            # Default workload layout still expects a path; use a fixed placeholder
-            # when no --name so sanitize does not require a real workload directory.
-            if self.__args.name is None and self.__args.output_directory == str(
-                Path.cwd() / "workloads"
-            ):
-                dry = Path.cwd() / "workloads" / "_dry_run"
-                self.__args.output_directory = str(dry)
-                self.__args.path = str(dry)
-                return
-
         # Add --name to output directory if --output-directory is not given
         if self.__args.output_directory == str(Path.cwd() / "workloads"):
             self.__args.output_directory = str(
@@ -552,13 +501,6 @@ class RocProfCompute:
         # instantiate desired profiler
         profiler = self.create_profiler()
         profiler.sanitize()
-
-        if getattr(self.__args, "profile_dry_run", False):
-            # pre_processing prints perfmon layout + multi-bucket metric scan; skip
-            # mkdir, file logging, gen_sysinfo, and run_profiling.
-            profiler.pre_processing()
-            console_log("profiling", "Dry-run complete (no workload executed).")
-            return
 
         # Create workload directory if it does not exist
         p = Path(self.__args.path)

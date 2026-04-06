@@ -33,7 +33,6 @@ def load_sys_info(f: str) -> pd.DataFrame:
 
     df = pd.read_csv(f)
     if "gpu_arch" in df.columns and not df.empty:
-        df = df.copy()
         df["gpu_arch"] = df["gpu_arch"].map(
             lambda x: canonical_gpu_arch(str(x)) if pd.notna(x) else x
         )
