@@ -933,6 +933,37 @@ void GraphExec::FindStreamsReqPerDevForSegments() {
 }
 
 // ================================================================================================
+void GraphExec::PrecomputeStreamAssignment() {
+  size_t num_streams = streams_.empty() ? max_streams_ : streams_.size();
+  if (num_streams == 0) num_streams = 1;
+
+  for (int level = 0; level <= max_dependency_level_; ++level) {
+    auto it = segments_per_level_.find(level);
+    if (it == segments_per_level_.end()) continue;
+
+    const auto& segs_at_level = it->second;
+    for (size_t idx = 0; idx < segs_at_level.size(); ++idx) {
+      int seg_id = segs_at_level[idx];
+      if (seg_id >= 0 && seg_id < static_cast<int>(segments_.size())) {
+        segments_[seg_id].stream_id = static_cast<int>(idx % num_streams);
+      }
+    }
+  }
+
+  for (auto& seg : segments_) {
+    seg.needs_completion_signal = false;
+    for (int edge_id : seg.segment_ids_edges) {
+      if (edge_id >= 0 && edge_id < static_cast<int>(segments_.size())) {
+        if (segments_[edge_id].stream_id != seg.stream_id) {
+          seg.needs_completion_signal = true;
+          break;
+        }
+      }
+    }
+  }
+}
+
+// ================================================================================================
 hipError_t GraphExec::Init() {
   hipError_t status = hipSuccess;
   // Set instantiation device ID early so Find functions can use it
@@ -966,6 +997,10 @@ hipError_t GraphExec::Init() {
   if (use_segment_scheduling_) {
     // For graph nodes capture AQL packets to dispatch them directly during graph launch.
     status = CaptureAQLPackets();
+
+    // Pre-compute stream assignment: segment → stream index (round-robin per level)
+    // This makes stream mapping O(1) at launch and enables same-stream dep detection.
+    PrecomputeStreamAssignment();
   }
 
   static_cast<ReferenceCountedObject*>(hip::getCurrentDevice())->retain();
@@ -1443,8 +1478,6 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
     }
   };
 
-  // Track stream assignments and dependencies across levels
-  std::unordered_map<int, hip::Stream*> segment_to_stream;
   std::unordered_map<int, void*> segment_hw_event;
   std::unordered_map<hip::Stream*, amd::AccumulateCommand*> stream_accumulate;
 
@@ -1464,7 +1497,6 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
     }
 
     const auto& segments_at_level = level_it->second;
-    AssignStreamsToSegments(segments_at_level, launch_stream, streams, segment_to_stream);
 
     if (level == 0) {
       // Synchronize internal streams with launch stream's last command if available
@@ -1475,7 +1507,7 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
 
         // For each segment at level 0, if it's on a different stream, add a wait marker
         for (int segment_id : segments_at_level) {
-          hip::Stream* seg_stream = segment_to_stream[segment_id];
+          hip::Stream* seg_stream = streams[segments_[segment_id].stream_id];
           if (seg_stream != launch_stream) {
             auto marker = new amd::Marker(*seg_stream, true, launch_wait_list);
             if (marker != nullptr) {
@@ -1490,17 +1522,13 @@ amd::Command* GraphExec::EnqueueSegmentedGraph(hip::Stream* launch_stream,
 
     for (int segment_id : segments_at_level) {
       const auto& segment = segments_[segment_id];
-      hip::Stream* current_stream = segment_to_stream[segment_id];
+      hip::Stream* current_stream = streams[segment.stream_id];
 
       // Handle cross-stream dependencies with hardware events
       std::vector<void*> hw_event_list;
       for (int dep_segment_id : segment.segment_ids_dependencies) {
-        auto stream_it = segment_to_stream.find(dep_segment_id);
-        if (stream_it == segment_to_stream.end()) {
-          continue;
-        }
-
-        hip::Stream* dep_stream = stream_it->second;
+        int dep_stream_idx = segments_[dep_segment_id].stream_id;
+        hip::Stream* dep_stream = streams[dep_stream_idx];
         auto hw_event_it = segment_hw_event.find(dep_segment_id);
         if (current_stream != dep_stream && hw_event_it != segment_hw_event.end() &&
             hw_event_it->second != nullptr) {
@@ -1646,23 +1674,10 @@ hipError_t GraphExec::EnqueueSegment(const Segment& segment, hip::Stream* stream
     return hipSuccess;
   }
 
-  bool is_not_first_in_level = false;
-  if (segment.dependency_level >= 0) {
-    auto level_it = segments_per_level_.find(segment.dependency_level);
-    if (level_it != segments_per_level_.end() && !level_it->second.empty()) {
-      // Check if this segment is NOT the first in its dependency level
-      // by searching through all segments at this level
-      if (!(level_it->second[0] == segment.id)) {
-        is_not_first_in_level = true;
-      }
-    }
-  }
   // Process all nodes in this segment
   for (size_t i = 0; i < segment.nodes.size(); ++i) {
-    // Need HW event if: 1) this is the last node in segment AND
-    // 2) segment has multiple edges (fork/join point requiring synchronization) OR
-    // 3) there are multiple segments at this level and this segment is not the first
-    *out_attach_signal = (segment.segment_ids_edges.size() > 1 || is_not_first_in_level);
+    // Use pre-computed flag: only attach signal if a downstream segment is on a different stream
+    *out_attach_signal = segment.needs_completion_signal;
     auto& node = segment.nodes[i];
     if (!node->GraphCaptureEnabled()) {
       if (DEBUG_HIP_GRAPH_DOT_PRINT) {
