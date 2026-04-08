@@ -974,6 +974,17 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
       }
     }
 
+    if (cmd_buffer_.valid && cmd_buffer_.device_ptr != nullptr) {
+      if (instantiateDeviceId_ >= 0 &&
+          instantiateDeviceId_ < static_cast<int>(g_devices.size()) &&
+          g_devices[instantiateDeviceId_] != nullptr) {
+        auto* device = g_devices[instantiateDeviceId_]->devices()[0];
+        device->svmFree(cmd_buffer_.device_ptr);
+      }
+      cmd_buffer_.device_ptr = nullptr;
+      cmd_buffer_.valid = false;
+    }
+
     segmentBatches_.clear();
   }
 
@@ -1033,10 +1044,29 @@ class GraphExec : public amd::ReferenceCountedObject, public Graph {
   void FindStreamsReqPerDevForSegments();
   //! Pre-compute segment-to-stream-index mapping and same-stream dep flags at instantiate
   void PrecomputeStreamAssignment();
+  //! Check if graph is a single-branch, all-captured-kernel graph
+  bool IsSingleBranchAllCaptured() const;
+  //! Build device-memory command buffer from captured packets
+  hipError_t BuildCommandBuffer();
   //! Get the parallel streams map for synchronization before destruction
   const std::unordered_map<int, std::vector<hip::Stream*>>& GetParallelStreams() const {
     return parallel_streams_;
   }
+
+  //! Device-side command buffer for optimized single-branch graph dispatch.
+  //! Layout: [kernel_pkt_0] ... [kernel_pkt_N-1]
+  //! A scheduler kernel copies these packets to the HW queue at launch.
+  struct CommandBuffer {
+    uint8_t* device_ptr = nullptr;
+    size_t kernel_packet_count = 0;
+    size_t total_packet_count = 0;   // kernel_packet_count
+    size_t byte_size = 0;
+    bool valid = false;
+
+    static constexpr size_t kPacketSize = 64;
+    size_t KernelPacketsOffset() const { return 0; }
+  };
+  CommandBuffer cmd_buffer_;
 
  protected:
   //! Assign streams to segments at a given dependency level

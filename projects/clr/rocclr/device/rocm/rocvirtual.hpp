@@ -403,6 +403,8 @@ class VirtualGPU : public device::VirtualDevice {
   hsa_queue_t* gpu_queue() { return gpu_queue_; }
   void set_gpu_queue(hsa_queue_t* gpu_queue) { gpu_queue_ = gpu_queue; }
 
+  bool runGraphSchedulerKernel(void* cmd_buffer, uint32_t packet_count) override;
+
   // Return pointer to PrintfDbg
   PrintfDbg* printfDbg() const { return printfdbg_; }
 

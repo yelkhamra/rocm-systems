@@ -292,6 +292,7 @@ class KernelBlitManager : public DmaBlitManager {
     GwsInit,
     InitHeap,
     BatchMemOp,
+    GraphScheduler,
     BlitLinearTotal,
     FillImage = BlitLinearTotal,
     BlitCopyImage,
@@ -311,6 +312,13 @@ class KernelBlitManager : public DmaBlitManager {
 
   //! Creates DmaBlitManager object
   virtual bool create(amd::Device& device);
+
+  //! Dispatches the graph scheduler kernel to copy pre-built AQL packets to the HW queue
+  bool runGraphScheduler(
+      void* cmd_buffer,
+      uint32_t total_packet_count,
+      void* queue_ptr
+  ) const;
 
   //! Copies a buffer object to another buffer object
   virtual bool copyBufferRect(
@@ -598,6 +606,7 @@ static const char* BlitName[KernelBlitManager::BlitTotal] = {
     "__amd_rocclr_streamOpsWrite",    "__amd_rocclr_streamOpsWait",
     "__amd_rocclr_scheduler",         "__amd_rocclr_gwsInit",
     "__amd_rocclr_initHeap",          "__amd_rocclr_batchMemOp",
+    "__amd_rocclr_graphScheduler",
     "__amd_rocclr_fillImage",         "__amd_rocclr_copyImage",
     "__amd_rocclr_copyImage1DA",      "__amd_rocclr_copyImageToBuffer",
     "__amd_rocclr_copyBufferToImage"};

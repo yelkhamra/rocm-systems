@@ -1322,6 +1322,10 @@ class VirtualDevice : public amd::ReferenceCountedObject {
                                       const std::vector<const std::string*>& kernelNames,
                                       amd::AccumulateCommand* vcmd = nullptr,
                                       bool attach_signal = false) = 0;
+
+  //! Dispatches a graph scheduler kernel that copies pre-built packets to the HW queue
+  virtual bool runGraphSchedulerKernel(void* cmd_buffer, uint32_t packet_count) { return false; }
+
   //! Returns the number of outstanding HSA async handlers
   std::atomic<uint64_t>& QueuedAsyncHandlers() const { return queued_async_handlers_; }
 
