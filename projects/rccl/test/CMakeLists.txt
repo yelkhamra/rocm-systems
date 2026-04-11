@@ -166,6 +166,7 @@ if(BUILD_TESTS)
   # Collect testing framework source files
   set(TEST_SOURCE_FILES
     AllGatherTests.cpp
+    AllReduceBiasTests.cpp
     AllReduceTests.cpp
     AllToAllTests.cpp
     AllToAllVTests.cpp
