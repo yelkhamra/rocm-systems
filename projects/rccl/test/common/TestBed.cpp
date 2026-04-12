@@ -752,7 +752,8 @@ namespace RcclUnitTesting
             continue;
           }
 
-          // Only allocate once for largest size
+          // Only allocate once for largest size; bias reuses the same allocation
+          // since PrepareData copies only numBiasElements (current) bytes, not the full allocated size
           if (neIdx == 0)
           {
             this->AllocateMem(inPlaceList[ipIdx], managedMemList[mmIdx]);
@@ -768,7 +769,6 @@ namespace RcclUnitTesting
             // There are some cases when data does not need to be re-prepared
             // e.g. AllReduce subarray expected results are still valid
             bool canSkip = (neIdx != 0 && !inPlaceList[ipIdx] &&
-                            !optionalArgs.useBias &&
                             (funcTypes[ftIdx] == ncclCollBroadcast ||
                              funcTypes[ftIdx] == ncclCollReduce    ||
                              funcTypes[ftIdx] == ncclCollAllReduce));
