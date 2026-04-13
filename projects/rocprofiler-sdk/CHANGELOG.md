@@ -33,6 +33,7 @@ Full documentation for ROCprofiler-SDK is available at [rocm.docs.amd.com/projec
 
 ### Changed
 - Bump rocpd schema to version 3.0.1 which supports NIC agent types.
+- Improved `rocpd` capability to convert sampling data from `rocprofiler-systems` database to Perfetto trace.
 
 ### Removed
 
