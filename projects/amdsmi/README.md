@@ -37,6 +37,49 @@ The following are required to install and use the AMD SMI library through its la
   export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/opt/rocm/lib:/opt/rocm/lib64
   ```
 
+### Build requirements
+
+AMD SMI automatically selects the best available compiler in the following priority order:
+
+1. **amdclang++** (recommended) - AMD's optimized Clang compiler from ROCm installation
+2. **clang++** - System Clang compiler
+3. **g++** - GCC compiler (legacy, with warning)
+
+**No compiler flags are required.** The build system automatically detects and uses the best available compiler.
+
+#### Standard build
+
+```bash
+mkdir -p build
+cd build
+cmake ..          # Automatically selects: amdclang++ → clang++ → gcc
+make -j $(nproc)
+make install
+```
+
+#### Compiler search paths
+
+For optimal ROCm compatibility, install ROCm which includes `amdclang++`. The build automatically searches for amdclang++ in:
+- `$ROCM_PATH/llvm/bin/amdclang++` (if `ROCM_PATH` environment variable is set)
+- `/opt/rocm/llvm/bin/amdclang++` (default ROCm installation path)
+- `$ROCM_PATH/lib/llvm/bin/amdclang++` (alternate location)
+
+#### Troubleshooting
+
+If automatic compiler detection fails or you want to use a specific compiler:
+
+```bash
+# Check which compilers are available
+which amdclang++ clang++ g++
+
+# Explicitly specify compiler (overrides auto-detection)
+cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang ..
+
+# Set custom ROCm path
+export ROCM_PATH=/custom/rocm/path
+cmake ..
+```
+
 ### Python interface and CLI tool prerequisites
 
 * Python 3.6.8+ (64-bit)
