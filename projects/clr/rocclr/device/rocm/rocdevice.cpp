@@ -777,6 +777,24 @@ bool Device::createBlitProgram() {
 // ================================================================================================
 #include "device/rocm/graph_scheduler_blob.h"
 
+static bool resolveKernelSymbol(hsa_executable_t exec, hsa_agent_t agent,
+                                const char* name,
+                                uint64_t* kernel_object,
+                                uint32_t* private_size,
+                                uint32_t* group_size) {
+  hsa_executable_symbol_t symbol = {};
+  hsa_status_t st = Hsa::executable_get_symbol_by_name(exec, name, &agent, &symbol);
+  if (st != HSA_STATUS_SUCCESS) return false;
+
+  Hsa::executable_symbol_get_info(symbol,
+      HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_OBJECT, kernel_object);
+  Hsa::executable_symbol_get_info(symbol,
+      HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_PRIVATE_SEGMENT_SIZE, private_size);
+  Hsa::executable_symbol_get_info(symbol,
+      HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_GROUP_SEGMENT_SIZE, group_size);
+  return true;
+}
+
 bool Device::loadGraphSchedulerHSACO() {
   hsa_code_object_reader_t reader = {};
   hsa_status_t st = Hsa::code_object_reader_create_from_memory(
@@ -801,34 +819,120 @@ bool Device::loadGraphSchedulerHSACO() {
   }
 
   Hsa::executable_freeze(graph_scheduler_executable_, nullptr);
+  Hsa::code_object_reader_destroy(reader);
 
+  // Resolve flat scheduler (required)
   hsa_executable_symbol_t symbol = {};
   st = Hsa::executable_get_symbol_by_name(graph_scheduler_executable_,
       "__amd_rocclr_graphSchedulerHIP.kd", &bkendDevice_, &symbol);
   if (st != HSA_STATUS_SUCCESS) {
     Hsa::executable_destroy(graph_scheduler_executable_);
-    Hsa::code_object_reader_destroy(reader);
     return false;
   }
+  Hsa::executable_symbol_get_info(symbol,
+      HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_OBJECT, &graph_scheduler_kernel_object_);
+  Hsa::executable_symbol_get_info(symbol,
+      HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_KERNARG_SEGMENT_SIZE, &graph_scheduler_kernarg_size_);
+  Hsa::executable_symbol_get_info(symbol,
+      HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_PRIVATE_SEGMENT_SIZE, &graph_scheduler_private_size_);
+  Hsa::executable_symbol_get_info(symbol,
+      HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_GROUP_SEGMENT_SIZE, &graph_scheduler_group_size_);
 
-  Hsa::executable_symbol_get_info(symbol,
-      HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_OBJECT,
-      &graph_scheduler_kernel_object_);
-  Hsa::executable_symbol_get_info(symbol,
-      HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_KERNARG_SEGMENT_SIZE,
-      &graph_scheduler_kernarg_size_);
-  Hsa::executable_symbol_get_info(symbol,
-      HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_PRIVATE_SEGMENT_SIZE,
-      &graph_scheduler_private_size_);
-  Hsa::executable_symbol_get_info(symbol,
-      HSA_EXECUTABLE_SYMBOL_INFO_KERNEL_GROUP_SEGMENT_SIZE,
-      &graph_scheduler_group_size_);
+  ClPrint(amd::LOG_INFO, amd::LOG_CODE,
+      "[GraphScheduler] Flat scheduler loaded: kernel_obj=0x%lx",
+      graph_scheduler_kernel_object_);
 
-  Hsa::code_object_reader_destroy(reader);
-  printf("[GraphScheduler] HSACO loaded: kernel_obj=0x%lx kernarg=%u private=%u group=%u\n",
-         graph_scheduler_kernel_object_, graph_scheduler_kernarg_size_,
-         graph_scheduler_private_size_, graph_scheduler_group_size_);
+  // Resolve block-based kernels (optional, for multi-block path)
+  bool block_ok = resolveKernelSymbol(graph_scheduler_executable_, bkendDevice_,
+      "__amd_rocclr_graphBlockIssue.kd",
+      &graph_block_issue_kernel_object_,
+      &graph_block_issue_private_size_,
+      &graph_block_issue_group_size_);
+
+  bool branch_ok = resolveKernelSymbol(graph_scheduler_executable_, bkendDevice_,
+      "__amd_rocclr_graphBranch.kd",
+      &graph_branch_kernel_object_,
+      &graph_branch_private_size_,
+      &graph_branch_group_size_);
+
+  bool cond_ok = resolveKernelSymbol(graph_scheduler_executable_, bkendDevice_,
+      "__amd_rocclr_graphCondBranch.kd",
+      &graph_cond_branch_kernel_object_,
+      &graph_cond_branch_private_size_,
+      &graph_cond_branch_group_size_);
+
+  bool ret_ok = resolveKernelSymbol(graph_scheduler_executable_, bkendDevice_,
+      "__amd_rocclr_graphReturn.kd",
+      &graph_return_kernel_object_,
+      &graph_return_private_size_,
+      &graph_return_group_size_);
+
+  bool while_ok = resolveKernelSymbol(graph_scheduler_executable_, bkendDevice_,
+      "__amd_rocclr_graphWhileLoop.kd",
+      &graph_while_loop_kernel_object_,
+      &graph_while_loop_private_size_,
+      &graph_while_loop_group_size_);
+
+  bool cond_while_ok = resolveKernelSymbol(graph_scheduler_executable_, bkendDevice_,
+      "__amd_rocclr_graphCondBranchWhile.kd",
+      &graph_cond_branch_while_kernel_object_,
+      &graph_cond_branch_while_private_size_,
+      &graph_cond_branch_while_group_size_);
+
+  if (block_ok && branch_ok && ret_ok) {
+    ClPrint(amd::LOG_INFO, amd::LOG_CODE,
+        "[GraphScheduler] Block-based kernels loaded: blockIssue=0x%lx branch=0x%lx "
+        "condBranch=0x%lx condBranchWhile=0x%lx return=0x%lx whileLoop=0x%lx",
+        graph_block_issue_kernel_object_, graph_branch_kernel_object_,
+        graph_cond_branch_kernel_object_, graph_cond_branch_while_kernel_object_,
+        graph_return_kernel_object_, graph_while_loop_kernel_object_);
+  } else {
+    ClPrint(amd::LOG_INFO, amd::LOG_CODE,
+        "[GraphScheduler] Block-based kernels not available in HSACO "
+        "(block=%d branch=%d cond=%d ret=%d while=%d), multi-block path disabled",
+        block_ok, branch_ok, cond_ok, ret_ok, while_ok);
+  }
+
   return true;
+}
+
+// ================================================================================================
+uint64_t Device::createGraphSignal(int64_t initial_value) {
+  hsa_signal_t sig = {};
+  hsa_status_t st = Hsa::signal_create(initial_value, 0, nullptr, &sig);
+  return (st == HSA_STATUS_SUCCESS) ? sig.handle : 0;
+}
+
+void Device::destroyGraphSignal(uint64_t handle) {
+  if (handle != 0) {
+    hsa_signal_t sig;
+    sig.handle = handle;
+    Hsa::signal_destroy(sig);
+  }
+}
+
+void Device::storeGraphSignal(uint64_t handle, int64_t value) {
+  if (handle != 0) {
+    hsa_signal_t sig;
+    sig.handle = handle;
+    Hsa::signal_store_screlease(sig, value);
+  }
+}
+
+uint64_t Device::createGraphCompletionEvent(void** hw_event_out) {
+  if (hw_event_out == nullptr) return 0;
+
+  auto* profSig = new ProfilingSignal();
+  hsa_status_t st = Hsa::signal_create(1, 0, nullptr, &profSig->signal_);
+  if (st != HSA_STATUS_SUCCESS) {
+    delete profSig;
+    *hw_event_out = nullptr;
+    return 0;
+  }
+  profSig->flags_.done_ = false;
+
+  *hw_event_out = reinterpret_cast<void*>(profSig);
+  return profSig->signal_.handle;
 }
 
 device::Program* Device::createProgram(amd::Program& owner, amd::option::Options* options) {
@@ -2354,6 +2458,10 @@ void Device::memFree(void* ptr, size_t size) const {
   }
 }
 
+void Device::deviceLocalFree(void* ptr) const {
+  memFree(ptr, 0);
+}
+
 void Device::updateFreeMemory(size_t size, bool free) {
   if (free) {
     freeMem_ += size;
@@ -3047,7 +3155,7 @@ hsa_queue_t* Device::AcquireActiveQueue(amd::CommandQueue::Priority priority) {
 hsa_queue_t* Device::acquireQueue(uint32_t queue_size_hint, bool coop_queue,
                                   const std::vector<uint32_t>& cuMask,
                                   amd::CommandQueue::Priority priority, bool managed,
-                                  bool dedicated_queue) {
+                                  bool dedicated_queue, bool device_mem) {
   hsa_amd_queue_priority_t queue_priority;
   uint qIndex;
   switch (priority) {
@@ -3126,13 +3234,22 @@ hsa_queue_t* Device::acquireQueue(uint32_t queue_size_hint, bool coop_queue,
     queue_type = HSA_QUEUE_TYPE_COOPERATIVE;
   }
 
-  while (Hsa::queue_create(bkendDevice_, queue_size, queue_type, callbackQueue, this,
-                           std::numeric_limits<uint>::max(), std::numeric_limits<uint>::max(),
-                           &queue) != HSA_STATUS_SUCCESS) {
+  auto create_fn = [&](uint32_t sz, hsa_queue_t** q) -> hsa_status_t {
+    if (device_mem) {
+      uint64_t flags = HSA_AMD_QUEUE_CREATE_DEVICE_MEM_RING_BUF;
+      return Hsa::queue_create_with_flags(bkendDevice_, sz, queue_type, callbackQueue, this,
+                                          std::numeric_limits<uint>::max(),
+                                          std::numeric_limits<uint>::max(), flags, q);
+    }
+    return Hsa::queue_create(bkendDevice_, sz, queue_type, callbackQueue, this,
+                             std::numeric_limits<uint>::max(),
+                             std::numeric_limits<uint>::max(), q);
+  };
+
+  while (create_fn(queue_size, &queue) != HSA_STATUS_SUCCESS) {
     queue_size >>= 1;
     if (queue_size < 64) {
       LogError("Device::acquireQueue: hsa_queue_create failed!");
-      // If we can't create even a small queue, try to reuse any existing queue
       if (!coop_queue && (cuMask.size() == 0)) {
         amd::ScopedLock l(active_queue_access_);
         if (queuePool_[qIndex].size() > 0) {

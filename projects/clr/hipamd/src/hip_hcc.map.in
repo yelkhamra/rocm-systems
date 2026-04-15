@@ -658,3 +658,11 @@ global:
 local:
     *;
 } hip_7.1;
+
+hip_7.3 {
+global:
+    hipGraphConditionalHandleCreate;
+    hipGraphAddConditionalNode;
+local:
+    *;
+} hip_7.2;

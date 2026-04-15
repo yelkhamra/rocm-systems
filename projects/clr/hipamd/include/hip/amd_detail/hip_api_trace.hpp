@@ -48,7 +48,7 @@
 #define HIP_API_TABLE_STEP_VERSION 0
 #define HIP_COMPILER_API_TABLE_STEP_VERSION 0
 #define HIP_TOOLS_API_TABLE_STEP_VERSION 0
-#define HIP_RUNTIME_API_TABLE_STEP_VERSION 26
+#define HIP_RUNTIME_API_TABLE_STEP_VERSION 27
 
 // HIP API interface
 // HIP compiler dispatch functions
@@ -1112,6 +1112,19 @@ typedef hipError_t (*t_hipKernelSetAttribute)(hipFunction_attribute attrib,
 
 typedef hipError_t (*t_hipKernelGetFunction)(hipFunction_t* pFunc, hipKernel_t kernel);
 
+typedef hipError_t (*t_hipGraphConditionalHandleCreate)(hipGraphConditionalHandle* pHandle,
+                                                        hipGraph_t graph,
+                                                        unsigned int defaultValue,
+                                                        unsigned int flags);
+typedef hipError_t (*t_hipGraphAddConditionalNode)(hipGraphNode_t* pGraphNode,
+                                                   hipGraph_t graph,
+                                                   const hipGraphNode_t* pDependencies,
+                                                   size_t numDependencies,
+                                                   hipGraphConditionalHandle handle,
+                                                   hipGraphConditionalType type,
+                                                   unsigned int numConditionalGraphs,
+                                                   hipGraph_t* conditionalGraphs,
+                                                   unsigned int flags);
 
 typedef hipError_t (*t_hipKernelGetParamInfo)(hipKernel_t kernel, size_t paramIndex,
                                               size_t* paramOffset, size_t* paramSize);
@@ -1735,8 +1748,12 @@ struct HipDispatchTable {
   // HIP_RUNTIME_API_TABLE_STEP_VERSION == 26
   t_hipMemPrefetchBatchAsync hipMemPrefetchBatchAsync_fn;
 
-  // DO NOT EDIT ABOVE!
   // HIP_RUNTIME_API_TABLE_STEP_VERSION == 27
+  t_hipGraphConditionalHandleCreate hipGraphConditionalHandleCreate_fn;
+  t_hipGraphAddConditionalNode hipGraphAddConditionalNode_fn;
+
+  // DO NOT EDIT ABOVE!
+  // HIP_RUNTIME_API_TABLE_STEP_VERSION == 28
 
   // ******************************************************************************************* //
   //

@@ -3198,3 +3198,27 @@ hipError_t hipKernelGetFunction(hipFunction_t* pFunc, hipKernel_t kernel) {
   return hip::GetHipDispatchTable()->hipKernelGetFunction_fn(pFunc, kernel) ;
   CATCH;
 }
+hipError_t hipGraphConditionalHandleCreate(hipGraphConditionalHandle* pHandle,
+                                           hipGraph_t graph,
+                                           unsigned int defaultValue,
+                                           unsigned int flags) {
+  TRY;
+  return hip::GetHipDispatchTable()->hipGraphConditionalHandleCreate_fn(pHandle, graph,
+                                                                        defaultValue, flags);
+  CATCH;
+}
+hipError_t hipGraphAddConditionalNode(hipGraphNode_t* pGraphNode,
+                                      hipGraph_t graph,
+                                      const hipGraphNode_t* pDependencies,
+                                      size_t numDependencies,
+                                      hipGraphConditionalHandle handle,
+                                      hipGraphConditionalType type,
+                                      unsigned int numConditionalGraphs,
+                                      hipGraph_t* conditionalGraphs,
+                                      unsigned int flags) {
+  TRY;
+  return hip::GetHipDispatchTable()->hipGraphAddConditionalNode_fn(
+      pGraphNode, graph, pDependencies, numDependencies, handle, type,
+      numConditionalGraphs, conditionalGraphs, flags);
+  CATCH;
+}

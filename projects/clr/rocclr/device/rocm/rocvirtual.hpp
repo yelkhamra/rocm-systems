@@ -404,6 +404,12 @@ class VirtualGPU : public device::VirtualDevice {
   void set_gpu_queue(hsa_queue_t* gpu_queue) { gpu_queue_ = gpu_queue; }
 
   bool runGraphSchedulerKernel(void* cmd_buffer, uint32_t packet_count) override;
+  bool runGraphBlockIssue(void* exec_state_ptr, uint32_t total_graph_packets = 0) override;
+  bool runGraphWhileLoop(void* exec_state_ptr, uint64_t cond_ptr,
+                         uint32_t body_block_idx) override;
+  bool addBarrierPacket(uint64_t signal_handle) override;
+  void* getGpuQueue() override { return gpu_queue_; }
+  bool upgradeToDeviceMemQueue() override;
 
   // Return pointer to PrintfDbg
   PrintfDbg* printfDbg() const { return printfdbg_; }
@@ -605,6 +611,7 @@ class VirtualGPU : public device::VirtualDevice {
   amd::Command* command_;   //!< Current command
   hsa_agent_t gpu_device_;  //!< Physical device
   hsa_queue_t* gpu_queue_;  //!< Active queue associated with a vgpu
+  bool device_mem_queue_ = false;  //!< Allocate ring buffer in device VRAM
   hsa_barrier_and_packet_t barrier_packet_ {};
   hsa_amd_barrier_value_packet_t barrier_value_packet_ {};
 

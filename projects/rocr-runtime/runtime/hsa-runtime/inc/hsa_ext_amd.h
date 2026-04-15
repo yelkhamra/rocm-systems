@@ -3224,6 +3224,19 @@ typedef enum {
   HSA_AMD_QUEUE_CREATE_DEVICE_MEM_QUEUE_DESCRIPTOR = (1 << 1),
 } hsa_amd_queue_create_flag_t;
 
+/**
+ * @brief Create a queue with explicit memory placement flags.
+ *
+ * @details Identical to hsa_queue_create but accepts an additional @p flags
+ * parameter (combination of hsa_amd_queue_create_flag_t values) to control
+ * whether the ring buffer and/or queue descriptor are placed in device memory.
+ */
+hsa_status_t HSA_API hsa_amd_queue_create_with_flags(
+    hsa_agent_t agent_handle, uint32_t size, hsa_queue_type32_t type,
+    void (*callback)(hsa_status_t status, hsa_queue_t* source, void* data),
+    void* data, uint32_t private_segment_size, uint32_t group_segment_size,
+    uint64_t flags, hsa_queue_t** queue);
+
 /** @} */
 
 /** \addtogroup memory Memory
