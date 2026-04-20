@@ -39,20 +39,19 @@ The following are required to install and use the AMD SMI library through its la
 
 ### Build requirements
 
-AMD SMI automatically selects the best available compiler in the following priority order:
+AMD SMI automatically selects the best available Clang compiler in the following priority order:
 
 1. **amdclang++** (recommended) - AMD's optimized Clang compiler from ROCm installation
 2. **clang++** - System Clang compiler
-3. **g++** - GCC compiler (legacy, with warning)
 
-**No compiler flags are required.** The build system automatically detects and uses the best available compiler.
+**GCC is supported but not auto-selected.** To build with GCC, use a toolchain file (see below).
 
 #### Standard build
 
 ```bash
 mkdir -p build
 cd build
-cmake ..          # Automatically selects: amdclang++ → clang++ → gcc
+cmake ..          # Automatically selects: amdclang++ → clang++
 make -j $(nproc)
 make install
 ```
@@ -64,13 +63,26 @@ For optimal ROCm compatibility, install ROCm which includes `amdclang++`. The bu
 - `/opt/rocm/llvm/bin/amdclang++` (default ROCm installation path)
 - `$ROCM_PATH/lib/llvm/bin/amdclang++` (alternate location)
 
+#### Building with GCC
+
+To build with GCC instead of Clang, use the provided toolchain file:
+
+```bash
+mkdir -p build
+cd build
+cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/amdsmi-gcc-toolchain.cmake
+make -j $(nproc)
+```
+
+To use a specific GCC version, edit `cmake/toolchains/amdsmi-gcc-toolchain.cmake` or create your own toolchain file.
+
 #### Troubleshooting
 
 If automatic compiler detection fails or you want to use a specific compiler:
 
 ```bash
 # Check which compilers are available
-which amdclang++ clang++ g++
+which amdclang++ clang++
 
 # Explicitly specify compiler (overrides auto-detection)
 cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang ..

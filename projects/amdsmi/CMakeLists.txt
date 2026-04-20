@@ -25,10 +25,14 @@
 cmake_minimum_required(VERSION 3.20)
 
 #
-# --- Compiler Detection and Selection ---
-# Priority: amdclang++ > clang++ > gcc (legacy, with warning)
+# --- Compiler detection (Clang family only) ---
+# Default: amdclang++ (ROCm) > system clang++/clang
+# GCC is not auto-selected. To build with GCC, use a toolchain file
+# cmake .. -DCMAKE_TOOLCHAIN_FILE="../cmake/toolchains/amdsmi-gcc-toolchain.cmake"
 #
-if(NOT CMAKE_CXX_COMPILER)
+# See: cmake/toolchains/amdsmi-gcc-toolchain.cmake
+#
+if(NOT CMAKE_CXX_COMPILER OR NOT CMAKE_C_COMPILER)
     # Determine ROCm installation path
     if(DEFINED ENV{ROCM_PATH})
         set(ROCM_DIR "$ENV{ROCM_PATH}")
@@ -41,31 +45,50 @@ if(NOT CMAKE_CXX_COMPILER)
     endif()
 
     # Search for amdclang++ in ROCm installation
+    set(_AMDCLANG_HINTS "")
+    if(ROCM_DIR)
+        list(
+            APPEND _AMDCLANG_HINTS
+            "${ROCM_DIR}/llvm/bin"
+            "${ROCM_DIR}/lib/llvm/bin"
+            "${ROCM_DIR}/bin"
+        )
+    endif()
+
     find_program(
         AMDCLANG_CXX_COMPILER
         NAMES amdclang++
-        HINTS "${ROCM_DIR}/llvm/bin" "${ROCM_DIR}/lib/llvm/bin" "${ROCM_DIR}/bin"
+        HINTS ${_AMDCLANG_HINTS}
         NO_DEFAULT_PATH
     )
     find_program(
         AMDCLANG_C_COMPILER
         NAMES amdclang
-        HINTS "${ROCM_DIR}/llvm/bin" "${ROCM_DIR}/lib/llvm/bin" "${ROCM_DIR}/bin"
+        HINTS ${_AMDCLANG_HINTS}
         NO_DEFAULT_PATH
     )
 
-    # Try compilers in priority order
-    if(AMDCLANG_CXX_COMPILER AND AMDCLANG_C_COMPILER)
-        # Verify amdclang++ is executable
+    # Helper function to validate compiler executability
+    function(validate_compiler COMPILER_PATH RESULT_VAR)
         execute_process(
-            COMMAND "${AMDCLANG_CXX_COMPILER}" --version
-            RESULT_VARIABLE AMDCLANG_TEST_RESULT
+            COMMAND "${COMPILER_PATH}" --version
+            RESULT_VARIABLE TEST_RESULT
             OUTPUT_QUIET ERROR_QUIET
         )
-        if(NOT AMDCLANG_TEST_RESULT EQUAL 0)
+        if(TEST_RESULT EQUAL 0)
+            set(${RESULT_VAR} TRUE PARENT_SCOPE)
+        else()
+            set(${RESULT_VAR} FALSE PARENT_SCOPE)
+        endif()
+    endfunction()
+
+    # Try compilers in priority order
+    if(AMDCLANG_CXX_COMPILER AND AMDCLANG_C_COMPILER)
+        validate_compiler("${AMDCLANG_CXX_COMPILER}" AMDCLANG_VALID)
+        if(NOT AMDCLANG_VALID)
             message(WARNING "Found amdclang++ but it's not executable, trying clang++")
-            unset(AMDCLANG_CXX_COMPILER)
-            unset(AMDCLANG_C_COMPILER)
+            unset(AMDCLANG_CXX_COMPILER CACHE)
+            unset(AMDCLANG_C_COMPILER CACHE)
         endif()
     endif()
 
@@ -78,37 +101,27 @@ if(NOT CMAKE_CXX_COMPILER)
         find_program(CLANG_C_COMPILER NAMES clang)
 
         if(CLANG_CXX_COMPILER AND CLANG_C_COMPILER)
+            validate_compiler("${CLANG_CXX_COMPILER}" CLANG_VALID)
+            if(NOT CLANG_VALID)
+                message(WARNING "Found clang++ but it's not executable")
+                unset(CLANG_CXX_COMPILER CACHE)
+                unset(CLANG_C_COMPILER CACHE)
+            endif()
+        endif()
+
+        if(CLANG_CXX_COMPILER AND CLANG_C_COMPILER)
             set(CMAKE_CXX_COMPILER "${CLANG_CXX_COMPILER}" CACHE FILEPATH "C++ compiler")
             set(CMAKE_C_COMPILER "${CLANG_C_COMPILER}" CACHE FILEPATH "C compiler")
             message(STATUS "Using system Clang compiler: ${CLANG_CXX_COMPILER}")
         else()
-            find_program(GCC_CXX_COMPILER NAMES g++)
-            find_program(GCC_C_COMPILER NAMES gcc)
-
-            if(GCC_CXX_COMPILER AND GCC_C_COMPILER)
-                set(CMAKE_CXX_COMPILER "${GCC_CXX_COMPILER}" CACHE FILEPATH "C++ compiler")
-                set(CMAKE_C_COMPILER "${GCC_C_COMPILER}" CACHE FILEPATH "C compiler")
-                message(
-                    WARNING
-                    "===================================================================="
-                )
-                message(
-                    WARNING "Neither amdclang++ nor clang++ found. Falling back to GCC."
-                )
-                message(WARNING "For optimal ROCm compatibility:")
-                message(WARNING "  - Install ROCm from https://rocm.docs.amd.com/")
-                message(WARNING "  - Or set ROCM_PATH environment variable")
-                message(
-                    WARNING
-                    "===================================================================="
-                )
-                message(STATUS "Using GCC compiler (legacy): ${GCC_CXX_COMPILER}")
-            else()
-                message(
-                    FATAL_ERROR
-                    "No suitable C++ compiler found. Please install amdclang++, clang++, or g++"
-                )
-            endif()
+            message(
+                FATAL_ERROR
+                "No suitable C++ compiler found (amdclang++ or clang++).\n"
+                "To build with GCC, use a toolchain file:\n"
+                "  cmake .. -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/amdsmi-gcc-toolchain.cmake\n"
+                "\n"
+                "For ROCm compatibility, install ROCm from https://rocm.docs.amd.com/"
+            )
         endif()
     endif()
 endif()
