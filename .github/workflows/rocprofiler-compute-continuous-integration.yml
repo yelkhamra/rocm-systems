@@ -156,6 +156,11 @@ jobs:
           echo "ROCm installed to: ${{ env.ROCM_PATH }}"
           echo "✅ ROCm Installation Complete!"
 
+      - name: ROCm Test
+        shell: bash
+        run: |
+          ${{ env.ROCM_PATH }}/bin/rocminfo
+
       - name: Install Python Requirements
         working-directory: projects/rocprofiler-compute
         run: |
