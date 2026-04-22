@@ -147,16 +147,6 @@ jobs:
           apt install -y amd-smi-lib libdw-dev hip-dev
           echo "✅ amdgpu and ROCm dependencies Installed!"
 
-      - name: Install ROCm via package manager
-        shell: bash
-        run: |
-          apt update
-          apt install -y ca-certificates
-          echo "deb [trusted=yes] https://rocm.nightlies.amd.com/deb/20260422-24758253765 stable main" \
-            | tee /etc/apt/sources.list.d/rocm-nightly.list
-          apt update
-          apt install -y amdrocm-core-sdk-${{ matrix.system.arch }}
-
       - name: Install Latest Nightly ROCm
         run: |
           set -e
@@ -166,7 +156,7 @@ jobs:
           echo "ROCm installed to: ${{ env.ROCM_PATH }}"
           echo "✅ ROCm Installation Complete!"
 
-      - name: ROCm Test
+      - name: Test rocminfo
         shell: bash
         run: |
           ${{ env.ROCM_PATH }}/bin/rocminfo
