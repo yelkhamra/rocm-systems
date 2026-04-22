@@ -157,6 +157,7 @@ jobs:
           apt update
           apt install -y amdrocm-core-sdk-${{ matrix.system.arch }}
           ls /opt/
+          ln -s ${{ env.ROCM_PATH }}-${{ env.ROCM_VERSION }} ${{ env.ROCM_PATH }}
 
       - name: ROCm Test
         shell: bash
