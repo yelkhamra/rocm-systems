@@ -155,7 +155,7 @@ jobs:
           echo "deb [trusted=yes] https://rocm.nightlies.amd.com/deb/20260422-24758253765 stable main" \
             | tee /etc/apt/sources.list.d/rocm-nightly.list
           apt update
-          apt install amdrocm-core-sdk-${{ matrix.system.arch }}
+          apt install -y amdrocm-core-sdk-${{ matrix.system.arch }}
 
       - name: ROCm Test
         shell: bash
