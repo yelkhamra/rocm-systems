@@ -156,6 +156,7 @@ jobs:
             | tee /etc/apt/sources.list.d/rocm-nightly.list
           apt update
           apt install -y amdrocm-core-sdk-${{ matrix.system.arch }}
+          ls /opt/
 
       - name: ROCm Test
         shell: bash
