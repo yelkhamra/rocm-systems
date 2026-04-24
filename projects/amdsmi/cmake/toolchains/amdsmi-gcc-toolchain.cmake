@@ -5,7 +5,7 @@
 # amdclang++/clang++ auto-detection.
 #
 # Usage:
-#   cmake .. -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/amdsmi-gcc-toolchain.cmake
+#   cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/amdsmi-gcc-toolchain.cmake
 #
 # To use a specific GCC version:
 #   1. Edit this file and change the compiler paths below

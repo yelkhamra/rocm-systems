@@ -27,8 +27,8 @@ cmake_minimum_required(VERSION 3.20)
 #
 # --- Compiler detection (Clang family only) ---
 # Default: amdclang++ (ROCm) > system clang++/clang
-# GCC is not auto-selected. To build with GCC, use a toolchain file
-# cmake .. -DCMAKE_TOOLCHAIN_FILE="../cmake/toolchains/amdsmi-gcc-toolchain.cmake"
+# GCC is not auto-selected. To build with GCC, use a toolchain file:
+#   cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/amdsmi-gcc-toolchain.cmake
 #
 # See: cmake/toolchains/amdsmi-gcc-toolchain.cmake
 #
@@ -84,9 +84,10 @@ if(NOT CMAKE_CXX_COMPILER OR NOT CMAKE_C_COMPILER)
 
     # Try compilers in priority order
     if(AMDCLANG_CXX_COMPILER AND AMDCLANG_C_COMPILER)
-        validate_compiler("${AMDCLANG_CXX_COMPILER}" AMDCLANG_VALID)
-        if(NOT AMDCLANG_VALID)
-            message(WARNING "Found amdclang++ but it's not executable, trying clang++")
+        validate_compiler("${AMDCLANG_CXX_COMPILER}" AMDCLANG_CXX_VALID)
+        validate_compiler("${AMDCLANG_C_COMPILER}" AMDCLANG_C_VALID)
+        if(NOT AMDCLANG_CXX_VALID OR NOT AMDCLANG_C_VALID)
+            message(WARNING "Found amdclang compilers but one or both are not executable, trying clang")
             unset(AMDCLANG_CXX_COMPILER CACHE)
             unset(AMDCLANG_C_COMPILER CACHE)
         endif()
@@ -101,9 +102,10 @@ if(NOT CMAKE_CXX_COMPILER OR NOT CMAKE_C_COMPILER)
         find_program(CLANG_C_COMPILER NAMES clang)
 
         if(CLANG_CXX_COMPILER AND CLANG_C_COMPILER)
-            validate_compiler("${CLANG_CXX_COMPILER}" CLANG_VALID)
-            if(NOT CLANG_VALID)
-                message(WARNING "Found clang++ but it's not executable")
+            validate_compiler("${CLANG_CXX_COMPILER}" CLANG_CXX_VALID)
+            validate_compiler("${CLANG_C_COMPILER}" CLANG_C_VALID)
+            if(NOT CLANG_CXX_VALID OR NOT CLANG_C_VALID)
+                message(WARNING "Found clang compilers but one or both are not executable")
                 unset(CLANG_CXX_COMPILER CACHE)
                 unset(CLANG_C_COMPILER CACHE)
             endif()
@@ -118,7 +120,7 @@ if(NOT CMAKE_CXX_COMPILER OR NOT CMAKE_C_COMPILER)
                 FATAL_ERROR
                 "No suitable C++ compiler found (amdclang++ or clang++).\n"
                 "To build with GCC, use a toolchain file:\n"
-                "  cmake .. -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/amdsmi-gcc-toolchain.cmake\n"
+                "  cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/amdsmi-gcc-toolchain.cmake\n"
                 "\n"
                 "For ROCm compatibility, install ROCm from https://rocm.docs.amd.com/"
             )
