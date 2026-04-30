@@ -32,6 +32,61 @@ required:
 * Python (3.6.8 or later)
 * virtualenv -- `python3 -m pip install virtualenv`
 
+### Compiler requirements
+
+AMD SMI automatically selects the best available Clang compiler in the following priority order:
+
+1. **amdclang++** (recommended) - AMD's optimized Clang compiler from ROCm installation
+2. **clang++** - System Clang compiler
+
+**GCC is supported but not auto-selected.** To build with GCC, use a toolchain file (see below).
+
+#### Standard build
+
+```bash
+mkdir -p build
+cd build
+cmake ..          # Automatically selects: amdclang++ → clang++
+make -j $(nproc)
+make install
+```
+
+#### Compiler search paths
+
+For optimal ROCm compatibility, install ROCm which includes `amdclang++`. The build automatically searches for amdclang++ in:
+- `$ROCM_PATH/llvm/bin/amdclang++` (if `ROCM_PATH` environment variable is set)
+- `/opt/rocm/llvm/bin/amdclang++` (default ROCm installation path)
+- `$ROCM_PATH/lib/llvm/bin/amdclang++` (alternate location)
+
+#### Building with GCC
+
+To build with GCC instead of Clang, use the provided toolchain file:
+
+```bash
+mkdir -p build
+cd build
+cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/amdsmi-gcc-toolchain.cmake
+make -j $(nproc)
+```
+
+To use a specific GCC version, edit `cmake/toolchains/amdsmi-gcc-toolchain.cmake` or create your own toolchain file.
+
+#### Troubleshooting
+
+If automatic compiler detection fails or you want to use a specific compiler:
+
+```bash
+# Check which compilers are available
+which amdclang++ clang++
+
+# Explicitly specify compiler (overrides auto-detection)
+cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang ..
+
+# Set custom ROCm path
+export ROCM_PATH=/custom/rocm/path
+cmake ..
+```
+
 ## Build steps
 
 1. Clone the rocm-systems repository to your local Linux machine
