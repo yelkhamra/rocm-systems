@@ -151,7 +151,7 @@ kernel_tiled_fine_copy_warp(IpcImpl *ipc_impl, bool *error, int *golden, int *sr
 class IPCImplTiledFine : public ::testing::TestWithParam<std::tuple<int, int, int>> {
     using MPI_T = RemoteHeapInfo<CommunicatorMPI>;
     using NotifierT = Notifier<detail::atomic::memory_scope_agent>;
-    using NotifierProxyT = NotifierProxy<HIPAllocator, detail::atomic::memory_scope_agent>;
+    using NotifierProxyT = NotifierProxy<detail::atomic::memory_scope_agent>;
     using FN_T1 = void (*)(IpcImpl*, bool*, int*, int*, int*, size_t, TestType, NotifierT*);
     using FN_T2 = void (*)(bool*, int*, int*, size_t, NotifierT*);
 
