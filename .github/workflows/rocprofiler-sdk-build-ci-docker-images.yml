@@ -34,7 +34,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ 'ubuntu-22.04', 'rhel-8.8', 'rhel-9.5', 'sles-15.6' ]
-        gpu: [ 'gfx94X', 'gfx950', 'gfx110X', 'gfx1151', 'gfx120X' ]
+        gpu: [ 'gfx1151' ]
     steps:
       - name: Checkout (shallow)
         uses: actions/checkout@v6
