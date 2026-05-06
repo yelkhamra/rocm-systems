@@ -47,7 +47,7 @@ constexpr int kN = 256;
  * Expected (per CUDA Test 10): Thread A's capture is INVALIDATED despite being ThreadLocal mode.
  * Device-scoped invalidation means same-device sync APIs invalidate ALL captures on that device.
  */
-TEST_CASE("ThreadLocal_SameDevice_SyncInvalidates", "[graph][capture][multithreaded]") {
+HIP_TEST_CASE(ThreadLocal_SameDevice_SyncInvalidates) {
   hipStream_t streamA = nullptr;
   int *dA = nullptr, *dB = nullptr, *hB = nullptr;
   hipGraph_t graphA = nullptr;
@@ -91,6 +91,7 @@ TEST_CASE("ThreadLocal_SameDevice_SyncInvalidates", "[graph][capture][multithrea
 
   threadA.join();
   threadB.join();
+  HIP_CHECK_THREAD_FINALIZE();
 
   INFO("captureErrA=" << captureErrA << " endCaptureErrA=" << endCaptureErrA
                       << " syncErrB=" << syncErrB);
@@ -126,7 +127,7 @@ TEST_CASE("ThreadLocal_SameDevice_SyncInvalidates", "[graph][capture][multithrea
  * Expected (per CUDA Test 9): Thread A's capture is INVALIDATED.
  * Same-device sync APIs invalidate ALL captures, regardless of mode.
  */
-TEST_CASE("Global_SameDevice_SyncInvalidates", "[graph][capture][multithreaded]") {
+HIP_TEST_CASE(Global_SameDevice_SyncInvalidates) {
   hipStream_t streamA = nullptr;
   int *dA = nullptr, *dB = nullptr, *hB = nullptr;
   hipGraph_t graphA = nullptr;
@@ -168,6 +169,7 @@ TEST_CASE("Global_SameDevice_SyncInvalidates", "[graph][capture][multithreaded]"
 
   threadA.join();
   threadB.join();
+  HIP_CHECK_THREAD_FINALIZE();
 
   INFO("captureErrA=" << captureErrA << " endCaptureErrA=" << endCaptureErrA
                       << " syncErrB=" << syncErrB);
@@ -198,7 +200,7 @@ TEST_CASE("Global_SameDevice_SyncInvalidates", "[graph][capture][multithreaded]"
  * Expected: Thread A's capture is INVALIDATED.
  * Relaxed mode doesn't exempt from device-scoped invalidation.
  */
-TEST_CASE("Relaxed_SameDevice_SyncInvalidates", "[graph][capture][multithreaded]") {
+HIP_TEST_CASE(Relaxed_SameDevice_SyncInvalidates) {
   hipStream_t streamA = nullptr;
   int *dA = nullptr, *dB = nullptr, *hB = nullptr;
   hipGraph_t graphA = nullptr;
@@ -240,6 +242,7 @@ TEST_CASE("Relaxed_SameDevice_SyncInvalidates", "[graph][capture][multithreaded]
 
   threadA.join();
   threadB.join();
+  HIP_CHECK_THREAD_FINALIZE();
 
   INFO("captureErrA=" << captureErrA << " endCaptureErrA=" << endCaptureErrA
                       << " syncErrB=" << syncErrB);
@@ -270,12 +273,11 @@ TEST_CASE("Relaxed_SameDevice_SyncInvalidates", "[graph][capture][multithreaded]
  * Expected (per CUDA Tests 2-4): Thread A's capture is NOT invalidated.
  * Different-device sync APIs do not trigger cross-device invalidation.
  */
-TEST_CASE("Global_DifferentDevice_SyncDoesNotInvalidate",
-          "[graph][capture][multithreaded][multi_device]") {
+HIP_TEST_CASE(Global_DifferentDevice_SyncDoesNotInvalidate) {
   const int deviceCount = HipTest::getDeviceCount();
   if (deviceCount < 2) {
     HipTest::HIP_SKIP_TEST(
-        "Global_DifferentDevice_SyncDoesNotInvalidate requires at least 2 GPUs — skipping.");
+        "Global_DifferentDevice_SyncDoesNotInvalidate requires at least 2 GPUs -- skipping.");
     return;
   }
 
@@ -324,6 +326,7 @@ TEST_CASE("Global_DifferentDevice_SyncDoesNotInvalidate",
 
   threadA.join();
   threadB.join();
+  HIP_CHECK_THREAD_FINALIZE();
 
   INFO("captureErrA=" << captureErrA << " endCaptureErrA=" << endCaptureErrA
                       << " syncErrB=" << syncErrB);
@@ -356,12 +359,11 @@ TEST_CASE("Global_DifferentDevice_SyncDoesNotInvalidate",
  * Expected (per CUDA Test 1): Thread A's capture is NOT invalidated.
  * This is the original ROCM-1945 scenario that was fixed.
  */
-TEST_CASE("ThreadLocal_DifferentDevice_SyncDoesNotInvalidate",
-          "[graph][capture][multithreaded][multi_device]") {
+HIP_TEST_CASE(ThreadLocal_DifferentDevice_SyncDoesNotInvalidate) {
   const int deviceCount = HipTest::getDeviceCount();
   if (deviceCount < 2) {
     HipTest::HIP_SKIP_TEST(
-        "ThreadLocal_DifferentDevice_SyncDoesNotInvalidate requires at least 2 GPUs — skipping.");
+        "ThreadLocal_DifferentDevice_SyncDoesNotInvalidate requires at least 2 GPUs -- skipping.");
     return;
   }
 
@@ -408,6 +410,7 @@ TEST_CASE("ThreadLocal_DifferentDevice_SyncDoesNotInvalidate",
 
   threadA.join();
   threadB.join();
+  HIP_CHECK_THREAD_FINALIZE();
 
   INFO("captureErrA=" << captureErrA << " endCaptureErrA=" << endCaptureErrA
                       << " syncErrB=" << syncErrB);
@@ -436,12 +439,11 @@ TEST_CASE("ThreadLocal_DifferentDevice_SyncDoesNotInvalidate",
  *
  * Expected (per CUDA Test 5): Thread A's capture is NOT invalidated.
  */
-TEST_CASE("Relaxed_DifferentDevice_SyncDoesNotInvalidate",
-          "[graph][capture][multithreaded][multi_device]") {
+HIP_TEST_CASE(Relaxed_DifferentDevice_SyncDoesNotInvalidate) {
   const int deviceCount = HipTest::getDeviceCount();
   if (deviceCount < 2) {
     HipTest::HIP_SKIP_TEST(
-        "Relaxed_DifferentDevice_SyncDoesNotInvalidate requires at least 2 GPUs — skipping.");
+        "Relaxed_DifferentDevice_SyncDoesNotInvalidate requires at least 2 GPUs -- skipping.");
     return;
   }
 
@@ -488,6 +490,7 @@ TEST_CASE("Relaxed_DifferentDevice_SyncDoesNotInvalidate",
 
   threadA.join();
   threadB.join();
+  HIP_CHECK_THREAD_FINALIZE();
 
   INFO("captureErrA=" << captureErrA << " endCaptureErrA=" << endCaptureErrA
                       << " syncErrB=" << syncErrB);
@@ -520,12 +523,11 @@ TEST_CASE("Relaxed_DifferentDevice_SyncDoesNotInvalidate",
  * triggers CHECK_STREAM_CAPTURING() on the null stream. Device-scoped invalidation
  * means it should only affect captures on the same device.
  */
-TEST_CASE("ThreadLocal_GraphLaunch_DifferentDevice",
-          "[graph][capture][multithreaded][multi_device]") {
+HIP_TEST_CASE(ThreadLocal_GraphLaunch_DifferentDevice) {
   const int deviceCount = HipTest::getDeviceCount();
   if (deviceCount < 2) {
     HipTest::HIP_SKIP_TEST(
-        "ThreadLocal_GraphLaunch_DifferentDevice requires at least 2 GPUs — skipping.");
+        "ThreadLocal_GraphLaunch_DifferentDevice requires at least 2 GPUs -- skipping.");
     return;
   }
 
@@ -591,6 +593,7 @@ TEST_CASE("ThreadLocal_GraphLaunch_DifferentDevice",
 
   threadA.join();
   threadB.join();
+  HIP_CHECK_THREAD_FINALIZE();
 
   INFO("captureErrA=" << captureErrA << " captureErrB=" << captureErrB
                       << " launchErrB=" << launchErrB);
