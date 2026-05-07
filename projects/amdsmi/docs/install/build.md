@@ -32,60 +32,30 @@ required:
 * Python (3.6.8 or later)
 * virtualenv -- `python3 -m pip install virtualenv`
 
-### Compiler requirements
+## Compiler requirements
 
-AMD SMI automatically selects the best available Clang compiler in the following priority order:
+AMD SMI automatically selects the best available Clang compiler from the ROCm installation in the following priority order:
 
-1. **amdclang++** (recommended) - AMD's optimized Clang compiler from ROCm installation
-2. **clang++** - System Clang compiler
+1. **amdclang++** (recommended) - AMD's optimized Clang compiler
+2. **clang++** - Standard Clang compiler from ROCm
 
 **GCC is supported but not auto-selected.** To build with GCC, use a toolchain file (see below).
 
-#### Standard build
+### How compilers are discovered
 
-```bash
-mkdir -p build
-cd build
-cmake ..          # Automatically selects: amdclang++ → clang++
-make -j $(nproc)
-make install
-```
+The build uses **`hipconfig --path`** for tool-based ROCm discovery.
 
-#### Compiler search paths
+Once ROCm is located, the build searches for compilers in these paths (in order):
+1. `<rocm-path>/lib/llvm/bin/amdclang++` - Current standard location
+2. `<rocm-path>/llvm/bin/amdclang++` - Legacy symlink location
 
-For optimal ROCm compatibility, install ROCm which includes `amdclang++`. The build automatically searches for amdclang++ in:
-- `$ROCM_PATH/llvm/bin/amdclang++` (if `ROCM_PATH` environment variable is set)
-- `/opt/rocm/llvm/bin/amdclang++` (default ROCm installation path)
-- `$ROCM_PATH/lib/llvm/bin/amdclang++` (alternate location)
+If `amdclang++` is not found, searches for `clang++` in the same ROCm paths:
+1. `<rocm-path>/lib/llvm/bin/clang++`
+2. `<rocm-path>/llvm/bin/clang++`
 
-#### Building with GCC
+**Note:** Only ROCm compilers are auto-selected. System clang++ from `/usr/bin` is NOT used automatically. To use system clang++ or GCC, you must specify them explicitly (see alternative compiler options below).
 
-To build with GCC instead of Clang, use the provided toolchain file:
-
-```bash
-mkdir -p build
-cd build
-cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/amdsmi-gcc-toolchain.cmake
-make -j $(nproc)
-```
-
-To use a specific GCC version, edit `cmake/toolchains/amdsmi-gcc-toolchain.cmake` or create your own toolchain file.
-
-#### Troubleshooting
-
-If automatic compiler detection fails or you want to use a specific compiler:
-
-```bash
-# Check which compilers are available
-which amdclang++ clang++
-
-# Explicitly specify compiler (overrides auto-detection)
-cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang ..
-
-# Set custom ROCm path
-export ROCM_PATH=/custom/rocm/path
-cmake ..
-```
+**Note:** Hardcoded paths like `/opt/rocm` are intentionally not used to support multiple ROCm installations and relocatable builds.
 
 ## Build steps
 
@@ -110,7 +80,7 @@ cmake ..
    ```bash
    mkdir -p build
    cd build
-   cmake ..
+   cmake ..          # Discovers ROCm and uses amdclang++
    make -j $(nproc)
    make install
    ```
@@ -121,6 +91,70 @@ cmake ..
    ```bash
    make package
    ```
+
+## Alternative compiler options
+
+### Building with GCC
+
+To build with GCC instead of amdclang++, use the provided toolchain file:
+
+```bash
+mkdir -p build
+cd build
+cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/amdsmi-gcc-toolchain.cmake
+make -j $(nproc)
+```
+
+To use a specific GCC version, edit `cmake/toolchains/amdsmi-gcc-toolchain.cmake` or create your own toolchain file.
+
+### Building with clang++
+
+To use clang++ instead of amdclang++, explicitly specify the compiler with full path.
+
+**Using ROCm's clang++:**
+
+```bash
+mkdir -p build
+cd build
+cmake .. -DCMAKE_CXX_COMPILER=/opt/rocm-<version_number>/lib/llvm/bin/clang++ -DCMAKE_C_COMPILER=/opt/rocm-<version_number>/lib/llvm/bin/clang
+make -j $(nproc)
+```
+
+**Using system clang++:**
+
+Requires clang to be installed (`sudo apt install clang` on Ubuntu/Debian).
+
+```bash
+mkdir -p build
+cd build
+cmake .. -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -DCMAKE_C_COMPILER=/usr/bin/clang
+make -j $(nproc)
+```
+
+### Troubleshooting compiler detection
+
+**If cmake fails with "amdclang++ not found":**
+
+```bash
+# Check if ROCm is installed and hipconfig is available
+which hipconfig
+hipconfig --path
+
+# If hipconfig not found, add ROCm to PATH
+export PATH=$PATH:/opt/rocm/bin
+cmake ..
+```
+
+**To check what compiler will be used:**
+
+```bash
+# Check available compilers
+which amdclang++ clang++ g++ hipconfig
+
+# Run cmake with verbose output
+cmake .. -DCMAKE_VERBOSE_MAKEFILE=ON
+```
+
 
 (rebuild_py_wrapper)=
 ## Rebuild the Python wrapper

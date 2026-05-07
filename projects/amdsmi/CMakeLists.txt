@@ -26,18 +26,46 @@ cmake_minimum_required(VERSION 3.20)
 
 #
 # --- Compiler detection (Clang family only) ---
-# Default: amdclang++ (ROCm) > system clang++/clang
+# Default: amdclang++ (ROCm) > clang++ (ROCm only)
 # GCC is not auto-selected. To build with GCC, use a toolchain file:
 #   cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/amdsmi-gcc-toolchain.cmake
 #
-# See: cmake/toolchains/amdsmi-gcc-toolchain.cmake
+# ROCm discovery:
+#   Uses hipconfig --path for tool-based discovery (per TheRock #3976)
+#   No hardcoded paths or ROCM_PATH fallback
 #
-if(NOT CMAKE_CXX_COMPILER OR NOT CMAKE_C_COMPILER)
-    # Determine ROCm installation path
-    if(DEFINED ENV{ROCM_PATH})
-        set(ROCM_DIR "$ENV{ROCM_PATH}")
-    elseif(EXISTS "/opt/rocm")
-        set(ROCM_DIR "/opt/rocm")
+# Once ROCm is located, searches for compilers in these paths (in order):
+#   1. <rocm-path>/lib/llvm/bin/amdclang++  (current standard location)
+#   2. <rocm-path>/llvm/bin/amdclang++      (legacy symlink location)
+#
+# If amdclang++ not found, searches for clang++ in the same ROCm paths:
+#   1. <rocm-path>/lib/llvm/bin/clang++
+#   2. <rocm-path>/llvm/bin/clang++
+#
+# Build fails if no ROCm compiler found.
+#
+# See: cmake/toolchains/amdsmi-gcc-toolchain.cmake
+# See also: https://github.com/ROCm/TheRock/issues/3976
+#
+if(NOT CMAKE_TOOLCHAIN_FILE AND (NOT DEFINED CMAKE_CXX_COMPILER OR NOT DEFINED CMAKE_C_COMPILER))
+    # Determine ROCm installation path using tool-based discovery
+    # Uses hipconfig --path (per https://github.com/ROCm/TheRock/issues/3976)
+    set(ROCM_DIR "")
+
+    find_program(HIPCONFIG_EXECUTABLE hipconfig)
+    if(HIPCONFIG_EXECUTABLE)
+        execute_process(
+            COMMAND "${HIPCONFIG_EXECUTABLE}" --path
+            OUTPUT_VARIABLE HIPCONFIG_PATH
+            OUTPUT_STRIP_TRAILING_WHITESPACE
+            ERROR_QUIET
+        )
+        if(HIPCONFIG_PATH)
+            set(ROCM_DIR "${HIPCONFIG_PATH}")
+            if(CMAKE_VERBOSE_MAKEFILE)
+                message(STATUS "Found ROCm via hipconfig: ${ROCM_DIR}")
+            endif()
+        endif()
     endif()
 
     if(CMAKE_VERBOSE_MAKEFILE)
@@ -45,13 +73,13 @@ if(NOT CMAKE_CXX_COMPILER OR NOT CMAKE_C_COMPILER)
     endif()
 
     # Search for amdclang++ in ROCm installation
+    # Prefer lib/llvm/bin (current) over llvm/bin (legacy)
     set(_AMDCLANG_HINTS "")
     if(ROCM_DIR)
         list(
             APPEND _AMDCLANG_HINTS
-            "${ROCM_DIR}/llvm/bin"
             "${ROCM_DIR}/lib/llvm/bin"
-            "${ROCM_DIR}/bin"
+            "${ROCM_DIR}/llvm/bin"
         )
     endif()
 
@@ -82,7 +110,7 @@ if(NOT CMAKE_CXX_COMPILER OR NOT CMAKE_C_COMPILER)
         endif()
     endfunction()
 
-    # Try compilers in priority order
+    # Try compilers in priority order: amdclang++ > clang++
     if(AMDCLANG_CXX_COMPILER AND AMDCLANG_C_COMPILER)
         validate_compiler("${AMDCLANG_CXX_COMPILER}" AMDCLANG_CXX_VALID)
         validate_compiler("${AMDCLANG_C_COMPILER}" AMDCLANG_C_VALID)
@@ -98,8 +126,19 @@ if(NOT CMAKE_CXX_COMPILER OR NOT CMAKE_C_COMPILER)
         set(CMAKE_C_COMPILER "${AMDCLANG_C_COMPILER}" CACHE FILEPATH "C compiler")
         message(STATUS "Using AMD Clang compiler: ${AMDCLANG_CXX_COMPILER}")
     else()
-        find_program(CLANG_CXX_COMPILER NAMES clang++)
-        find_program(CLANG_C_COMPILER NAMES clang)
+        # Search for clang++ in ROCm paths only (not system PATH)
+        find_program(
+            CLANG_CXX_COMPILER
+            NAMES clang++
+            HINTS ${_AMDCLANG_HINTS}
+            NO_DEFAULT_PATH
+        )
+        find_program(
+            CLANG_C_COMPILER
+            NAMES clang
+            HINTS ${_AMDCLANG_HINTS}
+            NO_DEFAULT_PATH
+        )
 
         if(CLANG_CXX_COMPILER AND CLANG_C_COMPILER)
             validate_compiler("${CLANG_CXX_COMPILER}" CLANG_CXX_VALID)
@@ -114,15 +153,28 @@ if(NOT CMAKE_CXX_COMPILER OR NOT CMAKE_C_COMPILER)
         if(CLANG_CXX_COMPILER AND CLANG_C_COMPILER)
             set(CMAKE_CXX_COMPILER "${CLANG_CXX_COMPILER}" CACHE FILEPATH "C++ compiler")
             set(CMAKE_C_COMPILER "${CLANG_C_COMPILER}" CACHE FILEPATH "C compiler")
-            message(STATUS "Using system Clang compiler: ${CLANG_CXX_COMPILER}")
+            message(STATUS "Using Clang compiler: ${CLANG_CXX_COMPILER}")
         else()
             message(
                 FATAL_ERROR
-                "No suitable C++ compiler found (amdclang++ or clang++).\n"
-                "To build with GCC, use a toolchain file:\n"
-                "  cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/amdsmi-gcc-toolchain.cmake\n"
+                "No suitable C++ compiler found in ROCm installation.\n"
+                "Neither amdclang++ nor clang++ found in ROCm paths.\n"
                 "\n"
-                "For ROCm compatibility, install ROCm from https://rocm.docs.amd.com/"
+                "Current search status:\n"
+                "  hipconfig found: ${HIPCONFIG_EXECUTABLE}\n"
+                "  ROCM_DIR: ${ROCM_DIR}\n"
+                "  Search paths tried: ${_AMDCLANG_HINTS}\n"
+                "\n"
+                "To fix this:\n"
+                "  1. Install ROCm from https://rocm.docs.amd.com/\n"
+                "  2. Ensure hipconfig is in your PATH:\n"
+                "       export PATH=\$PATH:/opt/rocm/bin\n"
+                "\n"
+                "Alternative compiler options:\n"
+                "  - To build with GCC, use toolchain file:\n"
+                "      cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/amdsmi-gcc-toolchain.cmake\n"
+                "  - To use system clang++, explicitly specify with full path:\n"
+                "      cmake .. -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -DCMAKE_C_COMPILER=/usr/bin/clang"
             )
         endif()
     endif()

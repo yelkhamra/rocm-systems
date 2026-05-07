@@ -39,10 +39,10 @@ The following are required to install and use the AMD SMI library through its la
 
 ### Build requirements
 
-AMD SMI automatically selects the best available Clang compiler in the following priority order:
+AMD SMI automatically selects the best available Clang compiler from the ROCm installation in the following priority order:
 
-1. **amdclang++** (recommended) - AMD's optimized Clang compiler from ROCm installation
-2. **clang++** - System Clang compiler
+1. **amdclang++** (recommended) - AMD Clang compiler
+2. **clang++** - Standard Clang compiler from ROCm
 
 **GCC is supported but not auto-selected.** To build with GCC, use a toolchain file (see below).
 
@@ -51,17 +51,26 @@ AMD SMI automatically selects the best available Clang compiler in the following
 ```bash
 mkdir -p build
 cd build
-cmake ..          # Automatically selects: amdclang++ → clang++
+cmake ..          # Automatically selects: amdclang++ → ROCm clang++
 make -j $(nproc)
 make install
 ```
 
-#### Compiler search paths
+#### How compilers are discovered
 
-For optimal ROCm compatibility, install ROCm which includes `amdclang++`. The build automatically searches for amdclang++ in:
-- `$ROCM_PATH/llvm/bin/amdclang++` (if `ROCM_PATH` environment variable is set)
-- `/opt/rocm/llvm/bin/amdclang++` (default ROCm installation path)
-- `$ROCM_PATH/lib/llvm/bin/amdclang++` (alternate location)
+The build uses **`hipconfig --path`** for tool-based ROCm discovery.
+
+Once ROCm is located, the build searches for compilers in these paths (in order):
+1. `<rocm-path>/lib/llvm/bin/amdclang++` - Current standard location
+2. `<rocm-path>/llvm/bin/amdclang++` - Legacy symlink location
+
+If `amdclang++` is not found, searches for `clang++` in the same ROCm paths:
+1. `<rocm-path>/lib/llvm/bin/clang++`
+2. `<rocm-path>/llvm/bin/clang++`
+
+**Note:** Only ROCm compilers are auto-selected. System clang++ from `/usr/bin` is NOT used automatically. To use system clang++ or GCC, you must specify them explicitly (see below).
+
+**Note:** Hardcoded paths like `/opt/rocm` are intentionally not used to support multiple ROCm installations and relocatable builds.
 
 #### Building with GCC
 
@@ -78,18 +87,32 @@ To use a specific GCC version, edit `cmake/toolchains/amdsmi-gcc-toolchain.cmake
 
 #### Troubleshooting
 
-If automatic compiler detection fails or you want to use a specific compiler:
+**If cmake fails with "amdclang++ not found":**
 
 ```bash
-# Check which compilers are available
-which amdclang++ clang++
+# Check if ROCm is installed and hipconfig is available
+which hipconfig
+hipconfig --path
 
-# Explicitly specify compiler (overrides auto-detection)
-cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang ..
-
-# Set custom ROCm path
-export ROCM_PATH=/custom/rocm/path
+# If hipconfig not found, add ROCm to PATH
+export PATH=$PATH:/opt/rocm/bin
 cmake ..
+```
+
+**To use a different compiler:**
+
+```bash
+# Use GCC via toolchain file (recommended)
+cmake .. -DCMAKE_TOOLCHAIN_FILE=../cmake/toolchains/amdsmi-gcc-toolchain.cmake
+
+# Or explicitly specify GCC
+cmake .. -DCMAKE_CXX_COMPILER=g++ -DCMAKE_C_COMPILER=gcc
+
+# Or explicitly specify ROCm clang++ (instead of amdclang++)
+cmake .. -DCMAKE_CXX_COMPILER=/opt/rocm-<version_number>/lib/llvm/bin/clang++ -DCMAKE_C_COMPILER=/opt/rocm-<version_number>/lib/llvm/bin/clang
+
+# Or explicitly specify system clang++ (requires clang installed: sudo apt install clang)
+cmake .. -DCMAKE_CXX_COMPILER=/usr/bin/clang++ -DCMAKE_C_COMPILER=/usr/bin/clang
 ```
 
 ### Python interface and CLI tool prerequisites
