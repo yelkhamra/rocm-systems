@@ -31,6 +31,7 @@
 #include "log.hpp"
 #include "context_gda_device.hpp"
 #include "context_gda_tmpl_device.hpp"
+#include "sqtt_trace.hpp"
 
 namespace rocshmem {
 
@@ -114,16 +115,24 @@ __device__ void GDAContext::getmem(void *dest, const void *source, size_t nelems
 
 __device__ void GDAContext::putmem_nbi(void *dest, const void *source,
                                        size_t nelems, int pe) {
+  sqtt_marker_enter("put_nbi_call");
+  sqtt_marker_enter("ipc_check");
   int local_pe{-1};
   if (ipcImpl_.isIpcAvailable(my_pe, pe, &local_pe)) {
+    sqtt_marker_exit("ipc_check");
     uint64_t L_offset = reinterpret_cast<char *>(dest) - ipcImpl_.ipc_bases[ipcImpl_.shm_rank];
     ipcImpl_.ipcCopy<MemcpyKind::Put>(ipcImpl_.ipc_bases[local_pe] + L_offset, const_cast<void *>(source), nelems);
+    sqtt_marker_exit("put_nbi_call");
     return;
   }
+  sqtt_marker_exit("ipc_check");
+  sqtt_marker_enter("wf_info+qp");
   ActiveWFInfo wf_info(pe);
   int qp_index = get_qp_index(pe, wf_info);
+  sqtt_marker_exit("wf_info+qp");
   uint64_t L_offset = reinterpret_cast<char*>(dest) - base_heap[my_pe];
   qps[qp_index].put_nbi(base_heap[pe] + L_offset, source, nelems, pe, wf_info);
+  sqtt_marker_exit("put_nbi_call");
 }
 
 __device__ void GDAContext::getmem_nbi(void *dest, const void *source,
@@ -164,9 +173,11 @@ __device__ void GDAContext::quiet() {
 }
 
 __device__ void GDAContext::internal_quiet(ActiveWFInfo &wf_info) {
+  sqtt_marker_enter("lib_overhead");
   for (uint32_t i = 0; i < num_qps; i++) {
     qps[i].quiet(wf_info);
   }
+  sqtt_marker_exit("lib_overhead");
 }
 
 __device__ void GDAContext::pe_quiet(size_t pe) {

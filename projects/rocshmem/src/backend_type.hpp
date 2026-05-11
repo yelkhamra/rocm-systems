@@ -37,6 +37,14 @@
  */
 
 #include "rocshmem/rocshmem_config.h"  // NOLINT(build/include_subdir)
+#ifdef ENABLE_ROCTX
+#include <rocprofiler-sdk-roctx/roctx.h>
+#else
+#define roctxProfilerResume(_x)
+#define roctxProfilerPause(_x)
+#endif
+
+#include "sqtt_trace.hpp"
 
 namespace rocshmem {
 
@@ -58,6 +66,7 @@ namespace rocshmem {
  */
 #if defined(USE_GDA) && defined(USE_RO) && defined(USE_IPC)
 #define DISPATCH(Func)                     \
+  sqtt_marker_enter(#Func);    \
   switch(this->btype) {                    \
   case BackendType::GDA_BACKEND:           \
     static_cast<GDAContext *>(this)->Func; \
@@ -69,7 +78,8 @@ namespace rocshmem {
   default:                                 \
     static_cast<IPCContext *>(this)->Func; \
     break;                                 \
-  }
+  }                                        \
+  sqtt_marker_exit(#Func);
 #elif defined(USE_GDA)
 #define DISPATCH(Func)                     \
   static_cast<GDAContext *>(this)->Func;

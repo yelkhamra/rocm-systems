@@ -24,6 +24,7 @@
 
 #include "gda/queue_pair.hpp"
 #include "log.hpp"
+#include "sqtt_trace.hpp"
 
 namespace rocshmem {
 
@@ -290,8 +291,14 @@ __device__ void QueuePair::bnxt_write_rma_wqe(uintptr_t raddr, uintptr_t laddr, 
 
 __device__ void QueuePair::bnxt_post_wqe_rma(int32_t length,
     uintptr_t laddr, uintptr_t raddr, uint8_t opcode, ActiveWFInfo &wf_info) {
+  sqtt_marker_enter("wf_info+qp");
   if (wf_info.is_pe_group_first) {
+    sqtt_marker_exit("wf_info+qp");
+    sqtt_marker_enter("wqe+lock+cq");
     lock(&bnxt_sq.lock);
+    sqtt_marker_exit("wqe+lock+cq");
+  } else {
+    sqtt_marker_exit("wf_info+qp");
   }
 
   for (int i = 0; i < wf_info.num_pe_group_lanes; i++) {
@@ -299,8 +306,10 @@ __device__ void QueuePair::bnxt_post_wqe_rma(int32_t length,
       /* Write WQE to SQ */
       bnxt_write_rma_wqe(raddr, laddr, length, opcode);
 
+      sqtt_marker_enter("doorbell");
       /* Ring Doorbell */
       bnxt_ring_doorbell(bnxt_sq.tail);
+      sqtt_marker_exit("doorbell");
     }
   }
 

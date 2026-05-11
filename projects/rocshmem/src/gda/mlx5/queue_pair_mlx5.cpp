@@ -28,6 +28,7 @@
 
 #include "gda/endian.hpp"
 #include "gda/queue_pair.hpp"
+#include "sqtt_trace.hpp"
 
 namespace rocshmem {
 
@@ -260,11 +261,17 @@ __device__ void QueuePair::mlx5_quiet_single() {
 // can be called with all active lanes using any number of different QPs, don't assume anything
 __device__ void QueuePair::mlx5_post_wqe_rma(int32_t length, uintptr_t laddr, uintptr_t raddr,
                                              uint8_t opcode, ActiveWFInfo &wf_info) {
+  sqtt_marker_enter("wf_info+qp");
   if (wf_info.is_pe_group_last) {
+    sqtt_marker_exit("wf_info+qp");
+    sqtt_marker_enter("wqe+lock+cq");
     // get SQ lock
     acquire_lock(&mlx5_sq.lock);
     // poll until we have enough WQEBB for all lanes using this QP
     mlx5_poll_cq_until(wf_info.num_pe_group_lanes);
+    sqtt_marker_exit("wqe+lock+cq");
+  } else {
+    sqtt_marker_exit("wf_info+qp");
   }
 
   // wqe_idx is the logical WQE id that wraps at 0xFFFF, sq_idx is the index into the actual SQ
@@ -284,8 +291,10 @@ __device__ void QueuePair::mlx5_post_wqe_rma(int32_t length, uintptr_t laddr, ui
   if (wf_info.is_pe_group_last) {
     // increment post counter
     mlx5_sq.post += wf_info.num_pe_group_lanes;
+    sqtt_marker_enter("doorbell");
     // we are the last thread in the wavefront, so we have the last WQE posted
     mlx5_ring_doorbell(mlx5_sq.post, wqe);
+    sqtt_marker_exit("doorbell");
     // release SQ lock
     release_lock(&mlx5_sq.lock);
   }

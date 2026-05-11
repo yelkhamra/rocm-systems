@@ -35,6 +35,7 @@
 #include "queue_pair.hpp"
 #include "rocshmem_calc.hpp"
 #include "backend_gda.hpp"
+#include "sqtt_trace.hpp"
 
 #include <hip/hip_runtime.h>
 
@@ -45,12 +46,15 @@ namespace rocshmem {
  *****************************************************************************/
 template <typename T>
 __device__ void GDAContext::p(T *dest, T value, int pe) {
+  sqtt_marker_enter("ipc_check");
   int local_pe{-1};
   if (ipcImpl_.isIpcAvailable(my_pe, pe, &local_pe)) {
+    sqtt_marker_exit("ipc_check");
     long L_offset{reinterpret_cast<char *>(dest) - ipcImpl_.ipc_bases[ipcImpl_.shm_rank]};
     ipcImpl_.ipcCopy<MemcpyKind::Put>(ipcImpl_.ipc_bases[local_pe] + L_offset, reinterpret_cast<void *>(&value), sizeof(T));
     return;
   }
+  sqtt_marker_exit("ipc_check");
   putmem_nbi(dest, &value, sizeof(T), pe);
 }
 
