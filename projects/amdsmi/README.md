@@ -39,10 +39,10 @@ The following are required to install and use the AMD SMI library through its la
 
 ### Build requirements
 
-AMD SMI automatically selects the best available Clang compiler from the ROCm installation in the following priority order:
+AMD SMI automatically selects the best available Clang compiler in the following priority order:
 
-1. **amdclang++** (recommended) - AMD Clang compiler
-2. **clang++** - Standard Clang compiler from ROCm
+1. **amdclang++** (recommended) - AMD's optimized Clang compiler from ROCm
+2. **clang++** - ROCm clang++ or system clang++ (fallback)
 
 **GCC is supported but not auto-selected.** To build with GCC, use a toolchain file (see below).
 
@@ -51,7 +51,7 @@ AMD SMI automatically selects the best available Clang compiler from the ROCm in
 ```bash
 mkdir -p build
 cd build
-cmake ..          # Automatically selects: amdclang++ → ROCm clang++
+cmake ..          # Automatically selects: amdclang++ → clang++
 make -j $(nproc)
 make install
 ```
@@ -60,15 +60,17 @@ make install
 
 The build uses **`hipconfig --path`** for tool-based ROCm discovery.
 
-Once ROCm is located, the build searches for compilers in these paths (in order):
-1. `<rocm-path>/lib/llvm/bin/amdclang++` - Current standard location
-2. `<rocm-path>/llvm/bin/amdclang++` - Legacy symlink location
+**If ROCm is installed** (hipconfig found):
+- Searches **ONLY in ROCm paths** for compilers (in order):
+  1. `<rocm-path>/lib/llvm/bin/amdclang++` - Current standard location
+  2. `<rocm-path>/llvm/bin/amdclang++` - Legacy symlink location
+  3. `<rocm-path>/lib/llvm/bin/clang++` - ROCm clang++
+  4. `<rocm-path>/llvm/bin/clang++` - ROCm clang++ (legacy)
+- **Does NOT fall back to system clang++** - ensures ROCm compiler is used
 
-If `amdclang++` is not found, searches for `clang++` in the same ROCm paths:
-1. `<rocm-path>/lib/llvm/bin/clang++`
-2. `<rocm-path>/llvm/bin/clang++`
-
-**Note:** Only ROCm compilers are auto-selected. System clang++ from `/usr/bin` is NOT used automatically. To use system clang++ or GCC, you must specify them explicitly (see below).
+**If ROCm is NOT installed** (hipconfig not found):
+- Searches **ONLY in system PATH** for `clang++` (e.g., `/usr/bin/clang++`)
+- This allows builds on systems without ROCm
 
 **Note:** Hardcoded paths like `/opt/rocm` are intentionally not used to support multiple ROCm installations and relocatable builds.
 
