@@ -433,6 +433,36 @@ BatchContext::getStatus(unsigned min_nr, unsigned *nr, hipFileIOEvents_t *iocbp,
 }
 
 void
+BatchContext::cancelOperations()
+{
+    std::unique_lock<std::shared_mutex> lock{context_mutex};
+
+    task_group->cancel();
+    for (const auto &op : outstanding_ops) {
+        op->tryCancel();
+    }
+    status_cv.notify_all();
+}
+
+void
+BatchContext::cancelOperationsAndWait()
+{
+    {
+        std::unique_lock<std::shared_mutex> lock{context_mutex};
+
+        task_group->cancel();
+        for (const auto &op : outstanding_ops) {
+            op->tryCancel();
+        }
+    }
+    task_group->wait();
+    {
+        std::unique_lock<std::shared_mutex> lock{context_mutex};
+        status_cv.notify_all();
+    }
+}
+
+void
 BatchContextMap::clear()
 {
     std::unique_lock<std::shared_mutex> ulock{batch_mutex};
