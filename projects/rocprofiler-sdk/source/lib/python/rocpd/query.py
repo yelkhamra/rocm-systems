@@ -79,7 +79,9 @@ def export_sqlite_query(
             import pandas as pd
 
             _pandas_available = True
-        except ImportError:
+        except ModuleNotFoundError as e:
+            if e.name != "pandas":
+                raise e
             _pandas_available = False
 
         normalized_format = export_format.lower() if export_format else None
