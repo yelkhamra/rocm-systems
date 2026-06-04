@@ -417,6 +417,7 @@ try {
     }
 
     std::shared_ptr<IBatchContext> batch_context = Context<DriverState>::get()->getBatchContext(batch_idp);
+    BatchOperationFactory          operation_factory{};
     BatchOperations                pending_ops{};
     pending_ops.reserve(nr);
 
@@ -426,7 +427,7 @@ try {
         auto [file, buffer] =
             Context<DriverState>::get()->getFileAndBuffer(param_copy->fh, param_copy->u.batch.devPtr_base);
         pending_ops.push_back(
-            std::make_shared<BatchOperation>(std::move(param_copy), std::move(buffer), std::move(file)));
+            operation_factory.create(std::move(param_copy), std::move(buffer), std::move(file)));
     }
 
     batch_context->submitOperations(std::move(pending_ops));

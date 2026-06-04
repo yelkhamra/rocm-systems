@@ -286,6 +286,13 @@ BatchOperation::recordInternalError()
     transitionTo(Failed{-hipFileInternalError});
 }
 
+std::shared_ptr<IBatchOperation>
+BatchOperationFactory::create(std::unique_ptr<const hipFileIOParams_t> params,
+                              std::shared_ptr<IBuffer> buffer, std::shared_ptr<IFile> file)
+{
+    return std::make_shared<BatchOperation>(std::move(params), std::move(buffer), std::move(file));
+}
+
 BatchContext::BatchContext(unsigned _capacity) : capacity{_capacity}
 {
     if (_capacity == 0) {
