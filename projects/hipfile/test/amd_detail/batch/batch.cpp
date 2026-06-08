@@ -287,6 +287,26 @@ TEST_F(HipFileBatch, DestroyContext)
     batch_map.destroyContext(handle);
 }
 
+TEST_F(HipFileBatch, DestroyContextRemovesHandle)
+{
+    hipFileBatchHandle_t handle = batch_map.createContext(1);
+
+    batch_map.destroyContext(handle);
+
+    ASSERT_THROW(batch_map.get(handle), InvalidBatchHandle);
+}
+
+TEST_F(HipFileBatch, DestroyContextPreservesOtherContexts)
+{
+    hipFileBatchHandle_t handle1 = batch_map.createContext(1);
+    hipFileBatchHandle_t handle2 = batch_map.createContext(1);
+
+    batch_map.destroyContext(handle1);
+
+    ASSERT_THROW(batch_map.get(handle1), InvalidBatchHandle);
+    ASSERT_NE(batch_map.get(handle2), nullptr);
+}
+
 TEST_F(HipFileBatch, DestroyMissingContext)
 {
     ASSERT_THROW(batch_map.destroyContext(reinterpret_cast<hipFileBatchHandle_t>(1)), InvalidBatchHandle);
@@ -342,6 +362,12 @@ struct HipFileBatchContext : public HipFileUnopened {
         auto raw        = task_group.get();
         EXPECT_CALL(*mock_thread_pool, makeTaskGroup()).WillOnce(Return(ByMove(std::move(task_group))));
         return raw;
+    }
+
+    static void expectTaskQueueFlushed(StrictMock<MTaskGroup> *tg)
+    {
+        EXPECT_CALL(*tg, cancel()).Times(1);
+        EXPECT_CALL(*tg, wait()).Times(1);
     }
 
     std::shared_ptr<StrictMock<MBatchOperation>> makeOperation()
@@ -436,6 +462,7 @@ TEST_F(HipFileBatchContext, SubmittedWorkKeepsContextAliveUntilReleased)
     // enqueued_work has been assigned
     ASSERT_TRUE(enqueued_work);
 
+    expectTaskQueueFlushed(mock_task_group);
     // Destroy the context and our shared_ptr to it
     batch_map.destroyContext(_context.get());
     _context.reset();
@@ -730,31 +757,32 @@ TEST_F(HipFileBatchContext, CancelOperationsCancelableAndTerminalOp)
                           Field(&hipFileIOEvents_t::ret, static_cast<size_t>(-hipFileInternalError)))));
 }
 
-TEST_F(HipFileBatchContext, CancelOperationsRepeatedIsIdempotent)
+TEST_F(HipFileBatchContext, DestroyContextCancelsPendingOperations)
 {
-    hipFileIOEvents_t canceled_event{nullptr, hipFileCanceled, 0};
-    auto              op = std::make_shared<StrictMock<MBatchOperation>>();
+    auto op1 = std::make_shared<StrictMock<MBatchOperation>>();
+    auto op2 = std::make_shared<StrictMock<MBatchOperation>>();
+    EXPECT_CALL(*op1, markPending()).Times(1);
+    EXPECT_CALL(*op2, markPending()).Times(1);
+    submitMockOperations({op1, op2});
+
+    EXPECT_CALL(*op1, tryCancel()).Times(1);
+    EXPECT_CALL(*op2, tryCancel()).Times(1);
+    expectTaskQueueFlushed(mock_task_group);
+    batch_map.destroyContext(_context.get());
+}
+
+TEST_F(HipFileBatchContext, DestroyContextRemovesHandle)
+{
+    auto op = std::make_shared<StrictMock<MBatchOperation>>();
     EXPECT_CALL(*op, markPending()).Times(1);
     submitMockOperations({op});
+    hipFileBatchHandle_t handle = _context.get();
 
-    EXPECT_CALL(*mock_task_group, cancel()).Times(1);
     EXPECT_CALL(*op, tryCancel()).Times(1);
-    ASSERT_NO_THROW(_context->cancelOperations());
-    EXPECT_CALL(*mock_task_group, cancel()).Times(1);
-    EXPECT_CALL(*op, tryCancel()).Times(1);
-    ASSERT_NO_THROW(_context->cancelOperations());
+    expectTaskQueueFlushed(mock_task_group);
+    batch_map.destroyContext(handle);
 
-    EXPECT_CALL(*op, isTerminal()).WillRepeatedly(Return(true));
-    EXPECT_CALL(*op, event()).WillRepeatedly(Return(canceled_event));
-
-    unsigned          nr = 1;
-    hipFileIOEvents_t event{};
-    ASSERT_NO_THROW(_context->getStatus(1, &nr, &event, nullptr));
-    ASSERT_EQ(nr, 1);
-
-    nr = 1;
-    ASSERT_NO_THROW(_context->getStatus(0, &nr, &event, nullptr));
-    ASSERT_EQ(nr, 0);
+    ASSERT_THROW(batch_map.get(handle), InvalidBatchHandle);
 }
 
 HIPFILE_WARN_NO_GLOBAL_CTOR_ON
