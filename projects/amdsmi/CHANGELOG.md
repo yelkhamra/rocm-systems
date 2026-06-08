@@ -31,6 +31,12 @@ Full documentation for amd_smi_lib is available at [https://rocm.docs.amd.com/pr
 
 ### Resolved Issues
 
+- **Fixed `amd-smi set -L <clk> max <value>` not enforcing in-between caps on MI300A**.
+  - When `amd-smi set -L fclk max <value>` was called with a value that did not align to a reachable DPM level on MI300A (FCLK DPMs: 1200 / 1600 / 1900 / 2000 MHz), the driver/PMFW did not clamp to the next-lower DPM as required by the ROCM-20191 spec.  Under load FCLK leaked to the next-higher DPM (e.g. `max=1999` → enforced 2000, `max=1899` → 1900, `max=1599` → 1600), silently violating the user's cap by 1 MHz and defeating the HPE/HLRS PowerSched power-steering use case.
+  - The CLI now snaps the requested `max` value DOWN to the largest reachable DPM level <= requested before calling `amdsmi_set_gpu_clk_limit()`, so the enforced cap matches the spec: `>=2000 → 2000`, `1900..1999 → 1900`, `1600..1899 → 1600`, `1200..1599 → 1200`.
+  - The success message now reports the value that was actually sent to the driver (post-snap) and annotates the snap, e.g. `Successfully changed max of fclk to 1900MHz (requested 1999MHz; snapped down to nearest reachable DPM level)`. This also fixes the misleading `amd-smi metric --clock` `MAX_CLK` readback that previously echoed the raw user value instead of the enforced cap.
+  - Scope: `max` only.  `min` lim-type behaviour is unchanged.
+
 - **Fixed `amdsmi_init()` aborting entirely when CPU/ESMI initialization fails**.  
   - `populate_amd_cpus()` treated an `esmi_init()` failure (non-AMD CPU, missing/unsupported energy or HSMP driver, or a CPU/SMU in a bad state) as fatal, causing all of `amdsmi_init()` to fail so GPU and NIC functionality became unusable. ESMI/CPU discovery is now non-fatal and is skipped on failure, mirroring the NIC discovery paths.
   - Removed an incorrect `static_cast<amdsmi_status_t>(esmi_init())` that conflated the unrelated `esmi_status_t` and `amdsmi_status_t` enums.
