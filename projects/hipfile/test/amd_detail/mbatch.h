@@ -29,6 +29,9 @@ class MBatchContext : public IBatchContext {
 public:
     MOCK_METHOD(unsigned, getCapacity, (), (const, noexcept, override));
     MOCK_METHOD(void, submitOperations, (BatchOperations ops), (override));
+    MOCK_METHOD(void, getStatus,
+                (unsigned min_nr, unsigned *nr, hipFileIOEvents_t *iocbp, struct timespec *timeout),
+                (override));
 };
 
 }
