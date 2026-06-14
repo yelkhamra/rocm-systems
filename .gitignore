@@ -17,3 +17,4 @@
 /.rocshmem-worktree
 /projects/cuid/_build
 build/
+.worktrees/
