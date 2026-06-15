@@ -638,7 +638,8 @@ namespace RcclUnitTesting
                                        bool           const inPlace,
                                        bool           const managedMem,
                                        bool           const useHipGraph,
-                                       int            const ranksPerProc)
+                                       int            const ranksPerProc,
+                                       bool           const useBias)
   {
     std::stringstream ss;
     ss << (isMultiProcess ? "MP" : "SP") <<  " ";
@@ -648,7 +649,9 @@ namespace RcclUnitTesting
     else
       ss << "    ";
     ss << "ranks ";
-    ss << std::setfill(' ') << std::setw(20) << ncclFuncNames[funcType] << " ";
+    std::string funcName = ncclFuncNames[funcType];
+    if (useBias && funcType == ncclCollAllReduce) funcName += "Bias";
+    ss << std::setfill(' ') << std::setw(20) << funcName << " ";
     ss << "(" << (inPlace ? "IP" : "OP") << ","
        << (managedMem ? "MM" : "GM") << ","
        << (useHipGraph ? "GL" : "NL") <<") ";
@@ -780,7 +783,8 @@ namespace RcclUnitTesting
                                                      funcTypes[ftIdx], dataTypes[dtIdx],
                                                      redOps[rdIdx], roots[rtIdx],
                                                      inPlaceList[ipIdx], managedMemList[mmIdx],
-                                                     useHipGraphList[hgIdx], ranksPerGpu);
+                                                     useHipGraphList[hgIdx], ranksPerGpu,
+                                                     optionalArgs.useBias);
 
             if (ev.showNames)
             {
