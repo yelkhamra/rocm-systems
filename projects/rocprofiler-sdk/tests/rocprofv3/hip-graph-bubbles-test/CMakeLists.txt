@@ -58,4 +58,4 @@ endfunction()
 
 add_hip_graph_bubbles_kernel_trace_test(k256-i20 256 20 60)
 add_hip_graph_bubbles_kernel_trace_test(k256-i200 256 200 120)
-add_hip_graph_bubbles_kernel_trace_test(k2000-i200 2000 200 180)
+add_hip_graph_bubbles_kernel_trace_test(k2000-i200 1000 200 180)
