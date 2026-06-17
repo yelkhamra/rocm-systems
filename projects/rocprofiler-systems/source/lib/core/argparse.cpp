@@ -115,10 +115,10 @@ init_parser(parser_data& _data)
         path::realpath(path::get_internal_libpath("librocprof-sys.so").c_str());
 
     auto _libexecpath = path::realpath(path::get_internal_script_path());
-    update_env(_data, "ROCPROFSYS_SCRIPT_PATH", _libexecpath, update_mode::REPLACE);
+    update_env(_data, env_vars::SCRIPT_PATH, _libexecpath, update_mode::REPLACE);
 
     auto _rootpath = path::realpath(path::get_rocprofsys_root());
-    update_env(_data, "ROCPROFSYS_ROOT", _rootpath, update_mode::REPLACE);
+    update_env(_data, env_vars::ROOT, _rootpath, update_mode::REPLACE);
 
     return _data;
 }
@@ -146,6 +146,17 @@ add_torch_library_path(parser_data& _data)
     rocprofsys::common::add_torch_library_path(
         _data.env.current, _data.out.command.front(), _data.env.updated);
     return _data;
+}
+
+output_format_selection
+resolve_output_format(const strset_t& tokens)
+{
+    output_format_selection _sel;
+    _sel.perfetto = tokens.contains("proto");
+    _sel.rocpd    = tokens.contains("rocpd");
+    _sel.json     = tokens.contains("json");
+    _sel.text     = tokens.contains("text") || tokens.contains("txt");
+    return _sel;
 }
 
 parser_data&
@@ -205,8 +216,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .dtype("string")
             .choices({ "trace", "debug", "info", "warn", "error", "critical", "off" })
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_LOG_LEVEL",
-                           p.get<std::string>("log-level"));
+                update_env(_data, env_vars::LOG_LEVEL, p.get<std::string>("log-level"));
             });
 
         _data.reg.processed_environs.emplace("log_level");
@@ -221,7 +231,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
                 auto _monochrome     = p.get<bool>("monochrome");
                 _data.out.monochrome = _monochrome;
                 p.set_use_color(!_monochrome);
-                update_env(_data, "ROCPROFSYS_MONOCHROME", (_monochrome) ? "1" : "0");
+                update_env(_data, env_vars::MONOCHROME, (_monochrome) ? "1" : "0");
                 update_env(_data, "MONOCHROME", (_monochrome) ? "1" : "0");
             });
 
@@ -234,8 +244,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .add_argument({ "--debug" },
                           "[DEPRECATED Use --log-level=debug] Debug output")
             .max_count(1)
-            .action(
-                [&](parser_t&) { update_env(_data, "ROCPROFSYS_LOG_LEVEL", "debug"); });
+            .action([&](parser_t&) { update_env(_data, env_vars::LOG_LEVEL, "debug"); });
 
         _data.reg.processed_environs.emplace("debug");
     }
@@ -250,7 +259,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .action([&](parser_t& p) {
                 auto _v           = p.get<int>("verbose");
                 _data.out.verbose = _v;
-                update_env(_data, "ROCPROFSYS_VERBOSE", _v);
+                update_env(_data, env_vars::VERBOSE, _v);
 
                 constexpr std::array<const char*, 5> log_levels = { "off", "info",
                                                                     "debug", "debug",
@@ -258,7 +267,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
 
                 auto index =
                     std::clamp(_v + 1, 0, static_cast<int>(log_levels.size() - 1));
-                update_env(_data, "ROCPROFSYS_LOG_LEVEL", log_levels[index]);
+                update_env(_data, env_vars::LOG_LEVEL, log_levels[index]);
             });
 
         _data.reg.processed_environs.emplace("verbose");
@@ -276,7 +285,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .min_count(1)
             .dtype("filepath")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_CONFIG_FILE",
+                update_env(_data, env_vars::CONFIG_FILE,
                            fmt::format("{}", fmt::join(p.get<strvec_t>("config"), ":")));
             });
 
@@ -296,8 +305,8 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .dtype("path [prefix]")
             .action([&](parser_t& p) {
                 auto _v = p.get<strvec_t>("output");
-                update_env(_data, "ROCPROFSYS_OUTPUT_PATH", _v.at(0));
-                if(_v.size() > 1) update_env(_data, "ROCPROFSYS_OUTPUT_PREFIX", _v.at(1));
+                update_env(_data, env_vars::OUTPUT_PATH, _v.at(0));
+                if(_v.size() > 1) update_env(_data, env_vars::OUTPUT_PREFIX, _v.at(1));
             });
 
         _data.reg.processed_environs.emplace("output");
@@ -309,10 +318,11 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
     {
         _parser
             .add_argument({ "-T", "--trace" },
-                          "Generate a detailed trace (perfetto output)")
+                          "Generate a detailed trace (perfetto output). See also "
+                          "--output-format.")
             .max_count(1)
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_TRACE", p.get<bool>("trace"));
+                update_env(_data, env_vars::TRACE, p.get<bool>("trace"));
             });
 
         _parser
@@ -321,7 +331,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
                           "generation (higher overhead)")
             .max_count(1)
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_TRACE_LEGACY", p.get<bool>("trace-legacy"));
+                update_env(_data, env_vars::TRACE_LEGACY, p.get<bool>("trace-legacy"));
             });
 
         _data.reg.processed_environs.emplace("trace");
@@ -333,11 +343,12 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
         _parser
             .add_argument(
                 { "-P", "--profile" },
-                "Generate a call-stack-based profile (conflicts with --flat-profile)")
+                "Generate a call-stack-based profile (conflicts with --flat-profile). "
+                "See also --output-format.")
             .max_count(1)
             .conflicts({ "flat-profile" })
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_PROFILE", p.get<bool>("profile"));
+                update_env(_data, env_vars::PROFILE, p.get<bool>("profile"));
             });
 
         _data.reg.processed_environs.emplace("profile");
@@ -351,8 +362,8 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .max_count(1)
             .conflicts({ "profile" })
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_PROFILE", p.get<bool>("flat-profile"));
-                update_env(_data, "ROCPROFSYS_FLAT_PROFILE", p.get<bool>("flat-profile"));
+                update_env(_data, env_vars::PROFILE, p.get<bool>("flat-profile"));
+                update_env(_data, env_vars::FLAT_PROFILE, p.get<bool>("flat-profile"));
             });
 
         _data.reg.processed_environs.emplace("flat_profile");
@@ -368,13 +379,13 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .dtype("timer-type")
             .choices({ "cputime", "realtime" })
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_USE_SAMPLING", true);
+                update_env(_data, env_vars::USE_SAMPLING, true);
                 auto _modes = p.get<strset_t>("sample");
                 if(!_modes.empty())
                 {
-                    update_env(_data, "ROCPROFSYS_SAMPLING_CPUTIME",
+                    update_env(_data, env_vars::SAMPLING_CPUTIME,
                                _modes.count("cputime") > 0, update_mode::WEAK);
-                    update_env(_data, "ROCPROFSYS_SAMPLING_REALTIME",
+                    update_env(_data, env_vars::SAMPLING_REALTIME,
                                _modes.count("realtime") > 0, update_mode::WEAK);
                 }
             });
@@ -392,9 +403,9 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .action([&](parser_t& p) {
                 auto _h = p.get<bool>("host");
                 auto _d = p.get<bool>("device");
-                update_env(_data, "ROCPROFSYS_USE_PROCESS_SAMPLING", _h || _d);
-                update_env(_data, "ROCPROFSYS_CPU_FREQ_ENABLED", _h);
-                if(_h) update_env(_data, "ROCPROFSYS_USE_AMD_SMI", _d);
+                update_env(_data, env_vars::USE_PROCESS_SAMPLING, _h || _d);
+                update_env(_data, env_vars::CPU_FREQ_ENABLED, _h);
+                if(_h) update_env(_data, env_vars::USE_AMD_SMI, _d);
             });
 
         _data.reg.processed_environs.emplace("host");
@@ -412,9 +423,9 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .action([&](parser_t& p) {
                 auto _h = p.get<bool>("host");
                 auto _d = p.get<bool>("device");
-                update_env(_data, "ROCPROFSYS_USE_PROCESS_SAMPLING", _h || _d);
-                update_env(_data, "ROCPROFSYS_USE_AMD_SMI", _d);
-                if(_d) update_env(_data, "ROCPROFSYS_CPU_FREQ_ENABLED", _h);
+                update_env(_data, env_vars::USE_PROCESS_SAMPLING, _h || _d);
+                update_env(_data, env_vars::USE_AMD_SMI, _d);
+                if(_d) update_env(_data, env_vars::CPU_FREQ_ENABLED, _h);
             });
 
         _data.reg.processed_environs.emplace("device");
@@ -431,11 +442,11 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("seconds")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_TRACE_DELAY", p.get<double>("wait"),
+                update_env(_data, env_vars::TRACE_DELAY, p.get<double>("wait"),
                            update_mode::WEAK);
-                update_env(_data, "ROCPROFSYS_SAMPLING_DELAY", p.get<double>("wait"),
+                update_env(_data, env_vars::SAMPLING_DELAY, p.get<double>("wait"),
                            update_mode::WEAK);
-                update_env(_data, "ROCPROFSYS_CAUSAL_DELAY", p.get<double>("wait"),
+                update_env(_data, env_vars::CAUSAL_DELAY, p.get<double>("wait"),
                            update_mode::WEAK);
             });
 
@@ -452,11 +463,11 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("seconds")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_TRACE_DURATION", p.get<double>("duration"),
+                update_env(_data, env_vars::TRACE_DURATION, p.get<double>("duration"),
                            update_mode::WEAK);
-                update_env(_data, "ROCPROFSYS_SAMPLING_DURATION",
-                           p.get<double>("duration"), update_mode::WEAK);
-                update_env(_data, "ROCPROFSYS_CAUSAL_DURATION", p.get<double>("duration"),
+                update_env(_data, env_vars::SAMPLING_DURATION, p.get<double>("duration"),
+                           update_mode::WEAK);
+                update_env(_data, env_vars::CAUSAL_DURATION, p.get<double>("duration"),
                            update_mode::WEAK);
             });
 
@@ -473,7 +484,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .min_count(1)
             .dtype("period-spec(s)")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_TRACE_PERIODS",
+                update_env(_data, env_vars::TRACE_PERIODS,
                            fmt::format("{}", fmt::join(p.get<strvec_t>("periods"), " ")),
                            update_mode::WEAK);
             });
@@ -491,7 +502,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .dtype("string")
             .required({ "rank-filter-output|rank-filter-logs" })
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_RANK_FILTER_ID",
+                update_env(_data, env_vars::RANK_FILTER_ID,
                            p.get<std::string>("rank-filter-id"));
             });
 
@@ -509,7 +520,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .dtype("int and/or range")
             .action([&](parser_t& p) {
                 update_env(
-                    _data, "ROCPROFSYS_RANK_FILTER_OUTPUT",
+                    _data, env_vars::RANK_FILTER_OUTPUT,
                     fmt::format("{}",
                                 fmt::join(p.get<strvec_t>("rank-filter-output"), ",")));
             });
@@ -528,7 +539,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .dtype("int and/or range")
             .action([&](parser_t& p) {
                 update_env(
-                    _data, "ROCPROFSYS_RANK_FILTER_LOGS",
+                    _data, env_vars::RANK_FILTER_LOGS,
                     fmt::format("{}",
                                 fmt::join(p.get<strvec_t>("rank-filter-logs"), ",")));
             });
@@ -556,7 +567,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
         _backend_choices.erase("amd-smi");
         _backend_choices.erase("rocm");
 
-        update_env(_data, "ROCPROFSYS_USE_AMD_SMI", false);
+        update_env(_data, env_vars::USE_AMD_SMI, false);
     }
 
     _parser.start_group("BACKEND OPTIONS",
@@ -575,14 +586,14 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
                 auto _update = [&](const auto& _opt, bool _cond) {
                     if(_cond || _v.count("all") > 0) update_env(_data, _opt, true);
                 };
-                _update("ROCPROFSYS_USE_KOKKOSP", _v.count("kokkosp") > 0);
-                _update("ROCPROFSYS_USE_MPIP", _v.count("mpip") > 0);
-                _update("ROCPROFSYS_USE_OMPT", _v.count("ompt") > 0);
-                _update("ROCPROFSYS_USE_RCCLP", _v.count("rcclp") > 0);
-                _update("ROCPROFSYS_USE_AMD_SMI", _v.count("amd-smi") > 0);
-                _update("ROCPROFSYS_TRACE_THREAD_LOCKS", _v.count("mutex-locks") > 0);
-                _update("ROCPROFSYS_TRACE_THREAD_RW_LOCKS", _v.count("rw-locks") > 0);
-                _update("ROCPROFSYS_TRACE_THREAD_SPIN_LOCKS", _v.count("spin-locks") > 0);
+                _update(env_vars::USE_KOKKOSP, _v.count("kokkosp") > 0);
+                _update(env_vars::USE_MPIP, _v.count("mpip") > 0);
+                _update(env_vars::USE_OMPT, _v.count("ompt") > 0);
+                _update(env_vars::USE_RCCLP, _v.count("rcclp") > 0);
+                _update(env_vars::USE_AMD_SMI, _v.count("amd-smi") > 0);
+                _update(env_vars::TRACE_THREAD_LOCKS, _v.count("mutex-locks") > 0);
+                _update(env_vars::TRACE_THREAD_RW_LOCKS, _v.count("rw-locks") > 0);
+                _update(env_vars::TRACE_THREAD_SPIN_LOCKS, _v.count("spin-locks") > 0);
 
                 if(_v.count("all") > 0 || _v.count("kokkosp") > 0)
                     update_env(_data, "KOKKOS_TOOLS_LIBS", _data.env.omni_libpath,
@@ -604,14 +615,14 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
                 auto _update = [&](const auto& _opt, bool _cond) {
                     if(_cond || _v.count("all") > 0) update_env(_data, _opt, false);
                 };
-                _update("ROCPROFSYS_USE_KOKKOSP", _v.count("kokkosp") > 0);
-                _update("ROCPROFSYS_USE_MPIP", _v.count("mpip") > 0);
-                _update("ROCPROFSYS_USE_OMPT", _v.count("ompt") > 0);
-                _update("ROCPROFSYS_USE_RCCLP", _v.count("rcclp") > 0);
-                _update("ROCPROFSYS_USE_AMD_SMI", _v.count("amd-smi") > 0);
-                _update("ROCPROFSYS_TRACE_THREAD_LOCKS", _v.count("mutex-locks") > 0);
-                _update("ROCPROFSYS_TRACE_THREAD_RW_LOCKS", _v.count("rw-locks") > 0);
-                _update("ROCPROFSYS_TRACE_THREAD_SPIN_LOCKS", _v.count("spin-locks") > 0);
+                _update(env_vars::USE_KOKKOSP, _v.count("kokkosp") > 0);
+                _update(env_vars::USE_MPIP, _v.count("mpip") > 0);
+                _update(env_vars::USE_OMPT, _v.count("ompt") > 0);
+                _update(env_vars::USE_RCCLP, _v.count("rcclp") > 0);
+                _update(env_vars::USE_AMD_SMI, _v.count("amd-smi") > 0);
+                _update(env_vars::TRACE_THREAD_LOCKS, _v.count("mutex-locks") > 0);
+                _update(env_vars::TRACE_THREAD_RW_LOCKS, _v.count("rw-locks") > 0);
+                _update(env_vars::TRACE_THREAD_SPIN_LOCKS, _v.count("spin-locks") > 0);
 
                 if(_v.count("all") > 0 || _v.count("kokkosp") > 0)
                     remove_env(_data.env.current, "KOKKOS_TOOLS_LIBS", _data.env.initial);
@@ -659,7 +670,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("filepath")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_PERFETTO_FILE",
+                update_env(_data, env_vars::PERFETTO_FILE,
                            p.get<std::string>("trace-file"));
             });
 
@@ -675,7 +686,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("KB")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_PERFETTO_BUFFER_SIZE_KB",
+                update_env(_data, env_vars::PERFETTO_BUFFER_SIZE_KB,
                            p.get<std::int64_t>("trace-buffer-size"));
             });
 
@@ -690,7 +701,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .dtype("policy")
             .choices({ "discard", "ring_buffer" })
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_PERFETTO_FILL_POLICY",
+                update_env(_data, env_vars::PERFETTO_FILL_POLICY,
                            p.get<std::string>("trace-fill-policy"));
             });
 
@@ -710,7 +721,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("seconds")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_TRACE_DELAY", p.get<double>("trace-wait"));
+                update_env(_data, env_vars::TRACE_DELAY, p.get<double>("trace-wait"));
             });
 
         _data.reg.processed_environs.emplace("trace_delay");
@@ -727,7 +738,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("seconds")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_TRACE_DURATION",
+                update_env(_data, env_vars::TRACE_DURATION,
                            p.get<double>("trace-duration"));
             });
 
@@ -747,7 +758,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .dtype("period-spec(s)")
             .action([&](parser_t& p) {
                 update_env(
-                    _data, "ROCPROFSYS_TRACE_PERIODS",
+                    _data, env_vars::TRACE_PERIODS,
                     fmt::format("{}", fmt::join(p.get<strvec_t>("trace-periods"), ",")));
             });
 
@@ -765,7 +776,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("string")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_SELECTED_REGIONS",
+                update_env(_data, env_vars::SELECTED_REGIONS,
                            p.get<std::string>("selected-regions"));
             });
 
@@ -790,7 +801,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("clock-id")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_TRACE_PERIOD_CLOCK_ID",
+                update_env(_data, env_vars::TRACE_PERIOD_CLOCK_ID,
                            p.get<double>("trace-clock-id"));
             })
             .choices(_clock_id_choices.first)
@@ -800,13 +811,48 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
         _data.reg.processed_environs.emplace("trace_period_clock_id");
     }
 
+    _parser.start_group("OUTPUT FORMAT OPTIONS",
+                        "Unified selection of which output format(s) to produce");
+
+    if(_data.reg.environ_filter("output_format", _data))
+    {
+        _parser
+            .add_argument(
+                { "--output-format" },
+                "Select output format(s); only the listed formats are produced: "
+                "proto (Perfetto trace), rocpd (RocPD database), json/text (Timemory "
+                "profile; txt aliases text). Space- or comma-separated, e.g. "
+                "--output-format proto rocpd. Cannot be combined with --trace, "
+                "--profile, --flat-profile, or --profile-format.")
+            .min_count(1)
+            .max_count(5)
+            .dtype("[format...]")
+            .choices({ "proto", "rocpd", "json", "text", "txt" })
+            .conflicts(
+                { "trace", "profile", "flat-profile", "profile-format", "use-rocpd" })
+            .action([&](parser_t& p) {
+                const auto _sel = resolve_output_format(p.get<strset_t>("output-format"));
+                update_env(_data, env_vars::TRACE, _sel.perfetto);
+                update_env(_data, env_vars::USE_ROCPD, _sel.rocpd);
+                update_env(_data, env_vars::PROFILE, _sel.profile());
+                update_env(_data, env_vars::JSON_OUTPUT, _sel.json);
+                update_env(_data, env_vars::TEXT_OUTPUT, _sel.text);
+                update_env(_data, env_vars::COUT_OUTPUT, false);
+            });
+
+        _data.reg.processed_environs.emplace("output_format");
+    }
+
     _parser.start_group("PROFILE OPTIONS",
                         "Specific options controlling profiling (i.e. deterministic "
                         "measurements which are aggregated into a summary)");
 
     if(_data.reg.environ_filter("profile_format", _data))
     {
-        _parser.add_argument({ "--profile-format" }, "Data formats for profiling results")
+        _parser
+            .add_argument({ "--profile-format" },
+                          "Data formats for profiling results. See also "
+                          "--output-format.")
             .min_count(1)
             .max_count(3)
             .dtype("string")
@@ -814,12 +860,12 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .choices({ "text", "json", "console" })
             .action([&](parser_t& p) {
                 auto _v = p.get<strset_t>("profile-format");
-                update_env(_data, "ROCPROFSYS_PROFILE", true);
+                update_env(_data, env_vars::PROFILE, true);
                 if(!_v.empty())
                 {
-                    update_env(_data, "ROCPROFSYS_TEXT_OUTPUT", _v.count("text") != 0);
-                    update_env(_data, "ROCPROFSYS_JSON_OUTPUT", _v.count("json") != 0);
-                    update_env(_data, "ROCPROFSYS_COUT_OUTPUT", _v.count("console") != 0);
+                    update_env(_data, env_vars::TEXT_OUTPUT, _v.count("text") != 0);
+                    update_env(_data, env_vars::JSON_OUTPUT, _v.count("json") != 0);
+                    update_env(_data, env_vars::COUT_OUTPUT, _v.count("console") != 0);
                 }
             });
 
@@ -842,9 +888,9 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .dtype("path [prefix]")
             .action([&](parser_t& p) {
                 auto _v = p.get<strvec_t>("profile-diff");
-                update_env(_data, "ROCPROFSYS_DIFF_OUTPUT", true);
-                update_env(_data, "ROCPROFSYS_INPUT_PATH", _v.at(0));
-                if(_v.size() > 1) update_env(_data, "ROCPROFSYS_INPUT_PREFIX", _v.at(1));
+                update_env(_data, env_vars::DIFF_OUTPUT, true);
+                update_env(_data, env_vars::INPUT_PATH, _v.at(0));
+                if(_v.size() > 1) update_env(_data, env_vars::INPUT_PREFIX, _v.at(1));
             });
 
         _data.reg.processed_environs.emplace("profile_diff");
@@ -867,7 +913,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("floating-point")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_PROCESS_SAMPLING_FREQ",
+                update_env(_data, env_vars::PROCESS_SAMPLING_FREQ,
                            p.get<double>("process-freq"));
             });
 
@@ -884,7 +930,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("seconds")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_PROCESS_SAMPLING_DELAY",
+                update_env(_data, env_vars::PROCESS_SAMPLING_DELAY,
                            p.get<double>("process-wait"));
             });
 
@@ -901,7 +947,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("seconds")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_SAMPLING_PROCESS_DURATION",
+                update_env(_data, env_vars::SAMPLING_PROCESS_DURATION,
                            p.get<double>("process-duration"));
             });
 
@@ -917,7 +963,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
                 "CPU IDs for frequency sampling. Supports integers and/or ranges")
             .dtype("int and/or range")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_SAMPLING_CPUS",
+                update_env(_data, env_vars::SAMPLING_CPUS,
                            fmt::format("{}", fmt::join(p.get<strvec_t>("cpus"), ",")));
             });
 
@@ -932,7 +978,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
                           "GPU IDs for SMI queries. Supports integers and/or ranges")
             .dtype("int and/or range")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_SAMPLING_GPUS",
+                update_env(_data, env_vars::SAMPLING_GPUS,
                            fmt::format("{}", fmt::join(p.get<strvec_t>("gpus"), ",")));
             });
 
@@ -947,7 +993,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
                           "AI NIC IDs for SMI queries. Supports comma-separated list")
             .dtype("list of strings")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_SAMPLING_AINICS",
+                update_env(_data, env_vars::SAMPLING_AINICS,
                            fmt::format("{}", fmt::join(p.get<strvec_t>("ai-nics"), ",")));
             });
 
@@ -967,7 +1013,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("floating-point")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_SAMPLING_FREQ",
+                update_env(_data, env_vars::SAMPLING_FREQ,
                            p.get<double>("sampling-freq"));
             });
 
@@ -986,7 +1032,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .dtype("int and/or range")
             .action([&](parser_t& p) {
                 update_env(
-                    _data, "ROCPROFSYS_SAMPLING_TIDS",
+                    _data, env_vars::SAMPLING_TIDS,
                     fmt::format(
                         "{}", fmt::join(p.get<std::vector<std::int64_t>>("tids"), ", ")));
             });
@@ -1008,7 +1054,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("seconds")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_SAMPLING_DELAY",
+                update_env(_data, env_vars::SAMPLING_DELAY,
                            p.get<double>("sampling-wait"));
             });
 
@@ -1027,7 +1073,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .count(1)
             .dtype("seconds")
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_SAMPLING_DURATION",
+                update_env(_data, env_vars::SAMPLING_DURATION,
                            p.get<double>("sampling-duration"));
             });
 
@@ -1045,20 +1091,20 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .dtype("[freq] [delay] [tids...]")
             .action([&](parser_t& p) {
                 auto _v = p.get<std::deque<std::string>>("sample-cputime");
-                update_env(_data, "ROCPROFSYS_SAMPLING_CPUTIME", true);
+                update_env(_data, env_vars::SAMPLING_CPUTIME, true);
                 if(!_v.empty())
                 {
-                    update_env(_data, "ROCPROFSYS_SAMPLING_CPUTIME_FREQ", _v.front());
+                    update_env(_data, env_vars::SAMPLING_CPUTIME_FREQ, _v.front());
                     _v.pop_front();
                 }
                 if(!_v.empty())
                 {
-                    update_env(_data, "ROCPROFSYS_SAMPLING_CPUTIME_DELAY", _v.front());
+                    update_env(_data, env_vars::SAMPLING_CPUTIME_DELAY, _v.front());
                     _v.pop_front();
                 }
                 if(!_v.empty())
                 {
-                    update_env(_data, "ROCPROFSYS_SAMPLING_CPUTIME_TIDS",
+                    update_env(_data, env_vars::SAMPLING_CPUTIME_TIDS,
                                fmt::format("{}", fmt::join(_v, ",")));
                 }
             });
@@ -1073,20 +1119,20 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .dtype("[freq] [delay] [tids...]")
             .action([&](parser_t& p) {
                 auto _v = p.get<std::deque<std::string>>("sample-realtime");
-                update_env(_data, "ROCPROFSYS_SAMPLING_REALTIME", true);
+                update_env(_data, env_vars::SAMPLING_REALTIME, true);
                 if(!_v.empty())
                 {
-                    update_env(_data, "ROCPROFSYS_SAMPLING_REALTIME_FREQ", _v.front());
+                    update_env(_data, env_vars::SAMPLING_REALTIME_FREQ, _v.front());
                     _v.pop_front();
                 }
                 if(!_v.empty())
                 {
-                    update_env(_data, "ROCPROFSYS_SAMPLING_REALTIME_DELAY", _v.front());
+                    update_env(_data, env_vars::SAMPLING_REALTIME_DELAY, _v.front());
                     _v.pop_front();
                 }
                 if(!_v.empty())
                 {
-                    update_env(_data, "ROCPROFSYS_SAMPLING_REALTIME_TIDS",
+                    update_env(_data, env_vars::SAMPLING_REALTIME_TIDS,
                                fmt::format("{}", fmt::join(_v, ",")));
                 }
             });
@@ -1101,7 +1147,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .dtype("[event] [freq] [tids...]")
             .action([&](parser_t& p) {
                 auto _v = p.get<std::deque<std::string>>("sample-overflow");
-                update_env(_data, "ROCPROFSYS_SAMPLING_OVERFLOW", true);
+                update_env(_data, env_vars::SAMPLING_OVERFLOW, true);
 
                 if(!_v.empty())
                 {
@@ -1111,17 +1157,17 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
                             "'--sample-overflow {} ...' conflicts with "
                             "'--sampling-overflow-event {}' option",
                             _v.front(), p.get<std::string>("sampling-overflow-event")));
-                    update_env(_data, "ROCPROFSYS_SAMPLING_OVERFLOW_EVENT", _v.front());
+                    update_env(_data, env_vars::SAMPLING_OVERFLOW_EVENT, _v.front());
                     _v.pop_front();
                 }
                 if(!_v.empty())
                 {
-                    update_env(_data, "ROCPROFSYS_SAMPLING_OVERFLOW_FREQ", _v.front());
+                    update_env(_data, env_vars::SAMPLING_OVERFLOW_FREQ, _v.front());
                     _v.pop_front();
                 }
                 if(!_v.empty())
                 {
-                    update_env(_data, "ROCPROFSYS_SAMPLING_OVERFLOW_TIDS",
+                    update_env(_data, env_vars::SAMPLING_OVERFLOW_TIDS,
                                fmt::format("{}", fmt::join(_v, ",")));
                 }
             });
@@ -1148,7 +1194,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .action([&](parser_t& p) {
                 auto _events =
                     fmt::format("{}", fmt::join(p.get<strvec_t>("cpu-events"), ","));
-                update_env(_data, "ROCPROFSYS_PAPI_EVENTS", _events);
+                update_env(_data, env_vars::PAPI_EVENTS, _events);
             });
 
         _data.reg.processed_environs.emplace("cpu_events");
@@ -1166,7 +1212,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
             .action([&](parser_t& p) {
                 auto _events =
                     fmt::format("{}", fmt::join(p.get<strvec_t>("gpu-events"), ","));
-                update_env(_data, "ROCPROFSYS_ROCM_EVENTS", _events);
+                update_env(_data, env_vars::ROCM_EVENTS, _events);
             });
 
         _data.reg.processed_environs.emplace("gpu_events");
@@ -1240,7 +1286,7 @@ add_core_arguments(parser_t& _parser, parser_data& _data)
                           "Include inline info in output when available")
             .max_count(1)
             .action([&](parser_t& p) {
-                update_env(_data, "ROCPROFSYS_SAMPLING_INCLUDE_INLINES",
+                update_env(_data, env_vars::SAMPLING_INCLUDE_INLINES,
                            p.get<bool>("inlines"));
             });
 

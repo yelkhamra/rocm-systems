@@ -412,7 +412,7 @@ resolve_schema_config(const nlohmann::json& config)
         }
         if(hw.contains("papi_multiplexing"))
             resolve_enabled(result, hw["papi_multiplexing"], "enabled",
-                            env_vars::PAPI_MULTIPLEXING);
+                            env_vars::PAPI_MULTIPLEXING_ENABLED);
     }
 
     // --- Advanced section ---
@@ -430,7 +430,7 @@ resolve_schema_config(const nlohmann::json& config)
         resolve_value(result, adv, "trace_duration_sec", env_vars::TRACE_DURATION);
         resolve_value(result, adv, "verbose", env_vars::VERBOSE);
         if(adv.contains("debug"))
-            resolve_enabled(result, adv["debug"], "enabled", env_vars::DEBUG);
+            resolve_enabled(result, adv["debug"], "enabled", env_vars::DEBUG_MODE);
         resolve_value(result, adv, "timemory_components", env_vars::TIMEMORY_COMPONENTS);
         resolve_value(result, adv, "network_interface", env_vars::NETWORK_INTERFACE);
         resolve_value(result, adv, "trace_periods", env_vars::TRACE_PERIODS);
@@ -671,6 +671,18 @@ set_json_double(nlohmann::json& target, const std::string& value)
         target = value;
 }
 
+bool
+is_truthy(const std::string& v)
+{
+    if(v == "1") return true;
+    if(v.size() < 2 || v.size() > 4) return false;
+    std::string lower;
+    lower.reserve(v.size());
+    for(auto c : v)
+        lower += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    return lower == "true" || lower == "on" || lower == "yes";
+}
+
 void
 export_enabled(nlohmann::json& config, const std::map<std::string, std::string>& env_map,
                std::string_view env_var, const std::string& json_path_section,
@@ -678,8 +690,7 @@ export_enabled(nlohmann::json& config, const std::map<std::string, std::string>&
 {
     auto it = env_map.find(std::string{ env_var });
     if(it != env_map.end())
-        config[json_path_section][json_path_key]["enabled"] =
-            env_vars::is_truthy(it->second);
+        config[json_path_section][json_path_key]["enabled"] = is_truthy(it->second);
 }
 
 void
@@ -688,8 +699,7 @@ export_section_enabled(nlohmann::json&                           config,
                        std::string_view env_var, const std::string& json_path_section)
 {
     auto it = env_map.find(std::string{ env_var });
-    if(it != env_map.end())
-        config[json_path_section]["enabled"] = env_vars::is_truthy(it->second);
+    if(it != env_map.end()) config[json_path_section]["enabled"] = is_truthy(it->second);
 }
 
 void
@@ -778,12 +788,12 @@ export_domain_gpu(nlohmann::json&                           config,
     auto& gpu = config["domains"]["gpu"];
 
     if(auto v = lookup(env_map, env_vars::USE_PROCESS_SAMPLING))
-        gpu["process_sampling"]["enabled"] = env_vars::is_truthy(*v);
+        gpu["process_sampling"]["enabled"] = is_truthy(*v);
 
     auto use_amd_smi = lookup(env_map, env_vars::USE_AMD_SMI);
     if(!use_amd_smi) return;
 
-    gpu["enabled"] = env_vars::is_truthy(*use_amd_smi);
+    gpu["enabled"] = is_truthy(*use_amd_smi);
     if(auto metrics = lookup(env_map, env_vars::AMD_SMI_METRICS))
         csv_to_json_enabled_flags(gpu["metrics"], *metrics);
     if(auto freq = lookup(env_map, env_vars::AMD_SMI_FREQ))
@@ -793,9 +803,9 @@ export_domain_gpu(nlohmann::json&                           config,
     if(auto dur = lookup(env_map, env_vars::PROCESS_SAMPLING_DURATION))
         set_json_double(gpu["process_sampling_duration"]["value"], *dur);
     if(auto v = lookup(env_map, env_vars::USE_AINIC))
-        gpu["ainic"]["enabled"] = env_vars::is_truthy(*v);
+        gpu["ainic"]["enabled"] = is_truthy(*v);
     if(auto v = lookup(env_map, env_vars::USE_UNIFIED_MEMORY_PROFILING))
-        gpu["unified_memory_profiling"]["enabled"] = env_vars::is_truthy(*v);
+        gpu["unified_memory_profiling"]["enabled"] = is_truthy(*v);
 }
 
 void
@@ -810,7 +820,7 @@ export_domain_rocm(nlohmann::json&                           config,
         csv_to_json_enabled_flags(rocm["api_domains"], *v);
     }
     if(auto v = lookup(env_map, env_vars::ROCM_GROUP_BY_QUEUE))
-        rocm["group_by_queue"]["enabled"] = env_vars::is_truthy(*v);
+        rocm["group_by_queue"]["enabled"] = is_truthy(*v);
 }
 
 void
@@ -820,12 +830,11 @@ export_domain_cpu(nlohmann::json&                           config,
     auto& cpu = config["domains"]["cpu"];
 
     if(auto v = lookup(env_map, env_vars::CPU_FREQ_ENABLED))
-        cpu["cpu_freq_enabled"]["enabled"] = env_vars::is_truthy(*v);
+        cpu["cpu_freq_enabled"]["enabled"] = is_truthy(*v);
 
     auto use_proc = lookup(env_map, env_vars::USE_PROCESS_SAMPLING);
     auto cpu_freq = lookup(env_map, env_vars::CPU_FREQ);
-    if(use_proc && env_vars::is_truthy(*use_proc) && cpu_freq &&
-       env_vars::is_truthy(*cpu_freq))
+    if(use_proc && is_truthy(*use_proc) && cpu_freq && is_truthy(*cpu_freq))
     {
         cpu["enabled"]                    = true;
         cpu["metrics"]["freq"]["enabled"] = true;
@@ -855,8 +864,7 @@ export_domain_parallel(nlohmann::json&                           config,
     for(const auto& [env_var, runtime_name] : runtimes)
     {
         if(auto v = lookup(env_map, env_var))
-            runtimes_obj[std::string{ runtime_name }]["enabled"] =
-                env_vars::is_truthy(*v);
+            runtimes_obj[std::string{ runtime_name }]["enabled"] = is_truthy(*v);
     }
 }
 
@@ -902,8 +910,8 @@ export_hardware_counters(nlohmann::json&                           config,
         hw["enabled"]                              = true;
         hw["spm"]["sample_interval_unit"]["value"] = *v;
     }
-    export_enabled(config, env_map, env_vars::PAPI_MULTIPLEXING, "hardware_counters",
-                   "papi_multiplexing");
+    export_enabled(config, env_map, env_vars::PAPI_MULTIPLEXING_ENABLED,
+                   "hardware_counters", "papi_multiplexing");
 }
 }  // namespace
 
@@ -957,7 +965,7 @@ env_vars_to_json_schema(const std::map<std::string, std::string>& env_map)
 
     // --- Advanced ---
     export_int_value(config, env_map, env_vars::VERBOSE, "advanced", "verbose");
-    export_enabled(config, env_map, env_vars::DEBUG, "advanced", "debug");
+    export_enabled(config, env_map, env_vars::DEBUG_MODE, "advanced", "debug");
     export_int_value(config, env_map, env_vars::MAX_DEPTH, "advanced", "max_depth");
     export_double_value(config, env_map, env_vars::TRACE_DELAY, "advanced",
                         "trace_delay_sec");
