@@ -12,6 +12,7 @@ Core C++ library (`libamd_smi.so`) with Python bindings, CLI, Go shim, and Rust 
 3. **Pre-commit must pass** before review: `pip install pre-commit && pre-commit install`
 4. **Version** is defined in `include/amd_smi/amdsmi.h` (`AMDSMI_LIB_VERSION_MAJOR/MINOR/RELEASE`). CMake extracts it from there.
 5. **Excluded from formatting/linting**: `docs/`, `build/`, `esmi_ib_library/`, `third_party/`, `*.md`, `*.rst`
+6. **Agent working files are ephemeral** — write specs, plans, handoff docs, and scratch notes to `${TMPDIR:-/tmp}/amdsmi-agent-*`, never into the workspace. The only curated agent docs that belong in git are `.claude/context/CONTEXT.md` and `.claude/context/agent-flow.md`.
 
 ## Behavioral Guidelines
 
@@ -25,6 +26,11 @@ Bias toward caution over speed. For trivial tasks, use judgment.
 - If multiple interpretations exist, present them — don't pick silently.
 - If a simpler approach exists, say so. Push back when warranted.
 - If something is unclear, stop. Name what's confusing. Ask.
+
+**When asking the user to decide:**
+
+- Before surfacing a question, resolve what you can yourself (read the code, the docs, or dispatch a subagent). Only ask about things that genuinely need the user's judgment.
+- Present choices as a lettered multiple-choice list (A / B / C) with a one-line tradeoff for each, and recommend one. Default to asking in chat; only write a `/tmp` doc if the user asks for one.
 
 ### 2. Simplicity First
 
@@ -71,40 +77,3 @@ For multi-step tasks, state a brief plan:
 ```
 
 These guidelines are working if: fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
-
-## Existing Agent Tooling
-
-### Skills (`.claude/skills/`)
-- **amdsmi-build-install** — Build, package, install, verify from source
-- **amdsmi-python-style-guide** — ROCm Python style rules (type hints, pathlib, error handling)
-- **amdsmi-test-runner** — Run C++ and Python tests, verify results
-- **changelog-automation** — Check and generate CHANGELOG.md entries
-- **restructure-commits** — Consolidate branch commits into logical groups
-- **verification-before-completion** — Pre-completion checklist for fixes and refactors
-- **personal-bash-deploy** — Personal `~/.bashrc` deploy helpers (`ship`, `amdsmi_install_package`)
-
-### Claude Commands (`.claude/commands/`)
-- `/amdsmi-review-branch` — Review current branch vs main
-- `/amdsmi-review-pr` — Review GitHub PR by number
-
-### Custom Agents (`.github/agents/`)
-- **amdsmi-review** — Orchestrator: comprehensive or focused code review
-- **amdsmi-review-architecture** — Design patterns, API consistency, layering
-- **amdsmi-review-build** — CMake, packaging, install targets, dependencies
-- **amdsmi-review-docs** — Documentation, comments, help text, docstrings
-- **amdsmi-review-performance** — Efficiency, scaling, resource usage, hot paths
-- **amdsmi-review-security** — Vulnerabilities, secrets, input validation
-- **amdsmi-review-skeptic** — Questions necessity, challenges scope, finds simpler alternatives
-- **amdsmi-review-style** — Formatting, naming, pre-commit compliance
-- **amdsmi-review-tests** — Test coverage, quality, missing tests
-
-### Prompts (`.github/prompts/`)
-- `/amdsmi-review-branch` — VS Code prompt for branch review
-- `/amdsmi-review-pr` — VS Code prompt for PR review
-
-### Repo Memories
-Project structure, API cascade path, build/packaging paths, test directories, and tools are stored as repo memories — surfaced contextually, not loaded into every conversation.
-
-### Instructions (`.github/instructions/` + `.claude/rules/`)
-On-demand reference files loaded only when relevant. Source of truth is `.github/instructions/`; `.claude/rules/` symlinks to the same files for Claude Code compatibility:
-- **project-layout** — Project layout, API propagation path, per-layer verification checklist, tools/generators, test suites, and build/packaging
