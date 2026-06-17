@@ -437,7 +437,11 @@ static amdsmi_status_t populate_amd_ainic_device(const smi_nic_ctx_t& ctx, uint6
   static_assert(sizeof(smi_nic_rdma_devices_info_t) == sizeof(ai_nic_info.rdma_dev));
   status = smi_get_nic_rdma_dev_info(
       ctx, bdf_int, reinterpret_cast<smi_nic_rdma_devices_info_t*>(&ai_nic_info.rdma_dev));
-  CHK_AMDNIC_RET(status)
+  if ((status != SMI_NIC_STATUS_SUCCESS) &&
+      (status != SMI_NIC_STATUS_NO_DATA) &&
+      (status != SMI_NIC_STATUS_DRIVER_NOT_LOADED)) {
+    CHK_AMDNIC_RET(status);
+  }
 
   return AMDSMI_STATUS_SUCCESS;
 }
