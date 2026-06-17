@@ -31,7 +31,7 @@ target_link_libraries(
             rocprofiler-sdk::samples-common-library)
 
 set(DEFAULT_GPU_TARGETS "gfx906" "gfx908" "gfx90a" "gfx942" "gfx950" "gfx1100" "gfx1101"
-                        "gfx1102")
+                        "gfx1102" "gfx1250")
 
 set(OPENMP_GPU_TARGETS
     "${DEFAULT_GPU_TARGETS}"
