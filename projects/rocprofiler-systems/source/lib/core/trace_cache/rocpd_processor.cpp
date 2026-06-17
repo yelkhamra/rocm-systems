@@ -570,6 +570,10 @@ rocpd_processor_t::handle(
 }
 
 void
+rocpd_processor_t::handle([[maybe_unused]] const spm_sample& _spm)
+{}
+
+void
 rocpd_processor_t::handle([[maybe_unused]] const cpu_pmc_sample& _cpu_pmc_sample)
 {
     struct core_freq_sample

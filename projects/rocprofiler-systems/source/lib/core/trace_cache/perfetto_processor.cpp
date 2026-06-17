@@ -1589,6 +1589,10 @@ perfetto_processor_t::handle(
 }
 
 void
+perfetto_processor_t::handle([[maybe_unused]] const spm_sample& _spm)
+{}
+
+void
 perfetto_processor_t::handle([[maybe_unused]] const in_time_sample& _sample)
 {
     // Dispatch based on category_enum_id using the category type mapping
