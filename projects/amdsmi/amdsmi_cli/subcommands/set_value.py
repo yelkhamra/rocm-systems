@@ -770,38 +770,29 @@ class SetValueCommands:
         self.logger.print_output(multiple_device_enabled=multiple_devices_csv_override)
 
     @staticmethod
-    def _snap_clk_limit_to_dpm(gpu_handle, amdsmi_clk_type, requested_mhz, lim_type):
-        """Snap a requested clk-limit to the nearest reachable DPM level.
+    def _snap_clk_limit_to_dpm(gpu_handle, amdsmi_clk_type, requested_mhz):
+        """Snap a requested max clk-limit down to the nearest reachable DPM level.
 
-        For ``lim_type == "max"`` returns the largest DPM <= requested so
-        the enforced cap never exceeds the request (ROCM-25290; spec on
-        ROCM-20191).  ``min`` is intentionally left unchanged.
-
-        Returns ``(snapped_mhz, note)``, or ``(None, "")`` when the DPM
-        list is unavailable / requested is below the lowest reachable DPM
-        (the caller has already rejected that via ``val < min_clk``).
+        Returns the largest DPM frequency (MHz) <= ``requested_mhz`` so the
+        enforced cap never exceeds the request (ROCM-25290; spec on
+        ROCM-20191).  Returns ``None`` when the DPM list is unavailable or the
+        request is below the lowest reachable DPM (the caller has already
+        rejected that via ``val < min_clk``).
         """
-        if lim_type != "max":
-            return None, ""
         try:
             freq_info = amdsmi_interface.amdsmi_get_clk_freq(gpu_handle, amdsmi_clk_type)
         except amdsmi_exception.AmdSmiLibraryException as e:
             logging.debug("amdsmi_get_clk_freq failed for snap-to-DPM | %s", e.get_error_info())
-            return None, ""
+            return None
         # amdsmi_get_clk_freq returns frequencies in Hz.
-        hz_list = freq_info.get("frequency") or []
+        hz_list = freq_info.get("frequency")
         if not hz_list:
-            return None, ""
+            return None
         mhz_levels = sorted({int(f // 1_000_000) for f in hz_list if f > 0})
-        if not mhz_levels:
-            return None, ""
         eligible = [m for m in mhz_levels if m <= requested_mhz]
         if not eligible:
-            return None, ""
-        snapped = eligible[-1]
-        if snapped == requested_mhz:
-            return snapped, ""
-        return (snapped, f"snapped down from {requested_mhz}MHz to nearest reachable DPM level")
+            return None
+        return eligible[-1]
 
     def set_gpu(
         self,
@@ -1668,9 +1659,7 @@ class SetValueCommands:
                     # snap max DOWN to the largest reachable DPM.
                     # Driver/PMFW does not clamp unaligned caps, so values
                     # between DPM levels leak to the next-higher DPM.
-                    snapped_val, _snap_note = self._snap_clk_limit_to_dpm(
-                        args.gpu, amdsmi_clk_type, val, lim_type
-                    )
+                    snapped_val = self._snap_clk_limit_to_dpm(args.gpu, amdsmi_clk_type, val)
                     if snapped_val is not None and snapped_val != val:
                         logging.debug(
                             "snapping %s max from %dMHz to %dMHz "
