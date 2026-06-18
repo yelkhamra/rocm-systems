@@ -774,10 +774,9 @@ class SetValueCommands:
         """Snap a requested max clk-limit down to the nearest reachable DPM level.
 
         Returns the largest DPM frequency (MHz) <= ``requested_mhz`` so the
-        enforced cap never exceeds the request (ROCM-25290; spec on
-        ROCM-20191).  Returns ``None`` when the DPM list is unavailable or the
-        request is below the lowest reachable DPM (the caller has already
-        rejected that via ``val < min_clk``).
+        enforced cap never exceeds the request. Returns ``None`` when the DPM
+        list is unavailable or the request is below the lowest reachable DPM
+        (the caller has already rejected that via ``val < min_clk``).
         """
         try:
             freq_info = amdsmi_interface.amdsmi_get_clk_freq(gpu_handle, amdsmi_clk_type)
@@ -1630,9 +1629,17 @@ class SetValueCommands:
                     self.logger.clear_multiple_devices_output()
                     return
                 clk_tuple = amdsmi_interface.amdsmi_get_clock_info(args.gpu, amdsmi_clk_type)
+                if clk_tuple["max_clk"] == "N/A" or clk_tuple["min_clk"] == "N/A":
+                    self.logger.store_output(
+                        args.gpu,
+                        "clk_limit",
+                        f"Unable to retrieve clock limits for {args.clk_limit.clk_type} for limit comparison",
+                    )
+                    self.logger.print_output()
+                    self.logger.clear_multiple_devices_output()
+                    return
 
                 if lim_type == "min":
-                    amdsmi_lim_type = amdsmi_interface.AmdSmiClkLimitType.MIN
                     if val > clk_tuple["max_clk"]:
                         self.logger.store_output(
                             args.gpu,
@@ -1646,7 +1653,6 @@ class SetValueCommands:
                     if val == clk_tuple["min_clk"]:
                         val_changed = False  # Clock limit value did not changed
                 elif lim_type == "max":
-                    amdsmi_lim_type = amdsmi_interface.AmdSmiClkLimitType.MAX
                     if val < clk_tuple["min_clk"]:
                         self.logger.store_output(
                             args.gpu,
