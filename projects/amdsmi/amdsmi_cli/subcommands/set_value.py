@@ -1662,9 +1662,9 @@ class SetValueCommands:
                         self.logger.print_output()
                         self.logger.clear_multiple_devices_output()
                         return
-                    # snap max DOWN to the largest reachable DPM.
-                    # Driver/PMFW does not clamp unaligned caps, so values
-                    # between DPM levels leak to the next-higher DPM.
+                    # Snap max down to the largest selectable DPM level. The
+                    # driver does not clamp caps that fall between levels, so an
+                    # unaligned request could otherwise run at the next-higher level.
                     snapped_val = self._snap_clk_limit_to_dpm(args.gpu, amdsmi_clk_type, val)
                     if snapped_val is not None and snapped_val != val:
                         logging.debug(

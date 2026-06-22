@@ -245,7 +245,7 @@ class TestSnapClkLimitToDpm(unittest.TestCase):
     DPM value) plus the N/A / empty / library-error fallbacks.
     """
 
-    # MI300A fclk DPM levels (Hz). Deliberately unsorted and seeded with a 0 Hz
+    # Example fclk DPM levels (Hz). Deliberately unsorted and seeded with a 0 Hz
     # entry to prove the helper sorts the levels and filters out f <= 0.
     FCLK_DPM_HZ = [1600_000_000, 0, 1200_000_000, 2000_000_000, 1900_000_000]
 
@@ -312,13 +312,13 @@ class TestSnapClkLimitToDpm(unittest.TestCase):
             )
 
     def test_sclk_two_level_snaps_down(self):
-        # MI300A sclk DPM levels {500, 2100} MHz: an unaligned request snaps to 500.
+        # Two-level domain ({500, 2100} MHz): an unaligned request snaps down to 500.
         sclk_hz = [500_000_000, 2100_000_000]
         self.assertEqual(self._snap(1500, sclk_hz), 500)
         self.assertEqual(self._snap(2100, sclk_hz), 2100)
 
     def test_mclk_levels_snap_down(self):
-        # MI300A mclk DPM levels {900, 1100, 1200, 1300} MHz.
+        # Multi-level domain ({900, 1100, 1200, 1300} MHz).
         mclk_hz = [900_000_000, 1100_000_000, 1200_000_000, 1300_000_000]
         self.assertEqual(self._snap(1250, mclk_hz), 1200)
         self.assertEqual(self._snap(1099, mclk_hz), 900)
