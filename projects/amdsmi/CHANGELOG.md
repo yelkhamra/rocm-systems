@@ -67,12 +67,7 @@ levels as strings instead of dictionary objects**.
 
 ### Resolved Issues
 
-- **Fixed `amd-smi set -L <clk> max <value>` not enforcing caps that fall between clock levels**.
-  - When the requested `max` did not match a selectable DPM level, it was not clamped to the next-lower level. Under load the clock could then run at the next-higher level and exceed the requested cap, and `amd-smi metric --clock` reported the requested value instead of the value actually enforced.
-  - The CLI now snaps the requested `max` down to the largest DPM level less than or equal to the request before applying it, so the enforced cap never exceeds what was requested.
-  - The result message reports the enforced (post-snap) value and notes when a snap occurred, e.g. `Successfully changed max of fclk to 1900MHz (requested 1999MHz; snapped down to nearest reachable DPM level)`.
-  - If the snapped value equals the domain minimum, applying it may be rejected with `AMDSMI_STATUS_NOT_SUPPORTED`; this is surfaced through the existing "Unable to set ..." message rather than reported as a successful change.
-  - Scope: `max` only; `min` behaviour is unchanged.
+- **Fixed `amd-smi set -L <clk> max <value>` not enforcing caps that fall between clock levels**. The requested `max` is now rounded down to the nearest selectable clock level, so the enforced limit never exceeds the requested value.
 
 - **Corrected invalid AMD SMI status-code names in exception messages and documentation**.  
   - Some `AmdSmiLibraryException` messages and API documentation entries were misspelled; they now use the correct `AMDSMI_STATUS_*` names.
