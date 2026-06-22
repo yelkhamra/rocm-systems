@@ -7088,22 +7088,190 @@ def amdsmi_get_gpu_fabric_info(processor_handle: processor_handle_t) -> Dict[str
         raise AmdSmiLibraryException(ret)
 
     v1 = info.fabric_info.fabric_version.v1
+    ppod = v1.ppod
+    vpod = v1.vpod
+    station = v1.station
     return {
         "bdf": _format_bdf(info.bdf),
         "version": info.fabric_info.version,
-        "accelerator_id": v1.accelerator_id,
+        "accelerator_id": ppod.accelerator_id,
         "fabric_type": _FABRIC_TYPE_NAMES.get(v1.fabric_type, "UNKNOWN"),
-        "bandwidth": v1.bandwidth,
-        "latency": v1.latency,
-        "ppod_id": list(v1.ppod_id),
-        "ppod_size": v1.ppod_size,
-        "vpod_id": v1.vpod_id,
-        "vpod_size": v1.vpod_size,
-        "local_accelerators": list(v1.local_accelerators),
-        "vpod_active_accelerators": list(v1.vpod_active_accelerators),
-        "addr_mode": _FABRIC_ADDR_MODE_NAMES.get(v1.addr_mode, "UNKNOWN"),
+        "bandwidth": ppod.bandwidth,
+        "latency": ppod.latency,
+        "ppod_id": list(ppod.ppod_id),
+        "ppod_size": ppod.ppod_size,
+        "vpod_id": vpod.vpod_id,
+        "vpod_size": vpod.vpod_size,
+        "local_accelerators": list(ppod.local_accelerators),
+        "local_accelerator_count": ppod.local_accelerator_count,
+        "vpod_active_accelerators": list(vpod.vpod_active_accelerators),
+        "addr_mode": _FABRIC_ADDR_MODE_NAMES.get(vpod.addr_mode, "UNKNOWN"),
         "accel_state": _FABRIC_ACCEL_STATE_NAMES.get(v1.accel_state, "UNKNOWN"),
+        "station_flags": station.station_flags,
+        "num_stations": station.num_stations,
+        "lane_en_bitmap": list(station.lane_en_bitmap),
     }
+
+
+def _populate_fabric_config_data(data_struct: ctypes.Structure, data: Dict[str, Any]) -> None:
+    """
+    Copy user-supplied values into a fabric data payload ctypes struct.
+
+    Only keys present in ``data`` are written into the struct, per the C contract
+    the caller's ``mask`` governs which of those the firmware actually consumes
+    Array-valued fields (ie: ppod_id, local_accelerators) accept any Python
+    sequence of ints (ie: a list/tuple or bytes, not a str) and are copied
+    element-wise.
+    A sequence longer than the fixed-size array is rejected.
+    """
+    field_types = dict(type(data_struct)._fields_)
+    for key, value in data.items():
+        if key not in field_types:
+            raise AmdSmiParameterException(
+                key, str, "Unknown fabric data field: {}".format(key)
+            )
+        field_type = field_types[key]
+        if issubclass(field_type, ctypes.Array):
+            target = getattr(data_struct, key)
+            if not hasattr(value, "__len__"):
+                raise AmdSmiParameterException(
+                    value,
+                    field_type,
+                    "Field '{}' requires a sequence".format(key),
+                )
+            if len(value) > len(target):
+                raise AmdSmiParameterException(
+                    value,
+                    field_type,
+                    "Sequence for '{}' exceeds array length {}".format(key, len(target)),
+                )
+            for i, elem in enumerate(value):
+                target[i] = elem
+        else:
+            setattr(data_struct, key, value)
+
+
+def amdsmi_set_gpu_fabric_ppod_config(
+    processor_handle: processor_handle_t,
+    mask: int,
+    data: Dict[str, Any],
+    commit: bool = False,
+    version: int = amdsmi_wrapper.AMDSMI_FABRIC_PPOD_CONFIG_V1,
+) -> None:
+    """
+    Write PPOD (Physical PoD) fabric configuration for AIFM integration.
+
+    Faithful to the C contract of ::amdsmi_set_gpu_fabric_ppod_config: the caller
+    supplies an explicit ``mask`` (bitwise-OR of
+    ``amdsmi_wrapper.AMDSMI_FABRIC_PPOD_FIELD_*`` bits) naming which fields in
+    ``data`` the firmware should write, and ``commit`` to request setup/commit
+    after the masked parameters are applied
+
+    Args:
+        processor_handle: GPU processor handle.
+        mask: OR of AMDSMI_FABRIC_PPOD_FIELD_* bits selecting fields to write
+        data: Mapping of amdsmi_fabric_ppod_data_t field names to values
+        commit: When True, commit the configuration after writing masked fields
+        version: Config struct version; defaults to AMDSMI_FABRIC_PPOD_CONFIG_V1
+    """
+    if not isinstance(processor_handle, amdsmi_wrapper.amdsmi_processor_handle):
+        raise AmdSmiParameterException(processor_handle, amdsmi_wrapper.amdsmi_processor_handle)
+    if not isinstance(mask, int):
+        raise AmdSmiParameterException(mask, int)
+    if not isinstance(data, dict):
+        raise AmdSmiParameterException(data, dict)
+
+    config = amdsmi_wrapper.amdsmi_fabric_ppod_config_t()
+    config.version = version
+    config.mask = mask
+    config.commit = commit
+    _populate_fabric_config_data(config.data, data)
+
+    _check_res(
+        amdsmi_wrapper.amdsmi_set_gpu_fabric_ppod_config(processor_handle, ctypes.byref(config))
+    )
+
+
+def amdsmi_set_gpu_fabric_vpod_config(
+    processor_handle: processor_handle_t,
+    mask: int,
+    data: Dict[str, Any],
+    commit: bool = False,
+    version: int = amdsmi_wrapper.AMDSMI_FABRIC_VPOD_CONFIG_V1,
+) -> None:
+    """
+    Write VPOD (Virtual PoD) fabric configuration for AIFM integration.
+
+    Faithful to the C contract of ::amdsmi_set_gpu_fabric_vpod_config: the caller
+    supplies an explicit ``mask`` (bitwise-OR of
+    ``amdsmi_wrapper.AMDSMI_FABRIC_VPOD_FIELD_*`` bits) naming which fields in
+    ``data`` the firmware should write, and ``commit`` to request setup/commit
+    after the masked parameters are applied
+
+    Args:
+        processor_handle: GPU processor handle.
+        mask: OR of AMDSMI_FABRIC_VPOD_FIELD_* bits selecting fields to write
+        data: Mapping of amdsmi_fabric_vpod_data_t field names to values
+        commit: When True, commit the configuration after writing masked fields
+        version: Config struct version; defaults to AMDSMI_FABRIC_VPOD_CONFIG_V1
+    """
+    if not isinstance(processor_handle, amdsmi_wrapper.amdsmi_processor_handle):
+        raise AmdSmiParameterException(processor_handle, amdsmi_wrapper.amdsmi_processor_handle)
+    if not isinstance(mask, int):
+        raise AmdSmiParameterException(mask, int)
+    if not isinstance(data, dict):
+        raise AmdSmiParameterException(data, dict)
+
+    config = amdsmi_wrapper.amdsmi_fabric_vpod_config_t()
+    config.version = version
+    config.mask = mask
+    config.commit = commit
+    _populate_fabric_config_data(config.data, data)
+
+    _check_res(
+        amdsmi_wrapper.amdsmi_set_gpu_fabric_vpod_config(processor_handle, ctypes.byref(config))
+    )
+
+
+def amdsmi_set_gpu_fabric_station_config(
+    processor_handle: processor_handle_t,
+    mask: int,
+    data: Dict[str, Any],
+    commit: bool = False,
+    version: int = amdsmi_wrapper.AMDSMI_FABRIC_STATION_CONFIG_V1,
+) -> None:
+    """
+    Write DF/station fabric configuration for AIFM integration.
+
+    Faithful to the C contract of ::amdsmi_set_gpu_fabric_station_config: the
+    caller supplies an explicit ``mask`` (bitwise-OR of
+    ``amdsmi_wrapper.AMDSMI_FABRIC_DF_FIELD_*`` bits) naming which fields in
+    ``data`` the firmware should write, and ``commit`` to request setup/commit
+    after the masked parameters are applied
+
+    Args:
+        processor_handle: GPU processor handle.
+        mask: OR of AMDSMI_FABRIC_DF_FIELD_* bits selecting fields to write
+        data: Mapping of amdsmi_fabric_station_data_t field names to values
+        commit: When True, commit the configuration after writing masked fields
+        version: Config struct version; defaults to AMDSMI_FABRIC_STATION_CONFIG_V1
+    """
+    if not isinstance(processor_handle, amdsmi_wrapper.amdsmi_processor_handle):
+        raise AmdSmiParameterException(processor_handle, amdsmi_wrapper.amdsmi_processor_handle)
+    if not isinstance(mask, int):
+        raise AmdSmiParameterException(mask, int)
+    if not isinstance(data, dict):
+        raise AmdSmiParameterException(data, dict)
+
+    config = amdsmi_wrapper.amdsmi_fabric_station_config_t()
+    config.version = version
+    config.mask = mask
+    config.commit = commit
+    _populate_fabric_config_data(config.data, data)
+
+    _check_res(
+        amdsmi_wrapper.amdsmi_set_gpu_fabric_station_config(processor_handle, ctypes.byref(config))
+    )
 
 
 def amdsmi_get_gpu_busy_percent(processor_handle: processor_handle_t):

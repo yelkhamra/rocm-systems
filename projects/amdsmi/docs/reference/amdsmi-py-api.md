@@ -6606,9 +6606,13 @@ Field | Description
 `vpod_id` | Virtual PoD identifier
 `vpod_size` | Virtual PoD size
 `local_accelerators` | List of local accelerator IDs
+`local_accelerator_count` | Count of valid entries in `local_accelerators`
 `vpod_active_accelerators` | Active-accelerator bitmap as a list of 32-bit words (bit N set = accelerator ID N is active)
 `addr_mode` | NPA address mode: `SOURCE_ALIASING`, `SOURCE_IDENTIFICATION`, or `UNKNOWN`
 `accel_state` | Accelerator vPoD state: `UNCONFIGURED`, `CONFIGURED`, `READY`, `ACTIVE`, `ERROR`, or `UNKNOWN`
+`station_flags` | DF/station flags
+`num_stations` | Number of stations
+`lane_en_bitmap` | Per-lane enable bitmap as a list of bytes
 
 Exceptions that can be thrown by `amdsmi_get_gpu_fabric_info` function:
 
@@ -6627,6 +6631,128 @@ try:
     for device in devices:
         info = amdsmi.amdsmi_get_gpu_fabric_info(device)
         print(info)
+except amdsmi.AmdSmiException as e:
+    print(e)
+finally:
+    amdsmi.amdsmi_shut_down()
+```
+
+### amdsmi_set_gpu_fabric_ppod_config
+
+Description: Writes Physical PoD (PPOD) fabric configuration for AIFM integration.
+Only the fields whose bit is set in `mask` are written and `commit` requests setup/commit after the masked parameters are applied.
+
+Available only on platforms with IFoE/UALoE fabric hardware.
+Other devices return not supported.
+
+Input parameters:
+
+* `processor_handle` handle for the given device
+* `mask` bitwise-OR of `AMDSMI_FABRIC_PPOD_FIELD_*` bits selecting which `data` fields to write
+* `data` mapping of PPOD field names (`accelerator_id`, `ppod_id`, `ppod_size`, `local_accelerators`, `local_accelerator_count`, `bandwidth`, `latency`) to values
+* `commit` when `True`, commit the configuration after writing the masked fields (default `False`)
+* `version` config struct version (default `AMDSMI_FABRIC_PPOD_CONFIG_V1`)
+
+Output: None
+
+Exceptions that can be thrown by `amdsmi_set_gpu_fabric_ppod_config` function:
+
+* `AmdSmiLibraryException`
+* `AmdSmiParameterException`
+
+Example:
+
+```python
+import amdsmi
+try:
+    amdsmi.amdsmi_init()
+    devices = amdsmi.amdsmi_get_processor_handles()
+    for device in devices:
+        mask = (amdsmi.amdsmi_wrapper.AMDSMI_FABRIC_PPOD_FIELD_ACCEL_ID
+                | amdsmi.amdsmi_wrapper.AMDSMI_FABRIC_PPOD_FIELD_PPOD_SIZE)
+        amdsmi.amdsmi_set_gpu_fabric_ppod_config(
+            device, mask, {"accelerator_id": 0, "ppod_size": 8}, commit=True)
+except amdsmi.AmdSmiException as e:
+    print(e)
+finally:
+    amdsmi.amdsmi_shut_down()
+```
+
+### amdsmi_set_gpu_fabric_vpod_config
+
+Description: Writes Virtual PoD (VPOD) fabric configuration for AIFM integration. 
+Only the fields whose bit is set in `mask` are written and `commit` requests setup/commit after the masked parameters are applied. 
+
+Available only on platforms with IFoE/UALoE fabric hardware.
+Other devices return not supported.
+
+Input parameters:
+
+* `processor_handle` handle for the given device
+* `mask` bitwise-OR of `AMDSMI_FABRIC_VPOD_FIELD_*` bits selecting which `data` fields to write
+* `data` mapping of VPOD field names (`vpod_id`, `vpod_size`, `vpod_active_accelerators`, `addr_mode`) to values
+* `commit` when `True`, commit the configuration after writing the masked fields (default `False`)
+* `version` config struct version (default `AMDSMI_FABRIC_VPOD_CONFIG_V1`)
+
+Output: None
+
+Exceptions that can be thrown by `amdsmi_set_gpu_fabric_vpod_config` function:
+
+* `AmdSmiLibraryException`
+* `AmdSmiParameterException`
+
+Example:
+
+```python
+import amdsmi
+try:
+    amdsmi.amdsmi_init()
+    devices = amdsmi.amdsmi_get_processor_handles()
+    for device in devices:
+        mask = (amdsmi.amdsmi_wrapper.AMDSMI_FABRIC_VPOD_FIELD_VPOD_ID
+                | amdsmi.amdsmi_wrapper.AMDSMI_FABRIC_VPOD_FIELD_VPOD_SIZE)
+        amdsmi.amdsmi_set_gpu_fabric_vpod_config(
+            device, mask, {"vpod_id": 1, "vpod_size": 4}, commit=True)
+except amdsmi.AmdSmiException as e:
+    print(e)
+finally:
+    amdsmi.amdsmi_shut_down()
+```
+
+### amdsmi_set_gpu_fabric_station_config
+
+Description: Writes DF/station fabric configuration for AIFM integration. 
+Only the fields whose bit is set in `mask` are written and `commit` requests setup/commit after the masked parameters are applied. 
+
+Available only on platforms with IFoE/UALoE fabric hardware.
+Other devices return not supported.
+
+Input parameters:
+
+* `processor_handle` handle for the given device
+* `mask` bitwise-OR of `AMDSMI_FABRIC_DF_FIELD_*` bits selecting which `data` fields to write
+* `data` mapping of DF/station field names (`station_flags`, `num_stations`, `lane_en_bitmap`) to values
+* `commit` when `True`, commit the configuration after writing the masked fields (default `False`)
+* `version` config struct version (default `AMDSMI_FABRIC_STATION_CONFIG_V1`)
+
+Output: None
+
+Exceptions that can be thrown by `amdsmi_set_gpu_fabric_station_config` function:
+
+* `AmdSmiLibraryException`
+* `AmdSmiParameterException`
+
+Example:
+
+```python
+import amdsmi
+try:
+    amdsmi.amdsmi_init()
+    devices = amdsmi.amdsmi_get_processor_handles()
+    for device in devices:
+        mask = amdsmi.amdsmi_wrapper.AMDSMI_FABRIC_DF_FIELD_STATION_FLAGS
+        amdsmi.amdsmi_set_gpu_fabric_station_config(
+            device, mask, {"station_flags": 0}, commit=True)
 except amdsmi.AmdSmiException as e:
     print(e)
 finally:
