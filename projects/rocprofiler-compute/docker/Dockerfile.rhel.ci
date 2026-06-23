@@ -33,5 +33,15 @@ RUN TARBALL=$(curl -fsSL "https://rocm.nightlies.amd.com/tarball-multi-arch/" | 
     curl -fSL "https://rocm.nightlies.amd.com/tarball-multi-arch/${TARBALL}" \
         -o "/opt/rocm-${VERSION}-multiarch.tar.gz";
 
+# Dev Mode (installs tarball, checks out rocprofiler-compute and installs it to the /opt/rocm)
+ARG DEV_MODE=false
+RUN if [ "${DEV_MODE}" = "true" ]; then \
+        TARBALL=$(ls /opt/rocm-*-multiarch.tar.gz | head -1); \
+        test -n "${TARBALL}" || { echo "Error: no tarball found in /opt" >&2; exit 1; }; \
+        mkdir -p /opt/rocm && \
+        tar -xf "${TARBALL}" -C /opt/rocm && \
+        rm "${TARBALL}"; \
+    fi
+
 WORKDIR /home
 SHELL [ "/bin/bash", "--login", "-c" ]
