@@ -50,6 +50,7 @@
 #include <vector>
 
 #include "core/util/timer.h"
+#include "core/util/os.h"
 #include "core/inc/runtime.h"
 #if defined(_WIN32)
 #include "malloc.h"
@@ -210,10 +211,12 @@ uint32_t Signal::WaitMultiple(uint32_t signal_count, const hsa_signal_t* hsa_sig
       if (prior != 0) wait_hint = HSA_WAIT_STATE_ACTIVE;
 
   // Ensure that all signals in the list can be slept on.
+  bool missing_event_poll_sleep = false;
   if (wait_hint != HSA_WAIT_STATE_ACTIVE) {
     for (uint32_t i = 0; i < signal_count; i++) {
       if (signals[i]->EopEvent() == NULL) {
         wait_hint = HSA_WAIT_STATE_ACTIVE;
+        missing_event_poll_sleep = true;
         break;
       }
     }
@@ -313,6 +316,9 @@ uint32_t Signal::WaitMultiple(uint32_t signal_count, const hsa_signal_t* hsa_sig
     }
 
     if (wait_hint == HSA_WAIT_STATE_ACTIVE) {
+      if (missing_event_poll_sleep) {
+        rocr::os::uSleep(20);
+      }
       continue;
     }
 
