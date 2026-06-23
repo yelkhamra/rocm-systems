@@ -14,7 +14,6 @@ NCCL_HOME ?= ""
 CUSTOM_RCCL_LIB ?= ""
 
 HIPCC ?= $(ROCM_PATH)/bin/amdclang++
-HIPCONFIG = $(ROCM_PATH)/bin/hipconfig
 HIPIFY_PL_EXE = $(ROCM_PATH)/bin/hipify-perl
 HIPIFY_PL_FLAGS = -quiet-warnings
 CXX = $(HIPCC)
@@ -23,9 +22,8 @@ HIPCUFLAGS := -std=c++14
 LDFLAGS    :=
 HIPLDFLAGS :=
 
-HIP_VERSION = $(strip $(shell which $(HIPCONFIG) >/dev/null && $(HIPCONFIG) --version))
-HIP_MAJOR = $(shell echo $(HIP_VERSION) | cut -d "." -f 1)
-HIP_MINOR = $(shell echo $(HIP_VERSION) | cut -d "." -f 2)
+HIP_MAJOR = $(shell sed -n 's/#define HIP_VERSION_MAJOR[[:space:]]*//p' $(ROCM_PATH)/include/hip/hip_version.h 2>/dev/null)
+HIP_MINOR = $(shell sed -n 's/#define HIP_VERSION_MINOR[[:space:]]*//p' $(ROCM_PATH)/include/hip/hip_version.h 2>/dev/null)
 
 # Better define GPU_TARGETS in your environment to the minimal set
 # of archs to reduce compile time.
