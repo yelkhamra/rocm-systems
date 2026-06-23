@@ -24,7 +24,7 @@ RUN apt-get update && \
     add-apt-repository ppa:git-core/ppa
 
 RUN apt-get dist-upgrade -y && \
-    apt-get install -y autoconf autotools-dev bash-completion build-essential bzip2 cmake curl environment-modules git-core gnupg2 gzip libtool locales lsb-release m4 python3-pip unzip wget zip zlib1g-dev && \
+    apt-get install -y autoconf autotools-dev bash-completion build-essential bzip2 cmake curl environment-modules git-core gnupg2 gzip libtool libdw-dev locales lsb-release m4 pkg-config python3-pip unzip wget zip zlib1g-dev && \
     apt-get autoclean && \
     locale -a
 
@@ -56,6 +56,27 @@ RUN if [ "${DEV_MODE}" = "true" ]; then \
         mkdir -p /opt/rocm && \
         tar -xf "${TARBALL}" -C /opt/rocm && \
         rm "${TARBALL}"; \
+        \
+        git clone \
+            --filter=blob:none \
+            --no-checkout \
+            --depth=1 \
+            --branch rocprofiler-compute-develop \
+            https://github.com/ROCm/rocm-systems.git \
+            /tmp/rocm-systems && \
+        git -C /tmp/rocm-systems sparse-checkout set projects/rocprofiler-compute && \
+        git -C /tmp/rocm-systems checkout && \
+        python3 -m pip install -r /tmp/rocm-systems/projects/rocprofiler-compute/requirements.txt && \
+        \
+        cmake \
+            -S /tmp/rocm-systems/projects/rocprofiler-compute \
+            -B /tmp/rocm-systems/build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/opt/rocprofiler-compute \
+            -DCMAKE_PREFIX_PATH=/opt/rocm && \
+        cmake --build /tmp/rocm-systems/build --parallel "$(nproc)" && \
+        cmake --install /tmp/rocm-systems/build && \
+        rm -rf /tmp/rocm-systems; \
     fi
 
 ENV LC_ALL=C.UTF-8
