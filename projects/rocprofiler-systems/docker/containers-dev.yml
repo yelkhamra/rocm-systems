@@ -1,0 +1,5 @@
+# Supported OS combinations for development.
+
+distros:
+  - { distro: "ubuntu", version: "22.04" }
+  - { distro: "ubuntu", version: "24.04" }
