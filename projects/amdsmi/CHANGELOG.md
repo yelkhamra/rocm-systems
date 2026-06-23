@@ -67,7 +67,11 @@ levels as strings instead of dictionary objects**.
 
 ### Resolved Issues
 
-- **Fixed `amd-smi set -L <clk> max <value>` not enforcing caps that fall between clock levels**. The requested `max` is now rounded down to the nearest selectable clock level, so the enforced limit never exceeds the requested value.
+- **Fixed `amd-smi set -L <clk> max <value>` not enforcing caps that fall between clock levels**. 
+  - The requested `max` is now rounded down to the nearest selectable clock level, so the enforced limit never exceeds the requested value.
+  
+- **Fixed `amd-smi set --power-cap` rejecting the minimum allowed value**.  
+  - The lower bound is now inclusive, so setting the power cap to the exact minimum of the reported range (e.g. `210` when the range is 210-300W) succeeds instead of failing validation, matching the inclusive range shown in the error message.
 
 - **Corrected invalid AMD SMI status-code names in exception messages and documentation**.  
   - Some `AmdSmiLibraryException` messages and API documentation entries were misspelled; they now use the correct `AMDSMI_STATUS_*` names.
