@@ -295,6 +295,7 @@ class RocProfCompute_Base:
             # Override filter_blocks when writing profiling config yaml
             args_dict["filter_blocks"] = self._filter_blocks
             args_dict["config_dir"] = str(args_dict["config_dir"])
+            args_dict["format_rocprof_output"] = "rocpd"
             yaml.dump(args_dict, f)
 
         # verify soc compatibility

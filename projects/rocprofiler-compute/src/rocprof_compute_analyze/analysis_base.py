@@ -392,7 +392,7 @@ class OmniAnalyze_Base:
 
         # Load profiling config from THIS workload directory (not args)
         profiling_config = file_io.load_profiling_config(str(workload_dir))
-        format_rocprof = profiling_config.get("format_rocprof_output", "rocpd")
+        format_rocprof = profiling_config.get("format_rocprof_output")
         join_type = profiling_config.get("join_type", "grid")
         kokkos_trace = profiling_config.get("kokkos_trace", False)
 
