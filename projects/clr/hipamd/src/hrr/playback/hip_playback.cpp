@@ -13,6 +13,7 @@
 
 #include "hip_playback.h"
 #include "hrr_api_args.h"
+#include "hrr_suballoc.h" // HRR_SUBALLOC_SNAPSHOT + snapshot blob layout
 #include "hrr_reader.h"   // hrr::hash_hex
 
 #include <hip/hip_runtime.h>
@@ -27,12 +28,30 @@
 #include <vector>
 #include <algorithm>
 #include <mutex>
+#include <set>
 #include <unistd.h>   // _exit (async-signal-safe abort from watchdog)
 
 // Thread-local sequence ID — set by dispatch_event before calling any handler.
 // Kernel-launch handlers use this to wait for their submission turn and then
 // immediately unblock the next thread before doing timing/sync.
 thread_local uint64_t hrr_dispatch_seq = 0;
+
+// Defined below; used by replay_kernel_launch.
+static bool hrr_suballoc_check_enabled();
+static bool hrr_block_guard_enabled();
+static const std::string& hrr_block_guard_kernel();
+static const std::set<int>& hrr_block_guard_args();
+// Right-aligned guard allocation: a tensor block placed flush against a
+// trailing *unmapped* page so a write one byte past the block's end traps.
+struct HrrBlockGuard {
+    void* va = nullptr; size_t reserved = 0; size_t mapped = 0;
+    hipMemGenericAllocationHandle_t handle{};
+    void* data = nullptr;       // right-aligned block start handed to the kernel
+    void* orig_live = nullptr;  // real live block base (copy source/destination)
+    size_t size = 0;
+};
+static hipError_t hrr_block_guard_alloc(size_t size, HrrBlockGuard* g);
+static void hrr_block_guard_teardown(const HrrBlockGuard& g);
 
 // ---------------------------------------------------------------------------
 // HIP error checking — returns the hipError_t so callers can branch on it.
@@ -214,6 +233,167 @@ const void* PlaybackContext::load_code_object(uint64_t hash_lo, uint64_t hash_hi
     (void)inserted;
     if (sz_out) *sz_out = it->second.size();
     return it->second.data();
+}
+
+// ---------------------------------------------------------------------------
+// Caching-allocator sub-allocation map (HRR_SUBALLOC_SNAPSHOT)
+// ---------------------------------------------------------------------------
+
+void PlaybackContext::apply_suballoc_snapshot(const uint8_t* blob, size_t len) {
+    if (!blob || len < sizeof(hrr_suballoc_blob_header)) return;
+    const auto* h = reinterpret_cast<const hrr_suballoc_blob_header*>(blob);
+    if (h->magic != HRR_SUBALLOC_BLOB_MAGIC) return;
+
+    std::unordered_map<uint64_t, SubSeg> segs;
+    std::vector<uint64_t> bases;
+    uint64_t active_blocks = 0;
+    size_t off = sizeof(hrr_suballoc_blob_header);
+
+    for (uint64_t s = 0; s < h->n_segments; ++s) {
+        if (off + sizeof(hrr_suballoc_seg_rec) > len) return;  // truncated; ignore
+        const auto* sr = reinterpret_cast<const hrr_suballoc_seg_rec*>(blob + off);
+        off += sizeof(hrr_suballoc_seg_rec);
+        SubSeg seg;
+        seg.total = sr->total;
+        seg.blocks.reserve(sr->n_blocks);
+        for (uint32_t b = 0; b < sr->n_blocks; ++b) {
+            if (off + sizeof(hrr_suballoc_blk_rec) > len) return;
+            const auto* br = reinterpret_cast<const hrr_suballoc_blk_rec*>(blob + off);
+            off += sizeof(hrr_suballoc_blk_rec);
+            seg.blocks.push_back({br->off, br->size, br->active});
+            if (br->active) ++active_blocks;
+        }
+        bases.push_back(sr->addr);
+        segs.emplace(sr->addr, std::move(seg));
+    }
+    std::sort(bases.begin(), bases.end());
+
+    std::unique_lock lk(map_mutex);
+    suballoc_segments  = std::move(segs);
+    suballoc_seg_bases = std::move(bases);
+    suballoc_active_blocks = active_blocks;
+    ++suballoc_snapshots;
+}
+
+int PlaybackContext::classify_suballoc(uint64_t rec_addr, uint64_t* blk_base,
+                                       uint64_t* blk_size) const {
+    std::shared_lock lk(map_mutex);
+    if (suballoc_seg_bases.empty()) return 0;
+    // Largest segment base <= rec_addr.
+    auto it = std::upper_bound(suballoc_seg_bases.begin(),
+                               suballoc_seg_bases.end(), rec_addr);
+    if (it == suballoc_seg_bases.begin()) return 0;
+    uint64_t base = *(--it);
+    auto sit = suballoc_segments.find(base);
+    if (sit == suballoc_segments.end()) return 0;
+    const SubSeg& seg = sit->second;
+    if (rec_addr >= base + seg.total) return 0;  // past this segment
+    // Find the active block containing rec_addr (blocks are offset-ordered).
+    for (const SubBlock& blk : seg.blocks) {
+        uint64_t b0 = base + blk.off, b1 = b0 + blk.size;
+        if (rec_addr >= b0 && rec_addr < b1) {
+            if (!blk.active) return 2;  // inside a freed/inactive block
+            if (blk_base) *blk_base = b0;
+            if (blk_size) *blk_size = blk.size;
+            return 1;
+        }
+    }
+    return 2;  // inside the segment but in no block at all (gap)
+}
+
+// ---------------------------------------------------------------------------
+// Precise alloc/free timeline (HRR_SUBALLOC_TIMELINE)
+// ---------------------------------------------------------------------------
+
+void PlaybackContext::ingest_suballoc_timeline(const uint8_t* blob, size_t len) {
+    if (!blob || len < sizeof(hrr_suballoc_tl_header)) return;
+    const auto* h = reinterpret_cast<const hrr_suballoc_tl_header*>(blob);
+    if (h->magic != HRR_SUBALLOC_TL_MAGIC) return;
+    size_t off = sizeof(hrr_suballoc_tl_header);
+    for (uint64_t i = 0; i < h->n_entries; ++i) {
+        if (off + sizeof(hrr_suballoc_tl_rec) > len) break;  // truncated; keep rest
+        const auto* r = reinterpret_cast<const hrr_suballoc_tl_rec*>(blob + off);
+        off += sizeof(hrr_suballoc_tl_rec);
+        suballoc_timeline.push_back({r->mono_ns, r->action, r->addr, r->size});
+    }
+    tl_events_total = suballoc_timeline.size();
+}
+
+void PlaybackContext::finalize_suballoc_timeline() {
+    // Stable sort so events sharing a microsecond keep capture (alloc-before-use)
+    // order. Reset the cursor/state so advancing starts from the beginning.
+    std::stable_sort(suballoc_timeline.begin(), suballoc_timeline.end(),
+                     [](const TlEvent& a, const TlEvent& b) {
+                         return a.mono_ns < b.mono_ns;
+                     });
+    tl_active_blocks.clear();
+    tl_segments.clear();
+    tl_cursor  = 0;
+    tl_last_ts = 0;
+}
+
+void PlaybackContext::seed_timeline_from_snapshot(const uint8_t* blob, size_t len) {
+    if (!blob || len < sizeof(hrr_suballoc_blob_header)) return;
+    const auto* h = reinterpret_cast<const hrr_suballoc_blob_header*>(blob);
+    if (h->magic != HRR_SUBALLOC_BLOB_MAGIC) return;
+    size_t off = sizeof(hrr_suballoc_blob_header);
+    for (uint64_t s = 0; s < h->n_segments; ++s) {
+        if (off + sizeof(hrr_suballoc_seg_rec) > len) return;
+        const auto* sr = reinterpret_cast<const hrr_suballoc_seg_rec*>(blob + off);
+        off += sizeof(hrr_suballoc_seg_rec);
+        tl_segments[sr->addr] = sr->total;
+        uint64_t blk_off = 0;
+        for (uint32_t b = 0; b < sr->n_blocks; ++b) {
+            if (off + sizeof(hrr_suballoc_blk_rec) > len) return;
+            const auto* br = reinterpret_cast<const hrr_suballoc_blk_rec*>(blob + off);
+            off += sizeof(hrr_suballoc_blk_rec);
+            if (br->active) tl_active_blocks[sr->addr + blk_off] = br->size;
+            blk_off += br->size;
+        }
+    }
+}
+
+void PlaybackContext::advance_timeline_to(int64_t ts) {
+    // Monotonic forward advance — replay processes kernels in capture order, so
+    // their timestamps are non-decreasing on the single replay thread.
+    if (ts < tl_last_ts) return;  // out-of-order (shouldn't happen single-thread)
+    tl_last_ts = ts;
+    while (tl_cursor < suballoc_timeline.size() &&
+           suballoc_timeline[tl_cursor].mono_ns <= ts) {
+        const TlEvent& e = suballoc_timeline[tl_cursor++];
+        switch (e.action) {
+            case HRR_TL_ALLOC:         tl_active_blocks[e.addr] = e.size; break;
+            case HRR_TL_FREE:          tl_active_blocks.erase(e.addr);    break;
+            case HRR_TL_SEGMENT_ALLOC: tl_segments[e.addr] = e.size;      break;
+            case HRR_TL_SEGMENT_FREE:  tl_segments.erase(e.addr);         break;
+            default: break;
+        }
+    }
+}
+
+int PlaybackContext::classify_timeline(uint64_t rec_addr, uint64_t* blk_base,
+                                       uint64_t* blk_size) const {
+    // Active tensor block containing rec_addr?  (largest base <= rec_addr)
+    if (!tl_active_blocks.empty()) {
+        auto it = tl_active_blocks.upper_bound(rec_addr);
+        if (it != tl_active_blocks.begin()) {
+            --it;
+            if (rec_addr < it->first + it->second) {
+                if (blk_base) *blk_base = it->first;
+                if (blk_size) *blk_size = it->second;
+                return 1;
+            }
+        }
+    }
+    // Inside a mapped segment but no live block -> gap/freed/OOB.
+    if (!tl_segments.empty()) {
+        auto it = tl_segments.upper_bound(rec_addr);
+        if (it != tl_segments.begin()) {
+            --it;
+            if (rec_addr < it->first + it->second) return 2;
+        }
+    }
+    return 0;  // not framework-pool memory
 }
 
 hipModule_t PlaybackContext::load_module(uint64_t hash_lo, uint64_t hash_hi) {
@@ -414,6 +594,25 @@ static hipError_t replay_kernel_launch(PlaybackContext& ctx, const uint8_t* pl,
     memcpy(&num_args,       p, 2); p += 2;
     memcpy(&num_snapshots,  p, 2); p += 2;
 
+    // Block-level guard pages for the matching kernel(s): redirect block-resolving
+    // pointer args into right-aligned guarded buffers so an over-run past a tensor
+    // block traps. Needs the sub-alloc/timeline map (same as the OOB check).
+    const bool do_block_guard =
+        hrr_block_guard_enabled() &&
+        (hrr_block_guard_kernel().empty() ||
+         kernel_name.find(hrr_block_guard_kernel()) != std::string::npos);
+
+    // Reconstruct the exact live tensor-block set as of this kernel's capture
+    // timestamp, so the sub-alloc check below sees blocks allocated/freed since
+    // the last coarse snapshot. Advance once per launch (cheap, cursor-based).
+    if ((hrr_suballoc_check_enabled() || do_block_guard) &&
+        !ctx.suballoc_timeline.empty())
+        ctx.advance_timeline_to(static_cast<int64_t>(hdr->timestamp_ns));
+
+    // Per-launch block-guard bookkeeping (one guarded buffer per distinct block).
+    std::vector<HrrBlockGuard> blk_guards;
+    std::unordered_map<uint64_t, void*> blk_guard_data;  // rec block base -> handed ptr
+
     // Apply kernel filter if set
     if (!ctx.kernel_filter.empty() &&
         kernel_name.find(ctx.kernel_filter) == std::string::npos)
@@ -523,6 +722,57 @@ static hipError_t replay_kernel_launch(PlaybackContext& ctx, const uint8_t* pl,
             uint64_t rec_ptr; memcpy(&rec_ptr, data, 8);
             void* live = ctx.translate_ptr(rec_ptr);
             if (dbg_dump_ptrs) dbg_ptrs.emplace_back(i, rec_ptr, live);
+            // Classify the recorded pointer against the captured caching-allocator
+            // block layout (timeline preferred, else latest snapshot). Used by the
+            // OOB check and by block-level guarding. bb/bs = owning block base/size.
+            uint64_t bb = 0, bs = 0;
+            int k = 0;
+            if (rec_ptr >= 0x10000ULL &&
+                (hrr_suballoc_check_enabled() || do_block_guard)) {
+                k = !ctx.suballoc_timeline.empty()
+                        ? ctx.classify_timeline(rec_ptr, &bb, &bs)
+                        : ctx.classify_suballoc(rec_ptr, &bb, &bs);
+            }
+            // A pointer that resolves inside a segment but lands in no active
+            // tensor block is an intra-segment out-of-bounds/stale arg — invisible
+            // at replay because the segment is one contiguous hipMalloc.
+            // (HIP_HRR_REPLAY_SUBALLOC_CHECK=1)
+            if (hrr_suballoc_check_enabled() && k != 0) {
+                ctx.suballoc_ptrs_checked.fetch_add(1, std::memory_order_relaxed);
+                if (k == 2) {
+                    ctx.suballoc_oob_ptrs.fetch_add(1, std::memory_order_relaxed);
+                    fprintf(stderr,
+                            "[HRR] SUBALLOC OOB: kernel arg[%u] rec 0x%llx "
+                            "resolves inside a captured segment but in no "
+                            "active tensor block (intra-segment OOB/stale)\n",
+                            i, (unsigned long long)rec_ptr);
+                }
+            }
+            // Block-level guard: relocate this arg's owning block into a guarded
+            // buffer so a write past its end faults. Only blocks that resolve to a
+            // live tensor block (k==1) and pass the optional arg-index filter.
+            if (do_block_guard && k == 1 && live && bs > 0 &&
+                (hrr_block_guard_args().empty() ||
+                 hrr_block_guard_args().count(i))) {
+                auto it = blk_guard_data.find(bb);
+                void* gdata = (it != blk_guard_data.end()) ? it->second : nullptr;
+                if (!gdata) {
+                    void* live_base = ctx.translate_ptr(bb);
+                    HrrBlockGuard g{};
+                    if (live_base &&
+                        hrr_block_guard_alloc(static_cast<size_t>(bs), &g) == hipSuccess) {
+                        g.orig_live = live_base;
+                        // Seed the guarded buffer with the block's current contents
+                        // so read/modify/write kernels still compute correctly.
+                        (void)hipMemcpy(g.data, live_base, bs, hipMemcpyDeviceToDevice);
+                        gdata = g.data;
+                        blk_guard_data[bb] = gdata;
+                        blk_guards.push_back(g);
+                    }
+                }
+                if (gdata)
+                    live = static_cast<char*>(gdata) + (rec_ptr - bb);
+            }
             storage.resize(sizeof(void*));
             memcpy(storage.data(), &live, sizeof(void*));
             if (ctx.verbose)
@@ -776,7 +1026,37 @@ static hipError_t replay_kernel_launch(PlaybackContext& ctx, const uint8_t* pl,
                 " grid=[%u,%u,%u] block=[%u,%u,%u]\n",
                 kernel_name.c_str(), r, hipGetErrorString(r), (void*)func,
                 grid[0], grid[1], grid[2], block[0], block[1], block[2]);
+        for (const auto& g : blk_guards) hrr_block_guard_teardown(g);
         return r;
+    }
+
+    // Block-guard resolution: synchronize now so an over-run past a guarded
+    // tensor block surfaces as a fault attributed to THIS kernel. If it faults,
+    // we have reproduced the intra-segment OOB write. Otherwise copy the (in
+    // bounds) results back to the real blocks and tear the guards down so the
+    // rest of replay is byte-identical to an unguarded run.
+    if (!blk_guards.empty()) {
+        (void)hipGetLastError();
+        hipError_t gs = hipDeviceSynchronize();
+        hipError_t ge = hipGetLastError();
+        if (gs != hipSuccess || ge != hipSuccess) {
+            fprintf(stderr,
+                    "[HRR] BLOCK GUARD: kernel #%zu \"%s\" (seq=%llu) FAULTED "
+                    "(sync=%d last=%d) — reproduced an out-of-bounds access past a "
+                    "guarded tensor block. %zu block(s) were guarded; "
+                    "grid=[%u,%u,%u] block=[%u,%u,%u].\n",
+                    kernel_ordinal, compact_kernel_name(kernel_name).c_str(),
+                    (unsigned long long)hrr_dispatch_seq, gs, ge,
+                    blk_guards.size(), grid[0], grid[1], grid[2],
+                    block[0], block[1], block[2]);
+            // Leave guards mapped: the GPU context is dead and we are aborting.
+            return gs != hipSuccess ? gs : ge;
+        }
+        for (const auto& g : blk_guards) {
+            (void)hipMemcpy(g.orig_live, g.data, g.size, hipMemcpyDeviceToDevice);
+            hrr_block_guard_teardown(g);
+        }
+        blk_guards.clear();
     }
 
     if (timing_ok)
@@ -1104,6 +1384,270 @@ static bool hrr_replay_zero_init() {
     return g_enabled;
 }
 
+// Enable kernel-arg validation against the captured caching-allocator block
+// layout (HIP_HRR_REPLAY_SUBALLOC_CHECK=1). Off by default.
+static bool hrr_suballoc_check_enabled() {
+    static std::once_flag once;
+    static bool g = false;
+    std::call_once(once, [] {
+        if (const char* e = std::getenv("HIP_HRR_REPLAY_SUBALLOC_CHECK"))
+            g = (e[0] == '1' && e[1] == '\0');
+        if (g) fprintf(stderr, "[HRR] replay SUB-ALLOC CHECK enabled "
+                               "(HIP_HRR_REPLAY_SUBALLOC_CHECK=1)\n");
+    });
+    return g;
+}
+
+// ---- Guard-page allocations -------------------------------------------------
+// HIP_HRR_REPLAY_GUARD_PAGES=1 backs each device hipMalloc (>= a size
+// threshold) with a VMM reservation that maps only the buffer and leaves a
+// trailing *unmapped* guard region. A kernel that writes past the recorded
+// allocation then traps on an unmapped-VA fault instead of silently corrupting
+// the neighbouring buffer — this is what lets replay reproduce the original
+// out-of-bounds GEMM write (which faulted at capture only because the page
+// after operand A happened to be read-only; replay's plain hipMalloc makes that
+// page writable, hiding the bug). Reserved-but-unmapped VA costs no physical
+// memory, so the only overhead is granularity rounding. Off by default.
+static bool hrr_guard_pages_enabled() {
+    static std::once_flag once;
+    static bool g = false;
+    std::call_once(once, [] {
+        if (const char* e = std::getenv("HIP_HRR_REPLAY_GUARD_PAGES"))
+            g = (e[0] == '1' && e[1] == '\0');
+        if (g) fprintf(stderr, "[HRR] replay GUARD PAGES enabled "
+                               "(HIP_HRR_REPLAY_GUARD_PAGES=1)\n");
+    });
+    return g;
+}
+
+// Only allocations >= this many bytes are guarded (smaller ones use plain
+// hipMalloc) to bound VMM granularity rounding. Default 1 MiB.
+static size_t hrr_guard_min_bytes() {
+    static std::once_flag once;
+    static size_t n = (1ull << 20);
+    std::call_once(once, [] {
+        if (const char* e = std::getenv("HIP_HRR_REPLAY_GUARD_MIN_BYTES")) {
+            char* end = nullptr;
+            unsigned long long v = std::strtoull(e, &end, 0);
+            if (end != e) n = static_cast<size_t>(v);
+        }
+    });
+    return n;
+}
+
+// Cached VMM allocation granularity for device 0 (2 MiB fallback).
+static size_t hrr_vmm_granularity() {
+    static std::once_flag once;
+    static size_t g = (2ull << 20);
+    std::call_once(once, [] {
+        hipMemAllocationProp prop{};
+        prop.type          = hipMemAllocationTypePinned;
+        prop.location.type = hipMemLocationTypeDevice;
+        prop.location.id   = 0;
+        size_t gran = 0;
+        if (hipMemGetAllocationGranularity(
+                &gran, &prop, hipMemAllocationGranularityMinimum) == hipSuccess
+            && gran)
+            g = gran;
+    });
+    return g;
+}
+
+// Allocate `want` bytes backed by VMM with a trailing unmapped guard region.
+// On success returns hipSuccess, sets *out to the mapped base, and records
+// teardown metadata in ctx.guard_allocs. On any failure returns the error so
+// the caller falls back to plain hipMalloc.
+static hipError_t hrr_guard_alloc(PlaybackContext& ctx, size_t want, void** out) {
+    const size_t gran     = hrr_vmm_granularity();
+    const size_t mapped   = ((want + gran - 1) / gran) * gran;  // round up
+    const size_t reserved = mapped + gran;                      // + 1 guard span
+    hipMemAllocationProp prop{};
+    prop.type          = hipMemAllocationTypePinned;
+    prop.location.type = hipMemLocationTypeDevice;
+    prop.location.id   = 0;
+
+    void* va = nullptr;
+    hipError_t r = hipMemAddressReserve(&va, reserved, 0, nullptr, 0);
+    if (r != hipSuccess || !va)
+        return r != hipSuccess ? r : hipErrorOutOfMemory;
+
+    hipMemGenericAllocationHandle_t handle{};
+    r = hipMemCreate(&handle, mapped, &prop, 0);
+    if (r != hipSuccess) { (void)hipMemAddressFree(va, reserved); return r; }
+
+    r = hipMemMap(va, mapped, 0, handle, 0);
+    if (r != hipSuccess) {
+        (void)hipMemRelease(handle); (void)hipMemAddressFree(va, reserved); return r;
+    }
+
+    hipMemAccessDesc desc{};
+    desc.location.type = hipMemLocationTypeDevice;
+    desc.location.id   = 0;
+    desc.flags         = hipMemAccessFlagsProtReadWrite;
+    r = hipMemSetAccess(va, mapped, &desc, 1);
+    if (r != hipSuccess) {
+        (void)hipMemUnmap(va, mapped);
+        (void)hipMemRelease(handle);
+        (void)hipMemAddressFree(va, reserved);
+        return r;
+    }
+    {
+        std::unique_lock lk(ctx.map_mutex);
+        ctx.guard_allocs[va] = {va, reserved, mapped, handle};
+    }
+    static std::once_flag note_once;
+    std::call_once(note_once, [&] {
+        fprintf(stderr,
+                "[HRR] guard-page alloc active: first VMM-backed buffer "
+                "want=%zu mapped=%zu reserved=%zu (guard=%zu)\n",
+                want, mapped, reserved, reserved - mapped);
+    });
+    *out = va;
+    return hipSuccess;
+}
+
+// Tear down a guard allocation (mirror of hrr_guard_alloc). Returns true if
+// `live` was a guard allocation (and was torn down).
+static bool hrr_guard_free(PlaybackContext& ctx, void* live) {
+    PlaybackContext::GuardAlloc g;
+    {
+        std::unique_lock lk(ctx.map_mutex);
+        auto it = ctx.guard_allocs.find(live);
+        if (it == ctx.guard_allocs.end()) return false;
+        g = it->second;
+        ctx.guard_allocs.erase(it);
+    }
+    (void)hipMemUnmap(g.va_base, g.mapped);
+    (void)hipMemRelease(g.handle);
+    (void)hipMemAddressFree(g.va_base, g.reserved);
+    return true;
+}
+
+// ---- Block-level guard pages ------------------------------------------------
+// Segment-tail guards (above) only catch writes that run off the end of a whole
+// hipMalloc segment; an over-run from one tensor into its neighbour *inside* the
+// same segment is invisible because the segment is one contiguous mapping. With
+// the sub-alloc/timeline block map we can do better: for a chosen kernel, take
+// each pointer arg that resolves to a live tensor block, copy that block into a
+// fresh VMM buffer whose mapped region ends exactly at the block's tail (block
+// right-aligned), with the *next* page left unmapped, and hand the kernel the
+// relocated pointer. A write one byte past the block then traps on the unmapped
+// guard — reproducing an intra-segment OOB write as a real fault. After the
+// launch (if it did not fault) results are copied back to the real block so the
+// rest of replay is unaffected. Targeted via:
+//   HIP_HRR_BLOCK_GUARD=1                     enable
+//   HIP_HRR_BLOCK_GUARD_KERNEL=<substr>       only kernels whose name matches
+//   HIP_HRR_BLOCK_GUARD_ARGS=<csv arg idx>    only these pointer args (default all)
+//   HIP_HRR_BLOCK_GUARD_ALIGN=<bytes>         relocated-ptr alignment (default 256)
+static bool hrr_block_guard_enabled() {
+    static std::once_flag once;
+    static bool g = false;
+    std::call_once(once, [] {
+        if (const char* e = std::getenv("HIP_HRR_BLOCK_GUARD"))
+            g = (e[0] == '1' && e[1] == '\0');
+        if (g) fprintf(stderr, "[HRR] replay BLOCK GUARD enabled "
+                               "(HIP_HRR_BLOCK_GUARD=1)\n");
+    });
+    return g;
+}
+
+static const std::string& hrr_block_guard_kernel() {
+    static std::string s;
+    static std::once_flag once;
+    std::call_once(once, [] {
+        if (const char* e = std::getenv("HIP_HRR_BLOCK_GUARD_KERNEL")) s = e;
+        if (s.empty())
+            fprintf(stderr, "[HRR] BLOCK GUARD: no HIP_HRR_BLOCK_GUARD_KERNEL set "
+                            "— guarding EVERY kernel (slow)\n");
+        else
+            fprintf(stderr, "[HRR] BLOCK GUARD: guarding kernels matching \"%s\"\n",
+                    s.c_str());
+    });
+    return s;
+}
+
+static const std::set<int>& hrr_block_guard_args() {
+    static std::set<int> s;
+    static std::once_flag once;
+    std::call_once(once, [] {
+        if (const char* e = std::getenv("HIP_HRR_BLOCK_GUARD_ARGS")) {
+            const char* p = e;
+            while (*p) {
+                char* end = nullptr;
+                long v = std::strtol(p, &end, 10);
+                if (end == p) break;
+                s.insert(static_cast<int>(v));
+                p = end;
+                while (*p == ',' || *p == ' ') ++p;
+            }
+        }
+    });
+    return s;
+}
+
+static size_t hrr_block_guard_align() {
+    static size_t a = 256;
+    static std::once_flag once;
+    std::call_once(once, [] {
+        if (const char* e = std::getenv("HIP_HRR_BLOCK_GUARD_ALIGN")) {
+            char* end = nullptr;
+            unsigned long long v = std::strtoull(e, &end, 0);
+            // Must be a power of two for the mask below.
+            if (end != e && v && (v & (v - 1)) == 0) a = static_cast<size_t>(v);
+        }
+    });
+    return a;
+}
+
+static hipError_t hrr_block_guard_alloc(size_t size, HrrBlockGuard* g) {
+    if (size == 0) return hipErrorInvalidValue;
+    const size_t gran     = hrr_vmm_granularity();
+    const size_t mapped   = ((size + gran - 1) / gran) * gran;  // round up
+    const size_t reserved = mapped + gran;                      // + 1 guard span
+    hipMemAllocationProp prop{};
+    prop.type          = hipMemAllocationTypePinned;
+    prop.location.type = hipMemLocationTypeDevice;
+    prop.location.id   = 0;
+
+    void* va = nullptr;
+    hipError_t r = hipMemAddressReserve(&va, reserved, 0, nullptr, 0);
+    if (r != hipSuccess || !va) return r != hipSuccess ? r : hipErrorOutOfMemory;
+
+    hipMemGenericAllocationHandle_t handle{};
+    r = hipMemCreate(&handle, mapped, &prop, 0);
+    if (r != hipSuccess) { (void)hipMemAddressFree(va, reserved); return r; }
+
+    r = hipMemMap(va, mapped, 0, handle, 0);
+    if (r != hipSuccess) {
+        (void)hipMemRelease(handle); (void)hipMemAddressFree(va, reserved); return r;
+    }
+    hipMemAccessDesc desc{};
+    desc.location.type = hipMemLocationTypeDevice;
+    desc.location.id   = 0;
+    desc.flags         = hipMemAccessFlagsProtReadWrite;
+    r = hipMemSetAccess(va, mapped, &desc, 1);
+    if (r != hipSuccess) {
+        (void)hipMemUnmap(va, mapped);
+        (void)hipMemRelease(handle);
+        (void)hipMemAddressFree(va, reserved);
+        return r;
+    }
+    // Right-align the block so its tail touches the guard, but keep the handed
+    // pointer aligned (align the front pad down). Blind spot < align bytes.
+    const size_t A   = hrr_block_guard_align();
+    const size_t pad = (mapped - size) & ~(A - 1);
+    g->va = va; g->reserved = reserved; g->mapped = mapped; g->handle = handle;
+    g->data = static_cast<char*>(va) + pad;
+    g->size = size; g->orig_live = nullptr;
+    return hipSuccess;
+}
+
+static void hrr_block_guard_teardown(const HrrBlockGuard& g) {
+    (void)hipMemUnmap(g.va, g.mapped);
+    (void)hipMemRelease(g.handle);
+    (void)hipMemAddressFree(g.va, g.reserved);
+}
+
 // ---- Divergence-abort guard -------------------------------------------------
 // Replaying a numerically-unstable workload (e.g. a model emitting degenerate
 // output) cannot reproduce bit-identical results from nondeterministic GPU
@@ -1183,10 +1727,27 @@ static hipError_t replay_malloc(PlaybackContext& ctx, const uint8_t* pl,
     size_t pad_sz  = replay_padded_alloc_size(orig_sz);
     void* live = nullptr;
     hipError_t r;
-    if (managed)
+    if (!managed && hrr_guard_pages_enabled() && orig_sz >= hrr_guard_min_bytes()) {
+        // VMM-backed buffer with a trailing unmapped guard page so an
+        // out-of-bounds device write traps instead of silently corrupting the
+        // neighbour. Fall back to plain hipMalloc if the VMM path fails.
+        r = hrr_guard_alloc(ctx, pad_sz, &live);
+        if (r != hipSuccess) {
+            static std::once_flag fb_once;
+            std::call_once(fb_once, [&] {
+                fprintf(stderr,
+                        "[HRR] WARNING: guard-page alloc FAILED (err=%d), "
+                        "falling back to plain hipMalloc; OOB writes will NOT "
+                        "be trapped\n", (int)r);
+            });
+            live = nullptr;
+            r = hipMalloc(&live, pad_sz);
+        }
+    } else if (managed) {
         r = hipMallocManaged(&live, pad_sz);
-    else
+    } else {
         r = hipMalloc(&live, pad_sz);
+    }
     if (r == hipSuccess) {
         // hipMalloc does NOT guarantee zeroed memory (only first-touch pages are
         // scrubbed; reused allocations carry stale bytes). Zero so replay is
@@ -1459,7 +2020,9 @@ hipError_t playback_hipFree(PlaybackContext& ctx, const uint8_t* pl) {
     const auto* a = reinterpret_cast<const hrr_args_hipFree*>(pl);
     void* live = ctx.translate_ptr(a->ptr);
     if (!live) return hipSuccess;
-    hipError_t r = hipFree(live);
+    // Guard-page allocations are VMM-backed and must be torn down via the VMM
+    // API rather than hipFree.
+    hipError_t r = hrr_guard_free(ctx, live) ? hipSuccess : hipFree(live);
     if (r == hipSuccess) ctx.remove_alloc(a->ptr);
     return r;
 }
