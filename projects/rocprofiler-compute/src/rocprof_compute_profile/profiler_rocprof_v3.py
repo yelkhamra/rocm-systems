@@ -49,7 +49,7 @@ class rocprof_v3_profiler(RocProfCompute_Base):
             f"{self.get_args().output_directory}/out",
             trace_option,
             "--output-format",
-            args.format_rocprof_output,
+            "rocpd",
         ]
 
         if args.attach_pid:

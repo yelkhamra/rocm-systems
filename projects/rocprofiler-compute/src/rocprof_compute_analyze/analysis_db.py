@@ -85,7 +85,7 @@ class db_analysis(OmniAnalyze_Base):
     def pre_processing(self) -> None:
         """Perform any pre-processing steps prior to analysis."""
         super().pre_processing()
-        if self._profiling_config.get("format_rocprof_output") != "rocpd":
+        if self._profiling_config.get("format_rocprof_output", "rocpd") != "rocpd":
             console_error(
                 "Creation of analysis database is only supported "
                 "for profiling data with rocpd output format."

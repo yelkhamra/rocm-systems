@@ -51,7 +51,7 @@ class rocprofiler_sdk_profiler(RocProfCompute_Base):
         options.update({
             "LD_PRELOAD": ld_preload_value,
             "ROCPROF_KERNEL_TRACE": "1",
-            "ROCPROF_OUTPUT_FORMAT": args.format_rocprof_output,
+            "ROCPROF_OUTPUT_FORMAT": "rocpd",
             "ROCPROF_OUTPUT_PATH": f"{args.output_directory}/out/pmc_1",
         })
 

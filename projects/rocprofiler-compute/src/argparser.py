@@ -468,15 +468,6 @@ Examples:
         help="\t\t\tProvide command for profiling after double dash.",
     )
     profile_group.add_argument(
-        "--format-rocprof-output",
-        required=False,
-        metavar="",
-        dest="format_rocprof_output",
-        choices=["csv", "rocpd"],
-        default="rocpd",
-        help=("\t\t\tSet the format of output file of rocprof."),
-    )
-    profile_group.add_argument(
         "--rocprofiler-sdk-tool-path",
         type=resolve_rocm_library_path,
         dest="rocprofiler_sdk_tool_path",

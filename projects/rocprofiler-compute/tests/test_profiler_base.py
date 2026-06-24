@@ -253,7 +253,6 @@ def test_attach_library_resolution_with_fallback():
     args = argparse.Namespace(
         remaining="-- /bin/true",
         rocprofiler_sdk_tool_path="/opt/rocm/lib/rocprofiler-sdk/librocprofiler-sdk-tool.so",
-        format_rocprof_output="csv",
         output_directory=str(output_dir),
         iteration_multiplexing=None,
         attach_pid=12345,
@@ -306,7 +305,6 @@ def test_rocprofv3_live_attach_uses_sync_output():
         ["/bin/true"],
         attach_pid="12345",
         attach_duration_msec="500",
-        format_rocprof_output="csv",
         kokkos_trace=False,
     )
     args.remaining = "-- /bin/true"
@@ -449,7 +447,6 @@ def _make_rpc_args(
         roof_only=False,
         bench_only=False,
         no_roof=False,
-        format_rocprof_output="csv",
         name="unit-test",
         output_directory="/tmp/unit-test",
     )

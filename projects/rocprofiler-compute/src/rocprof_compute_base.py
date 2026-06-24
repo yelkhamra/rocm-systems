@@ -43,7 +43,6 @@ from utils.utils_common import (
     reconfigure_stdio_utf8,
     replace_env,
     replace_rank,
-    resolve_rocm_library_path,
     validate_roofline_csv,
 )
 from utils.utils_exceptions import WorkloadCommandError
@@ -194,22 +193,6 @@ class RocProfCompute:
         if self.__mode == "profile":
             self._validate_profile_mode_arguments()
             self._resolve_pc_sampling_interval()
-
-        # fallback to csv output format, if rocpd public api not available
-        if self.__mode == "profile" and self.__args.format_rocprof_output == "rocpd":
-            rocpd_path = resolve_rocm_library_path(
-                str(
-                    Path(self.__args.rocprofiler_sdk_tool_path).parents[1]
-                    / "librocprofiler-sdk-rocpd.so"
-                )
-            )
-            if not Path(rocpd_path).exists():
-                console_warning(
-                    "rocpd output format is not supported with the "
-                    "current rocprofiler-sdk version. "
-                    "Falling back to csv output format."
-                )
-                self.__args.format_rocprof_output = "csv"
 
         # Validate name and output directory arguments in profiling mode
         # Skip validation if only listing metrics or sets
