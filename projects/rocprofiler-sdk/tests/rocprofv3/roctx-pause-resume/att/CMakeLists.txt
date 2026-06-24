@@ -63,7 +63,7 @@ rocprofiler_add_integration_execute_test(
     COMMAND
         $<TARGET_FILE:rocprofiler-sdk::rocprofv3> ${ATT_LIB} --att --marker-trace
         -d ${CMAKE_CURRENT_BINARY_DIR}/%tag%-att -o out --output-format json --log-level
-        env -- $<TARGET_FILE:roctx-pause-resume> 8
+        env -- $<TARGET_FILE:roctx-pause-resume> 8 1
     DEPENDS roctx-pause-resume
     TIMEOUT 45
     LABELS "integration-tests;thread-trace;pause-resume"

@@ -166,6 +166,7 @@ main(int argc, char** argv)
     float    varA       = 5.5;
     float    varB       = 11.7;
     uint32_t num_blocks = BLOCK_SIZE;
+    if(argc > 2) num_blocks = static_cast<uint32_t>(atoi(argv[2]));
     checkHipErrors(hipMallocAsync(&result, sizeof(float), stream));
     for(auto i = size_t{0}; i < num_kernels; ++i)
     {
