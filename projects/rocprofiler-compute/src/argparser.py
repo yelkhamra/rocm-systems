@@ -501,7 +501,6 @@ Examples:
         help=(
             "\t\t\t(DEPRECATED) Retain the large raw rocpd database "
             "in workload directory.\n"
-            "\t\t\tThis option requires --format-rocprof-output rocpd.\n"
             "\t\t\t --retain-rocpd-output is deprecated. .db files "
             "will be retained by default in a future release."
         ),
@@ -822,11 +821,11 @@ Examples:
             "\t\t  stdout - print report to the terminal (no file/folder created).\n"
             "\t\t  txt    - write report to <name>.txt; disables terminal output.\n"
             "\t\t  csv    - write one CSV per analysis view into a folder <name>/.\n"
-            "\t\t           Requires profiles collected with\n"
-            "\t\t           --format-rocprof-output rocpd. Disables terminal output.\n"
+            "\t\t           Requires profiles collected in rocpd format. "
+            "Disables terminal output.\n"
             "\t\t  db     - write a SQLite database <name>.db (see analysis\n"
             "\t\t           database schema in the docs). Requires profiles\n"
-            "\t\t           collected with --format-rocprof-output rocpd.\n"
+            "\t\t           collected in rocpd format.\n"
             "\t\t           Disables terminal output.\n"
             "\t\tDefault <name> is rocprof_compute_<uuid>; override with"
             " --output-name.\n"

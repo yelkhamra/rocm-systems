@@ -99,6 +99,8 @@ Full documentation for ROCm Compute Profiler is available at [https://rocm.docs.
 
 * Removed the CSV profile output backend and the ``--format-rocprof-output`` profile mode option. Profiling now always uses the ``rocpd`` output format, which was already the default.
 
+* Removed analyze support for legacy CSV-shaped workload directories. Analyze now builds `pmc_perf.csv` only by concatenating the `rocpd` `results_*.csv` intermediate, rather than merging the legacy CSV-shaped per-counter files (`results_pmc_perf_*.csv`, `SQ_*.csv`, `SQC_*.csv`). Workloads produced by the removed CSV profile backend are no longer analyzable by current releases; use an older rocprof-compute release to analyze them.
+
 * ``--path`` and ``--subpath`` options have been removed from profile mode. Use ``--output-directory`` instead.
 
 * Removed redundant `if (X != 0) else None` divide-by-zero guards from metric equations across all analysis YAML configurations. Division by zero is already handled by the metric evaluation engine, which returns `"N/A"` for `inf` and `NaN` results.

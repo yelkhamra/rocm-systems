@@ -57,7 +57,7 @@ from utils.utils_analysis import (
     PEAK_COL_PREFERENCE,
     VALUE_COL_PREFERENCE,
 )
-from utils.utils_common import get_uuid, get_version
+from utils.utils_common import _PROFILE_OUTPUT_FORMAT, get_uuid, get_version
 from utils.utils_counter_defs import extract_counters_and_variables, get_build_in_vars
 
 
@@ -85,7 +85,10 @@ class db_analysis(OmniAnalyze_Base):
     def pre_processing(self) -> None:
         """Perform any pre-processing steps prior to analysis."""
         super().pre_processing()
-        if self._profiling_config.get("format_rocprof_output") != "rocpd":
+        if (
+            self._profiling_config.get("format_rocprof_output")
+            != _PROFILE_OUTPUT_FORMAT
+        ):
             console_error(
                 "Creation of analysis database is only supported "
                 "for profiling data with rocpd output format."

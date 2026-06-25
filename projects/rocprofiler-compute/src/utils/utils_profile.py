@@ -370,8 +370,7 @@ def run_prof(
                 workload_dir + f"/{fbase}_{pid}.db",
             )
             console_warning(
-                f"Retaining large raw rocpd database: "
-                f"{workload_dir}/{fbase}_{pid}.db"
+                f"Retaining large raw rocpd database: {workload_dir}/{fbase}_{pid}.db"
             )
     # Remove temp directory
     shutil.rmtree(workload_dir + "/" + "out")

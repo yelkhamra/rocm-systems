@@ -24,10 +24,9 @@ Profiling with ROCm Compute Profiler provides the following benefits:
 * :ref:`Automate counter collection <profiling-routine>`: ROCm Compute Profiler handles all
   of your profiling via pre-configured input files.
 
-* :ref:`Profiling output format <profiling-output-format>`: ROCm Compute Profiler can control
-  the output format of raw performance counter data produced by the underlying
-  :doc:`ROCprofiler-SDK <rocprofiler-sdk:index>` backend. Supported output formats are
-  ``csv`` and ``rocpd``. The default output format is ``rocpd``.
+* :ref:`Profiling output format <profiling-output-format>`: ROCm Compute Profiler writes
+  raw performance counter data produced by the underlying
+  :doc:`ROCprofiler-SDK <rocprofiler-sdk:index>` backend in ``rocpd`` format.
 * :ref:`Filtering <filtering>`: Apply runtime filters to speed up the profiling
   process.
 
@@ -330,8 +329,8 @@ Examples:
     ├── roofline.csv
     └── sysinfo.csv
 
-The output files use the default ``rocpd`` format. See :ref:`profiling-output-format` for details
-on available output formats and when the final ``pmc_perf.csv`` is created.
+The output files use ``rocpd`` format. See :ref:`profiling-output-format` for
+details on when the final ``pmc_perf.csv`` is created.
 
 * Profiling with MPI at host ``amd-ryzen``:
 
