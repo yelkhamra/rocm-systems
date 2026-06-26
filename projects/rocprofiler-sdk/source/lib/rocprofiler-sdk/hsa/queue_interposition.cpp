@@ -697,14 +697,18 @@ write_interceptor(Queue*                                queue,
             _info_session.packet_data.emplace_back(std::move(_packet_data));
         }
 
+        auto last_completion_signal = null_signal;
+        auto current_signal_value   = hsa_signal_value_t{0};
+        auto _shared_info_session   = std::shared_ptr<queue_info_session_t>{};
+
         if(!_info_session.packet_data.empty())
         {
-            auto last_completion_signal = _info_session.packet_data.back().completion_signal;
+            last_completion_signal = _info_session.packet_data.back().completion_signal;
 
             ROCP_FATAL_IF(last_completion_signal == null_signal)
                 << "invalid completion signal in the last packet of the batch";
 
-            auto current_signal_value =
+            current_signal_value =
                 get_core_table()->hsa_signal_load_scacquire_fn(last_completion_signal);
 
             ROCP_INFO << fmt::format(
@@ -712,8 +716,17 @@ write_interceptor(Queue*                                queue,
                 last_completion_signal.handle,
                 current_signal_value);
 
-            auto _shared_info_session =
+            _shared_info_session =
                 std::make_shared<queue_info_session_t>(std::move(_info_session));
+        }
+
+        // Submit packets before arming the completion waiter. Some task backends may execute
+        // inline or block during enqueue; in either case the signal waiter must not run before
+        // the GPU can observe the packet that will satisfy it.
+        _writer(std::move(transformed_packets));
+
+        if(_shared_info_session)
+        {
             get_async_signal_handler()->async(
                 [_signal_v          = last_completion_signal,
                  _expected_signal_v = current_signal_value,
@@ -721,8 +734,6 @@ write_interceptor(Queue*                                queue,
                     async_signal_handler(_signal_v, _expected_signal_v, std::move(_session_v));
                 });
         }
-
-        _writer(std::move(transformed_packets));
     };
 
     ROCP_TRACE_IF(pkt_count > 1) << fmt::format(
