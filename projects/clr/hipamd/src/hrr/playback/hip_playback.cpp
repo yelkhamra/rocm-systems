@@ -29,7 +29,11 @@
 #include <algorithm>
 #include <mutex>
 #include <set>
+#ifdef _WIN32
+#include <process.h>  // _exit
+#else
 #include <unistd.h>   // _exit (async-signal-safe abort from watchdog)
+#endif
 
 // Thread-local sequence ID — set by dispatch_event before calling any handler.
 // Kernel-launch handlers use this to wait for their submission turn and then
