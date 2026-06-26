@@ -76,7 +76,7 @@ def export_sqlite_query(
         conn = conn.connection if isinstance(conn, RocpdImportData) else conn
 
         try:
-            import pandas as pd
+            import pandas  # noqa: F401
 
             _pandas_available = True
         except ModuleNotFoundError as e:
@@ -95,7 +95,7 @@ def export_sqlite_query(
 
         for backend_itr in export_backend:
             if backend_itr == "pandas":
-                libpyrocpd.rocpd_log_info(f"User requested pandas backend for export")
+                libpyrocpd.rocpd_log_info("User requested pandas backend for export")
                 if _pandas_available:
                     return _export_with_pandas(
                         conn,
@@ -112,7 +112,7 @@ def export_sqlite_query(
                     )
 
             elif backend_itr == "native":
-                libpyrocpd.rocpd_log_info(f"User requested native backend for export")
+                libpyrocpd.rocpd_log_info("User requested native backend for export")
                 if normalized_format in _stdlib_formats:
                     return _export_without_pandas(
                         conn, query, params, normalized_format, export_path, **kwargs
@@ -274,7 +274,7 @@ def _export_without_pandas(conn, query, params, export_format, export_path, **kw
         return str(v)
 
     libpyrocpd.rocpd_log_info(
-        f"Running query via stdlib for export format: {export_format}"
+        f"Running query via native libraries for export format: {export_format}"
     )
     cursor = conn.cursor()
     cursor.execute(query, params if params else ())
