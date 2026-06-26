@@ -56,6 +56,7 @@
 #include <pthread.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstring>
 #include <thread>
 #include <vector>
@@ -205,6 +206,32 @@ get_doorbell_tls()
 {
     static thread_local auto _v = doorbell_tls_t{};
     return _v;
+}
+
+struct async_signal_task_t
+{
+    hsa_signal_t         signal       = {};
+    hsa_signal_value_t   expected     = 0;
+    size_t               packet_count = 0;
+    std::function<void()> func         = {};
+};
+
+using async_signal_task_vector_t = std::vector<async_signal_task_t>;
+
+bool
+queue_interposition_debug_enabled()
+{
+    static auto _v = (common::get_env("ROCPROFILER_QUEUE_INTERPOSITION_DEBUG", false) ||
+                     common::get_env("ROCPROFSYS_CI", false));
+    return _v;
+}
+
+bool
+queue_interposition_debug_log_attempt(uint64_t count)
+{
+    if(!queue_interposition_debug_enabled()) return false;
+
+    return (count <= 16 || (count & (count - 1)) == 0);
 }
 
 inline void
@@ -449,14 +476,15 @@ async_signal_handler(hsa_signal_t                            completion_signal,
 }
 
 // Local kernel-dispatch tracing path: swaps in pooled completion signals,
-// runs KERNEL_DISPATCH_ENQUEUE tracer hooks, and enqueues a completion-signal
-// waiter on the async signal handler pool. Strict 1:1 packet forwarding; does
+// runs KERNEL_DISPATCH_ENQUEUE tracer hooks, and prepares a completion-signal
+// waiter for the async signal handler pool. Strict 1:1 packet forwarding; does
 // not insert PM4 packets. Distinct from Queue::WriteInterceptor (legacy path).
 void
 write_interceptor(Queue*                                queue,
                   const void*                           packets,
                   uint64_t                              pkt_count,
-                  hsa_amd_queue_intercept_packet_writer writer)
+                  hsa_amd_queue_intercept_packet_writer writer,
+                  async_signal_task_vector_t*           deferred_async_tasks)
 {
     using callback_record_t = packet_data_t::callback_record_t;
     using packet_vector_t   = common::container::small_vector<rocprofiler_packet, 512>;
@@ -541,7 +569,7 @@ write_interceptor(Queue*                                queue,
 
     using packet_writer_fn_t = std::function<void(packet_vector_t &&)>;
 
-    auto process_packet_batch = [&queue, &corr_id, tracing_data_v](
+    auto process_packet_batch = [&queue, &corr_id, tracing_data_v, deferred_async_tasks](
                                     const rocprofiler_packet* _packets,
                                     uint64_t                  _num_packets,
                                     const packet_writer_fn_t& _writer) {
@@ -720,19 +748,27 @@ write_interceptor(Queue*                                queue,
                 std::make_shared<queue_info_session_t>(std::move(_info_session));
         }
 
-        // Submit packets before arming the completion waiter. Some task backends may execute
-        // inline or block during enqueue; in either case the signal waiter must not run before
-        // the GPU can observe the packet that will satisfy it.
+        // Copy packets into the real queue before creating the completion waiter. The caller
+        // defers the actual async enqueue until after it publishes the final doorbell.
         _writer(std::move(transformed_packets));
 
         if(_shared_info_session)
         {
-            get_async_signal_handler()->async(
+            auto _packet_count = _shared_info_session->packet_data.size();
+            auto _task         = async_signal_task_t{
+                last_completion_signal,
+                current_signal_value,
+                _packet_count,
                 [_signal_v          = last_completion_signal,
                  _expected_signal_v = current_signal_value,
                  _session_v         = std::move(_shared_info_session)]() mutable {
                     async_signal_handler(_signal_v, _expected_signal_v, std::move(_session_v));
-                });
+                }};
+
+            if(deferred_async_tasks)
+                deferred_async_tasks->emplace_back(std::move(_task));
+            else
+                get_async_signal_handler()->async(std::move(_task.func));
         }
     };
 
@@ -753,6 +789,7 @@ process_doorbell_impl(const queue_state_ptr_t& state,
     if(!state) return;
 
     auto* state_ptr = state.get();
+    auto  deferred_async_tasks = async_signal_task_vector_t{};
 
     // gate_lock serializes doorbell processing; producers never take it, so no deadlock.
     std::unique_lock<std::mutex> lock{state_ptr->gate_lock};
@@ -825,8 +862,11 @@ process_doorbell_impl(const queue_state_ptr_t& state,
     {
         // call local write_interceptor directly instead of heavyweight
         // Queue::invoke_write_interceptor
-        write_interceptor(
-            const_cast<Queue*>(queue), source_snapshot, pkt_count, ring_buffer_writer);
+        write_interceptor(const_cast<Queue*>(queue),
+                          source_snapshot,
+                          pkt_count,
+                          ring_buffer_writer,
+                          &deferred_async_tasks);
     }
     else
     {
@@ -857,9 +897,58 @@ process_doorbell_impl(const queue_state_ptr_t& state,
 
     publish_submitted_packets(state_ptr, state_ptr->next_submit_pos);
 
+    const auto published_submit_pos = state_ptr->next_submit_pos;
+    const auto real_wdid_after      = __atomic_load_n(state_ptr->real_wdid, __ATOMIC_ACQUIRE);
+    const auto real_rdid_after      = __atomic_load_n(state_ptr->real_rdid, __ATOMIC_ACQUIRE);
+
     tls.ring_doorbell             = nullptr;
     tls.last_published_submit_pos = 0;
     tls.state                     = nullptr;
+
+    // PTL may block or execute inline during enqueue. Arm completion waiters only after the
+    // final doorbell is visible so they can never wait on unpublished packets.
+    lock.unlock();
+
+    static auto async_enqueue_attempt_count = std::atomic<uint64_t>{0};
+
+    for(size_t i = 0; i < deferred_async_tasks.size(); ++i)
+    {
+        auto&      itr        = deferred_async_tasks.at(i);
+        const auto attempt_id = ++async_enqueue_attempt_count;
+        const auto should_log = queue_interposition_debug_log_attempt(attempt_id);
+
+        ROCP_WARNING_IF(should_log) << fmt::format(
+            "queue_interposition async enqueue begin: attempt={}, task={}/{}, queue={}, "
+            "signal={}, expected={}, packets={}, scan_pos={}, scan_end={}, submit_pos={}, "
+            "real_wdid={}, real_rdid={}",
+            attempt_id,
+            i + 1,
+            deferred_async_tasks.size(),
+            fmt::ptr(state_ptr->hsa_queue),
+            itr.signal.handle,
+            itr.expected,
+            itr.packet_count,
+            scan_pos,
+            scan_end,
+            published_submit_pos,
+            real_wdid_after,
+            real_rdid_after);
+
+        const auto enqueue_start = std::chrono::steady_clock::now();
+        get_async_signal_handler()->async(std::move(itr.func));
+        const auto enqueue_duration =
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - enqueue_start)
+                .count();
+
+        ROCP_WARNING_IF(should_log || enqueue_duration > 1000) << fmt::format(
+            "queue_interposition async enqueue end: attempt={}, duration_us={}, signal={}, "
+            "expected={}",
+            attempt_id,
+            enqueue_duration,
+            itr.signal.handle,
+            itr.expected);
+    }
 }
 
 std::shared_ptr<QueueState>
