@@ -44,6 +44,28 @@ def is_gfx115x(gpu_arch: Optional[str]) -> bool:
     return bool(gpu_arch and gpu_arch.startswith("gfx115"))
 
 
+def validate_profiling_format(profiling_config: dict[str, Any]) -> None:
+    """Reject workloads explicitly produced by the removed CSV profile backend.
+
+    The CSV profile backend was removed, so analyze only supports rocpd
+    workloads. This is the single validation point every analyze mode funnels
+    through (and the natural precursor to Phase B's reader selection on
+    ``format_rocprof_output``). Only an explicit non-rocpd format (e.g. ``csv``)
+    is rejected; a missing key is accepted, since many older/minimal rocpd
+    workloads do not record ``format_rocprof_output`` at all.
+    """
+    output_format = profiling_config.get("format_rocprof_output")
+    if output_format is not None and output_format != _PROFILE_OUTPUT_FORMAT:
+        console_error(
+            "analysis",
+            f"Unsupported profiling output format (format_rocprof_output: "
+            f"{output_format!r}). Analyze only supports workloads profiled "
+            f"with the {_PROFILE_OUTPUT_FORMAT!r} output format. Legacy "
+            "CSV-backend workloads are no longer supported; re-profile the "
+            "workload, or analyze it with an older rocprof-compute release.",
+        )
+
+
 def canonical_config_arch(gpu_arch: Optional[str]) -> Optional[str]:
     """Map GPU architectures to the shared analysis-config directory name."""
     if gpu_arch is None:

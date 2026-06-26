@@ -35,6 +35,7 @@ from utils.utils_common import (
     get_uuid,
     is_only_pc_sampling,
     load_panel_configs,
+    validate_profiling_format,
     validate_roofline_csv,
 )
 
@@ -311,6 +312,8 @@ class OmniAnalyze_Base:
             args.path[0][0]
         )
         profiling_config = self.get_profiling_config()
+
+        validate_profiling_format(profiling_config)
 
         # --ml-api-trace enables every backend.
         ml_api_trace = profiling_config.get("ml_api_trace", False)

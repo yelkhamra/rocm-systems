@@ -337,6 +337,33 @@ def test_sdk_profiler_options_preserve_ld_preload_and_set_env(tmp_path, monkeypa
     assert options["ROCPROF_COUNTER_COLLECTION"] == "1"
 
 
+def test_profile_config_records_rocpd_format(tmp_path):
+    """Profile mode always records ``format_rocprof_output: rocpd`` in
+    profiling_config.yaml, overriding any other value (the CSV profile backend
+    was removed, so rocpd is the only output format)."""
+    args = argparse.Namespace(
+        output_directory=str(tmp_path),
+        attach_pid=None,
+        remaining=["my_app"],
+        no_roof=True,
+        config_dir=Path("config"),
+        # A stale/legacy value must be overridden to rocpd on write.
+        format_rocprof_output="csv",
+    )
+    soc = Mock()
+    soc.profiling_setup.return_value = []
+    soc.get_compatible_profilers.return_value = ["rocprofv3"]
+    soc.get_arch.return_value = "gfx942"
+
+    profiler = rocprof_v3_profiler(args, profiler_mode="rocprofv3", soc=soc)
+
+    with patch("rocprof_compute_profile.profiler_base.gen_sysinfo"):
+        RocProfCompute_Base.pre_processing(profiler)
+
+    written = (Path(tmp_path) / "profiling_config.yaml").read_text(encoding="utf-8")
+    assert f"format_rocprof_output: {_PROFILE_OUTPUT_FORMAT}" in written
+
+
 def test_rocprofv3_live_attach_uses_sync_output():
     """Unit test: rocprofv3 live attach requests synchronous output generation."""
     args = _make_sanitize_args(
