@@ -63,11 +63,6 @@ TOP_STATS_BUILD_IN_CONFIG: OrderedDict[int, dict[str, Any]] = OrderedDict([
 ])
 
 
-# ------------------------------------
-# Helper functions for join_prof()
-# ------------------------------------
-
-
 class OmniAnalyze_Base:
     def __init__(
         self, args: argparse.Namespace, supported_archs: dict[str, str]

@@ -46,11 +46,6 @@ class MockArgs:
             setattr(self, key, value)
 
 
-class MockSoc:
-    def __init__(self):
-        pass
-
-
 logging.trace = lambda *args, **kwargs: None
 
 ANALYSIS_CONFIGS = Path(SRC) / "rocprof_compute_soc" / "analysis_configs"
@@ -940,16 +935,9 @@ def test_parse_pmc_perf_file_not_found():
 
 
 def test_run_prof_success_rocprofiler_sdk(tmp_path, monkeypatch):
-    """
-    Test run_prof with rocprofiler-sdk execution.
-
-    Args:
-        tmp_path (Path): Temporary directory for test files.
-        monkeypatch (pytest.MonkeyPatch): Pytest fixture for patching.
-
-    Returns:
-        None: Asserts successful execution with SDK configuration.
-    """
+    """run_prof (rocprofiler-sdk backend) pops APP_CMD out of the options and
+    runs it with the profiler-built environment, into which the resolved
+    counters and absolute agent index have been merged."""
     fname = tmp_path / "pmc_perf_test.yaml"
     fname.write_text("jobs:\n  - pmc:\n    - SQ_WAVES\n")
     workload_dir = str(tmp_path / "workload")
@@ -962,12 +950,18 @@ def test_run_prof_success_rocprofiler_sdk(tmp_path, monkeypatch):
         "librocprofiler-sdk-tool.so",
     }
 
+    captured = {}
+
+    def fake_capture(app_cmd, new_env=None, profileMode=False):
+        captured["app_cmd"] = app_cmd
+        captured["env"] = new_env
+        return (True, "success")
+
     monkeypatch.setattr("utils.utils_common._rocprof_cmd", "rocprofiler-sdk")
     monkeypatch.setattr(
-        "utils.utils_profile.capture_subprocess_output",
-        lambda *a, **k: (True, "success"),
+        "utils.utils_profile.capture_subprocess_output", fake_capture
     )
-    monkeypatch.setattr("utils.utils_common.parse_pmc_perf", lambda f: ["SQ_WAVES"])
+    monkeypatch.setattr("utils.utils_profile.parse_pmc_perf", lambda f: ["SQ_WAVES"])
     monkeypatch.setattr(
         "utils.utils_profile.rocpd_data.convert_dbs_to_csv", lambda *a, **k: None
     )
@@ -976,6 +970,12 @@ def test_run_prof_success_rocprofiler_sdk(tmp_path, monkeypatch):
     monkeypatch.setattr("utils.utils_profile.console_warning", lambda *a, **k: None)
 
     utils_profile.run_prof(str(fname), profiler_options, workload_dir, logging.INFO)
+
+    assert captured["app_cmd"] == ["./test_app"]
+    assert "APP_CMD" not in captured["env"]
+    assert captured["env"]["ROCPROF_COUNTER_COLLECTION"] == "1"
+    assert captured["env"]["ROCPROF_COUNTERS"] == "pmc: SQ_WAVES"
+    assert captured["env"]["ROCPROF_AGENT_INDEX"] == "absolute"
 
 
 def test_rocprofiler_sdk_env_log_excludes_user_env(tmp_path, monkeypatch):
@@ -1070,26 +1070,28 @@ def test_run_prof_rocpd_skips_pid_without_native_csv(tmp_path, monkeypatch):
 
 
 def test_run_prof_with_yaml_config(tmp_path, monkeypatch):
-    """
-    Test run_prof with additional YAML configuration file.
-
-    Args:
-        tmp_path (Path): Temporary directory for test files.
-        monkeypatch (pytest.MonkeyPatch): Pytest fixture for patching.
-
-    Returns:
-        None: Asserts YAML config is properly handled.
-    """
+    """run_prof merges the counter_def_<suffix>.yaml sitting beside the pmc file
+    into the rocprofiler-sdk counter definitions handed to the metrics-path
+    builder."""
     fname = tmp_path / "pmc_perf_test.yaml"
     fname.write_text("jobs:\n  - pmc:\n    - SQ_WAVES\n")
     yaml_file = tmp_path / "counter_def_test.yaml"
     yaml_file.write_text("rocprofiler-sdk:\n  counters:\n    - TCC_HIT\n")
     workload_dir = str(tmp_path / "workload")
 
+    captured_config = {}
+
+    def fake_metrics_path(sdk_config):
+        captured_config["sdk_config"] = sdk_config
+        return str(tmp_path / "metrics_path")
+
     monkeypatch.setattr("utils.utils_common._rocprof_cmd", "rocprofv3")
     monkeypatch.setattr(
         "utils.utils_profile.capture_subprocess_output",
         lambda *a, **k: (True, "success"),
+    )
+    monkeypatch.setattr(
+        "utils.utils_profile.create_temp_rocprofiler_metrics_path", fake_metrics_path
     )
     monkeypatch.setattr(
         "utils.utils_profile.rocpd_data.convert_dbs_to_csv", lambda *a, **k: None
@@ -1099,6 +1101,9 @@ def test_run_prof_with_yaml_config(tmp_path, monkeypatch):
     monkeypatch.setattr("utils.utils_profile.console_warning", lambda *a, **k: None)
 
     utils_profile.run_prof(str(fname), ["--arg"], workload_dir, logging.INFO)
+
+    merged_counters = captured_config["sdk_config"]["rocprofiler-sdk"]["counters"]
+    assert "TCC_HIT" in merged_counters
 
 
 def test_run_prof_failure_subprocess(tmp_path, monkeypatch):
@@ -1134,31 +1139,28 @@ def test_run_prof_failure_subprocess(tmp_path, monkeypatch):
         utils_profile.run_prof(str(fname), ["--arg"], workload_dir, logging.INFO)
 
 
-def test_run_prof_mi300_environment_setup(tmp_path, monkeypatch):
-    """
-    Test run_prof sets proper environment variables for MI300 series GPUs.
-
-    Args:
-        tmp_path (Path): Temporary directory for test files.
-        monkeypatch (pytest.MonkeyPatch): Pytest fixture for patching.
-
-    Returns:
-        None: Asserts MI300 environment variable is set correctly.
-    """
+def test_run_prof_rocprofv3_builds_command_and_env(tmp_path, monkeypatch):
+    """run_prof (rocprofv3 backend) assembles the command with an absolute agent
+    index, the input file, and the passed-through options, and seeds the
+    counter-definition env var."""
     fname = tmp_path / "pmc_perf_test.yaml"
     fname.write_text("jobs:\n  - pmc:\n    - SQ_WAVES\n")
     workload_dir = str(tmp_path / "workload")
 
-    captured_env = {}
+    captured = {}
 
-    def mock_capture_subprocess_output(cmd, new_env=None, **kwargs):
-        if new_env:
-            captured_env.update(new_env)
+    def fake_capture(cmd, new_env=None, **kwargs):
+        captured["cmd"] = cmd
+        captured["env"] = new_env
         return (True, "success")
 
     monkeypatch.setattr("utils.utils_common._rocprof_cmd", "rocprofv3")
     monkeypatch.setattr(
-        "utils.utils_profile.capture_subprocess_output", mock_capture_subprocess_output
+        "utils.utils_profile.capture_subprocess_output", fake_capture
+    )
+    monkeypatch.setattr(
+        "utils.utils_profile.create_temp_rocprofiler_metrics_path",
+        lambda sdk_config: str(tmp_path / "metrics_path"),
     )
     monkeypatch.setattr(
         "utils.utils_profile.rocpd_data.convert_dbs_to_csv", lambda *a, **k: None
@@ -1168,6 +1170,16 @@ def test_run_prof_mi300_environment_setup(tmp_path, monkeypatch):
     monkeypatch.setattr("utils.utils_profile.console_warning", lambda *a, **k: None)
 
     utils_profile.run_prof(str(fname), ["--arg"], workload_dir, logging.INFO)
+
+    assert captured["cmd"] == [
+        "rocprofv3",
+        "-A",
+        "absolute",
+        "-i",
+        str(fname),
+        "--arg",
+    ]
+    assert "ROCPROFILER_METRICS_PATH" in captured["env"]
 
 
 # =============================================================================

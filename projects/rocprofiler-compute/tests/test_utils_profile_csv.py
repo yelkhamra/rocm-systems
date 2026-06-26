@@ -4,9 +4,8 @@
 """
 Unit tests for utils_profile_csv module.
 
-Tests the pandas compatibility layer - CSV operations using stdlib only.
-These tests ensure correctness and acceptable performance of the stdlib
-implementation compared to pandas.
+Covers the stdlib-only CSV helpers used by the rocpd profile
+path: reading and writing CSV rows, dropping columns, and assigning group ids.
 """
 
 import csv
