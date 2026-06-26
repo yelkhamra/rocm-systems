@@ -958,9 +958,7 @@ def test_run_prof_success_rocprofiler_sdk(tmp_path, monkeypatch):
         return (True, "success")
 
     monkeypatch.setattr("utils.utils_common._rocprof_cmd", "rocprofiler-sdk")
-    monkeypatch.setattr(
-        "utils.utils_profile.capture_subprocess_output", fake_capture
-    )
+    monkeypatch.setattr("utils.utils_profile.capture_subprocess_output", fake_capture)
     monkeypatch.setattr("utils.utils_profile.parse_pmc_perf", lambda f: ["SQ_WAVES"])
     monkeypatch.setattr(
         "utils.utils_profile.rocpd_data.convert_dbs_to_csv", lambda *a, **k: None
@@ -1155,9 +1153,7 @@ def test_run_prof_rocprofv3_builds_command_and_env(tmp_path, monkeypatch):
         return (True, "success")
 
     monkeypatch.setattr("utils.utils_common._rocprof_cmd", "rocprofv3")
-    monkeypatch.setattr(
-        "utils.utils_profile.capture_subprocess_output", fake_capture
-    )
+    monkeypatch.setattr("utils.utils_profile.capture_subprocess_output", fake_capture)
     monkeypatch.setattr(
         "utils.utils_profile.create_temp_rocprofiler_metrics_path",
         lambda sdk_config: str(tmp_path / "metrics_path"),
