@@ -2864,6 +2864,11 @@ def test_torch_trace_profile(
         "No aggregated stats found in output"
     )
 
+    # 11b. Operator args are shown by default in the call-tree display
+    assert re.search(r"args=\([^)]", list_output), (
+        "Operator args not shown in --list-torch-operators call-tree output"
+    )
+
     # 12. Kernel IDs
     kernel_ids = re.findall(r"\(id (\d+)\)", list_output)
     assert kernel_ids, "No kernel IDs found in output"
@@ -3115,6 +3120,11 @@ def test_triton_trace_profile(
         "No operator arguments captured in consolidated.csv Args column"
     )
 
+    # Operator args are shown by default in the call-tree display.
+    assert re.search(r"args=\([^)]", list_output), (
+        "Operator args not shown in --list-triton-operators call-tree output"
+    )
+
     # ---- analyze --triton-operator ----
 
     capsys.readouterr()
@@ -3239,6 +3249,11 @@ def test_ml_api_trace_torch_compile_triton(
     captured_args = df["Args"].fillna("").astype(str).str.strip()
     assert (captured_args.str.startswith("(") & (captured_args != "()")).any(), (
         "No operator arguments captured in consolidated.csv Args column"
+    )
+
+    # Operator args are shown by default in the call-tree display.
+    assert re.search(r"args=\([^)]", list_output), (
+        "Operator args not shown in --list-triton-operators call-tree output"
     )
 
     # ---- analyze --triton-operator ----

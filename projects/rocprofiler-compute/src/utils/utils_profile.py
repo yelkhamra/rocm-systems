@@ -841,15 +841,6 @@ def _parse_function_fields(
     return raw, backend, args
 
 
-def _parse_function_backend(function_value: Optional[str]) -> tuple[str, str]:
-    """Return (clean_function, backend) for one Function cell.
-
-    The args segment, when present, is stripped from clean_function.
-    """
-    clean_function, backend, _args = _parse_function_fields(function_value)
-    return clean_function, backend
-
-
 def _augment_marker_rows(
     rows: list[dict], fieldnames: list[str]
 ) -> tuple[list[dict], list[str], int, list[str]]:

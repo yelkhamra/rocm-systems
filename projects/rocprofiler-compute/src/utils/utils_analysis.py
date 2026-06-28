@@ -24,6 +24,10 @@ NS_TO_MS = 1.0 / 1_000_000.0
 VALUE_COL_PREFERENCE: tuple[str, ...] = ("Avg", "Value")
 PEAK_COL_PREFERENCE: tuple[str, ...] = ("Peak", "Peak (Empirical)")
 
+# Display bounds for the operator-args segment in the analyze output.
+ARGS_DISPLAY_MAX_ITEMS = 8
+ARGS_DISPLAY_MAX_CHARS = 160
+
 
 def get_bw_scale_and_unit(value: float) -> tuple[float, str]:
     """Return the divisor and suffix for a bandwidth value in Bytes/s."""
@@ -90,6 +94,9 @@ class CallTreeNode:
       - total_duration_ms: cumulative GPU time in the subtree.
       - min_dispatch_ns / max_dispatch_ns / mean_dispatch_ns: per-kernel-dispatch
         duration stats. None when no non-zero-duration dispatch is in the subtree.
+
+    args holds the operator-argument blob for this frame (for example
+    ``(input=float32[2x2])``), empty when none was recorded.
     """
 
     name: str
@@ -98,6 +105,7 @@ class CallTreeNode:
     kernel_launches: int = 0
     total_duration_ms: float = 0.0
     invocation_ids: set[str] = field(default_factory=set)
+    args: str = ""
     min_dispatch_ns: Optional[float] = None
     max_dispatch_ns: Optional[float] = None
     mean_dispatch_ns: Optional[float] = None
@@ -207,6 +215,69 @@ def decode_marker_name(name: str) -> str:
     return name.replace("%2F", "/").replace("%25", "%")
 
 
+def split_operator_args(blob: str) -> list[str]:
+    """Split a parenthesized operator-args blob into top-level argument tokens.
+
+    Commas inside brackets, parentheses, or braces stay within their token.
+    The outer parentheses are removed. Returns an empty list when the blob has
+    no content.
+    """
+    text = blob.strip()
+    if text.startswith("(") and text.endswith(")"):
+        text = text[1:-1]
+    text = text.strip()
+    if not text:
+        return []
+
+    tokens: list[str] = []
+    current: list[str] = []
+    depth = 0
+    for char in text:
+        if char in "([{":
+            depth += 1
+            current.append(char)
+        elif char in ")]}":
+            depth = max(depth - 1, 0)
+            current.append(char)
+        elif char == "," and depth == 0:
+            tokens.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+    tail = "".join(current).strip()
+    if tail:
+        tokens.append(tail)
+    return [token for token in tokens if token]
+
+
+def format_operator_args(
+    args: object,
+    max_items: int = ARGS_DISPLAY_MAX_ITEMS,
+    max_chars: int = ARGS_DISPLAY_MAX_CHARS,
+) -> str:
+    """Render an operator-args blob for display.
+
+    Returns an empty string when no arguments are present. Arguments beyond
+    ``max_items`` are replaced by an ellipsis, and the result is capped at
+    ``max_chars`` characters.
+    """
+    if args is None:
+        return ""
+    if isinstance(args, float) and math.isnan(args):
+        return ""
+    tokens = split_operator_args(str(args))
+    if not tokens:
+        return ""
+
+    shown = tokens[:max_items]
+    if len(tokens) > max_items:
+        shown.append("...")
+    rendered = "(" + ", ".join(shown) + ")"
+    if len(rendered) > max_chars:
+        rendered = rendered[: max(max_chars - 4, 1)].rstrip() + "...)"
+    return rendered
+
+
 def build_call_trees(
     df: pd.DataFrame,
 ) -> dict[str, CallTreeNode]:
@@ -227,6 +298,7 @@ def build_call_trees(
     )
     has_context_id = "Context_Id" in df.columns
     has_kernel_id = "Kernel_ID" in df.columns
+    has_args = "Args" in df.columns
 
     deduplication_columns = ["Operator_Name", "Kernel_Name"]
     if has_kernel_timestamps:
@@ -245,6 +317,12 @@ def build_call_trees(
 
         context_id = getattr(row, "Context_Id", None) if has_context_id else None
         location = parse_top_level_location(context_id)
+
+        args_value = ""
+        if has_args:
+            raw_args = getattr(row, "Args", None)
+            if raw_args is not None and pd.notna(raw_args):
+                args_value = str(raw_args).strip()
 
         duration_ns = 0.0
         if has_kernel_timestamps:
@@ -273,6 +351,10 @@ def build_call_trees(
             current_node = current_node.children[path_segment]
             if i < len(ctx_segments):
                 current_node.invocation_ids.add("/".join(ctx_segments[: i + 1]))
+
+        # Args describe the leaf operator. Keep the first non-empty value.
+        if args_value and not current_node.args:
+            current_node.args = args_value
 
         if kernel_name not in current_node.kernels:
             kernel_id = None

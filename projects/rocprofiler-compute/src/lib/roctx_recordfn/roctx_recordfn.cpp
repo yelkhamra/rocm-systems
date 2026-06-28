@@ -128,14 +128,16 @@ constexpr std::size_t kMaxArgsLen = 512;
 constexpr std::size_t kMaxArgItems = 32;
 
 // Truncate an args blob longer than kMaxArgsLen characters and append an
-// ellipsis.
+// ellipsis. A parenthesized blob keeps its trailing ')'.
 std::string cap_args_blob(std::string blob)
 {
-    if (blob.size() > kMaxArgsLen)
+    if (blob.size() <= kMaxArgsLen)
     {
-        blob.resize(kMaxArgsLen);
-        blob += "...";
+        return blob;
     }
+    const bool balanced = !blob.empty() && blob.front() == '(' && blob.back() == ')';
+    blob.resize(kMaxArgsLen);
+    blob += balanced ? "...)" : "...";
     return blob;
 }
 

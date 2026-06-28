@@ -22,6 +22,7 @@ from utils.utils_analysis import (
     NS_TO_MS,
     CallTreeNode,
     build_operator_summary,
+    format_operator_args,
     get_bw_scale_and_unit,
     simplify_kernel_name,
 )
@@ -361,6 +362,13 @@ def format_node_stats(node: CallTreeNode) -> str:
     )
 
 
+def format_node_args(node: CallTreeNode) -> str:
+    """Return the ``args=...`` display segment for a node, with a leading space,
+    or an empty string when the node has no operator arguments."""
+    rendered = format_operator_args(node.args)
+    return f" args={rendered}" if rendered else ""
+
+
 def get_tree_wrap_width(min_width: int = 72, max_width: int = 120) -> int:
     """Pick wrap width based on terminal size to avoid terminal hard-wrap artifacts."""
     terminal_cols = shutil.get_terminal_size((max_width, 20)).columns
@@ -541,14 +549,17 @@ def print_operator_node(
     branch_char = "└─ " if is_last else "├─ "
     node_prefix = f"{indent}{branch_char}"
 
+    args_segment = format_node_args(node)
     if is_branching:
-        print_wrapped_tree_line(node_prefix, f"{node.name} {format_node_stats(node)}")
+        print_wrapped_tree_line(
+            node_prefix, f"{node.name}{args_segment} {format_node_stats(node)}"
+        )
     else:
         if len(node.invocation_ids) > 0:
             suffix = f" (calls: {node.call_count})"
         else:
             suffix = ""
-        print_wrapped_tree_line(node_prefix, f"{node.name}{suffix}")
+        print_wrapped_tree_line(node_prefix, f"{node.name}{args_segment}{suffix}")
 
     # Build new parent_pipes for children
     if is_last:

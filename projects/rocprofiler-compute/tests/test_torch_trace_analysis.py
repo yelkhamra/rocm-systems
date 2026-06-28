@@ -15,13 +15,15 @@ from utils.rocpd_data import (
     convert_dbs_to_csv,
 )
 from utils.utils_analysis import (
+    build_call_trees,
     build_call_trees_with_kernel_ids,
+    format_operator_args,
     process_ml_api_trace_output,
+    split_operator_args,
     write_ml_api_trace_consolidated_csv,
 )
 from utils.utils_profile import (
     _augment_marker_csv,
-    _parse_function_backend,
     _parse_function_fields,
 )
 
@@ -428,48 +430,7 @@ def test_ml_api_trace_output_same_for_rocpd_and_csv():
     common.clean_output_dir(True, csv_dir)
 
 
-# ---- Backend column unpacking in save_ml_api_trace_inputs ----
-
-
-def test_parse_function_backend_untagged_is_unknown():
-    """Untagged rows surface as Backend='unknown'."""
-    clean, backend = _parse_function_backend("torch.empty:#1@linear.py:109")
-    assert clean == "torch.empty:#1@linear.py:109"
-    assert backend == "unknown"
-
-
-def test_parse_function_backend_tagged_torch_is_stripped():
-    """Tagged single-frame markers expose backend and lose the suffix."""
-    clean, backend = _parse_function_backend(
-        "nn.Module.MyModel.forward:#1@train.py:42|torch"
-    )
-    assert clean == "nn.Module.MyModel.forward:#1@train.py:42"
-    assert backend == "torch"
-
-
-def test_parse_function_backend_tagged_triton_leaf():
-    """Row-level suffix attributes the entire wire to its producing backend."""
-    clean, backend = _parse_function_backend(
-        "torch.compile.fn/triton.CompiledKernel.foo:#1@a.py:1/#1@b.py:2|triton"
-    )
-    assert clean == ("torch.compile.fn/triton.CompiledKernel.foo:#1@a.py:1/#1@b.py:2")
-    assert backend == "triton"
-
-
-def test_parse_function_backend_aten_leaf_is_unknown():
-    """Untagged ATen leaf surfaces as Backend='unknown'."""
-    clean, backend = _parse_function_backend(
-        "nn.Module.X.forward/aten::add:#1@m.py:9/#1@aten:0"
-    )
-    assert clean == "nn.Module.X.forward/aten::add:#1@m.py:9/#1@aten:0"
-    assert backend == "unknown"
-
-
-def test_parse_function_backend_edge_cases():
-    """Bogus suffix, empty string, and None all fall back to 'unknown'."""
-    assert _parse_function_backend("op|bogus") == ("op|bogus", "unknown")
-    assert _parse_function_backend("") == ("", "unknown")
-    assert _parse_function_backend(None) == ("", "unknown")
+# ---- Function-cell field splitting (backend + args) ----
 
 
 @pytest.mark.parametrize(
@@ -477,6 +438,38 @@ def test_parse_function_backend_edge_cases():
     [
         ("aten::add", "aten::add", "unknown", ""),
         ("aten::mm|torch", "aten::mm", "torch", ""),
+        # Untagged single-frame marker with context.
+        (
+            "torch.empty:#1@linear.py:109",
+            "torch.empty:#1@linear.py:109",
+            "unknown",
+            "",
+        ),
+        # Tagged single-frame marker: suffix stripped, backend exposed.
+        (
+            "nn.Module.MyModel.forward:#1@train.py:42|torch",
+            "nn.Module.MyModel.forward:#1@train.py:42",
+            "torch",
+            "",
+        ),
+        # Multi-frame leaf attributed to its producing backend.
+        (
+            "torch.compile.fn/triton.CompiledKernel.foo:#1@a.py:1/#1@b.py:2|triton",
+            "torch.compile.fn/triton.CompiledKernel.foo:#1@a.py:1/#1@b.py:2",
+            "triton",
+            "",
+        ),
+        # Untagged multi-frame ATen leaf.
+        (
+            "nn.Module.X.forward/aten::add:#1@m.py:9/#1@aten:0",
+            "nn.Module.X.forward/aten::add:#1@m.py:9/#1@aten:0",
+            "unknown",
+            "",
+        ),
+        # Unrecognized suffix, empty string, and None fall back to "unknown".
+        ("op|bogus", "op|bogus", "unknown", ""),
+        ("", "", "unknown", ""),
+        (None, "", "unknown", ""),
         (
             "aten::mm:#1@m.py:7|args=(f32[2x2])|torch",
             "aten::mm:#1@m.py:7",
@@ -670,3 +663,95 @@ def test_process_ml_api_trace_output_preserves_per_row_args(tmp_path):
     )
     assert args_by_operator.get("torch.mm") == "(self=float32[2x2])"
     assert args_by_operator.get("nn.Module.Linear.forward") == "(input=float32[2x2])"
+
+
+# ---- Operator-args parsing and rendering for the analyze display ----
+
+
+@pytest.mark.parametrize(
+    "blob, expected",
+    [
+        ("", []),
+        ("()", []),
+        ("(  )", []),
+        ("(self=float32[2x2])", ["self=float32[2x2]"]),
+        (
+            "(self=float32[2x2], mat2=float32[2x3])",
+            ["self=float32[2x2]", "mat2=float32[2x3]"],
+        ),
+        # Commas inside a tensor list must not split the argument.
+        (
+            "(tensors=[float32[2], float32[2]], dim=0)",
+            ["tensors=[float32[2], float32[2]]", "dim=0"],
+        ),
+        # A blob without the wrapping parentheses still splits.
+        ("a=1, b=2", ["a=1", "b=2"]),
+    ],
+)
+def test_split_operator_args(blob, expected):
+    """Top-level argument tokens are split while bracketed groups stay intact."""
+    assert split_operator_args(blob) == expected
+
+
+def test_format_operator_args_empty_inputs():
+    """Empty, contentless, and missing blobs render as an empty string."""
+    assert format_operator_args("") == ""
+    assert format_operator_args("()") == ""
+    assert format_operator_args(None) == ""
+    assert format_operator_args(float("nan")) == ""
+
+
+def test_format_operator_args_passthrough_when_short():
+    """A short blob is returned in full."""
+    assert (
+        format_operator_args("(self=float32[2x2], mat2=float32[2x3])")
+        == "(self=float32[2x2], mat2=float32[2x3])"
+    )
+
+
+def test_format_operator_args_truncates_item_count():
+    """Items beyond max_items collapse into an ellipsis token."""
+    blob = "(" + ", ".join(f"a{i}=1" for i in range(10)) + ")"
+    rendered = format_operator_args(blob, max_items=3)
+    assert rendered == "(a0=1, a1=1, a2=1, ...)"
+
+
+def test_format_operator_args_truncates_length():
+    """An over-long rendering is capped with a trailing ellipsis."""
+    blob = "(name=" + "x" * 200 + ")"
+    rendered = format_operator_args(blob, max_chars=40)
+    assert len(rendered) <= 40
+    assert rendered.endswith("...)")
+
+
+def test_build_call_trees_attaches_leaf_args():
+    """Args from the wire attach to the leaf operator node of the call tree."""
+    df = pd.DataFrame({
+        "Operator_Name": ["nn.Module.Linear.forward/aten::mm"],
+        "Context_Id": ["1@m.py:10/#1@m.py:12"],
+        "Kernel_Name": ["kernel_gemm"],
+        "Args": ["(self=float32[2x2], mat2=float32[2x3])"],
+    })
+
+    trees = build_call_trees(df)
+
+    root = trees["m.py:10"]
+    parent = root.children["nn.Module.Linear.forward"]
+    leaf = parent.children["aten::mm"]
+    assert leaf.args == "(self=float32[2x2], mat2=float32[2x3])"
+    # Args belong to the leaf only; ancestor frames stay empty.
+    assert parent.args == ""
+
+
+def test_build_call_trees_without_args_column():
+    """A trace lacking the Args column leaves node.args empty."""
+    df = pd.DataFrame({
+        "Operator_Name": ["aten::mm"],
+        "Context_Id": ["1@m.py:10"],
+        "Kernel_Name": ["kernel_gemm"],
+    })
+
+    trees = build_call_trees(df)
+
+    leaf = trees["m.py:10"].children["aten::mm"]
+    assert leaf.args == ""
