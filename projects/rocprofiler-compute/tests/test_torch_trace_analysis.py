@@ -29,10 +29,12 @@ from utils.utils_profile import (
 
 GUID = "abc-1234-def"
 
+# Function values carry the wire "|<backend>" suffix, exactly as emitted by
+# inject_roctx; Backend is derived from it the same way augmentation does.
 MARKER_ROWS = [
     (
         "roctx",
-        "nn.Module.Linear.forward:#1@test.py:10",
+        "nn.Module.Linear.forward:#1@test.py:10|torch",
         100,
         200,
         1000,
@@ -42,7 +44,7 @@ MARKER_ROWS = [
     ),
     (
         "roctx",
-        "nn.Module.Linear.forward:#2@test.py:10",
+        "nn.Module.Linear.forward:#2@test.py:10|torch",
         100,
         200,
         1001,
@@ -50,7 +52,7 @@ MARKER_ROWS = [
         3000,
         4000,
     ),
-    ("roctx", "torch.mm:#1@test.py:15", 100, 200, 1002, GUID, 5000, 6000),
+    ("roctx", "torch.mm:#1@test.py:15|torch", 100, 200, 1002, GUID, 5000, 6000),
 ]
 
 COUNTER_ROWS = [
@@ -277,15 +279,21 @@ COUNTER_COLUMNS_CSV = [
 
 
 def build_marker_df(include_guid):
-    """Build a dataframe from the marker rows."""
+    """Build the augmented marker dataframe from the marker rows.
+
+    Function/Backend are split out of the raw marker value with the same parser
+    augmentation uses, so the backend stays embedded in the marker itself.
+    """
+    parsed = [_parse_function_fields(r[1]) for r in MARKER_ROWS]
     data = {
         "Domain": [r[0] for r in MARKER_ROWS],
-        "Function": [r[1] for r in MARKER_ROWS],
+        "Function": [function for function, _backend, _args in parsed],
         "Process_Id": [r[2] for r in MARKER_ROWS],
         "Thread_Id": [r[3] for r in MARKER_ROWS],
         "Correlation_Id": [r[4] for r in MARKER_ROWS],
         "Start_Timestamp": [r[6] for r in MARKER_ROWS],
         "End_Timestamp": [r[7] for r in MARKER_ROWS],
+        "Backend": [backend for _function, backend, _args in parsed],
     }
 
     if include_guid:
@@ -591,17 +599,6 @@ def test_augment_marker_csv_handles_unknown_schema(tmp_path):
     _augment_marker_csv(str(src), str(dst))
 
     assert dst.read_text(encoding="utf-8") == src.read_text(encoding="utf-8")
-
-
-def test_process_ml_api_trace_output_defaults_backend_for_untagged(tmp_path):
-    """Untagged rows default to Backend='torch' in the consolidated df."""
-    workload_dir = str(tmp_path)
-    write_rocpd_layout(workload_dir)
-
-    consolidated_df, _ = process_ml_api_trace_output(workload_dir)
-
-    assert "Backend" in consolidated_df.columns
-    assert (consolidated_df["Backend"] == "torch").all()
 
 
 def test_process_ml_api_trace_output_preserves_per_row_backend(tmp_path):
