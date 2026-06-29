@@ -40,6 +40,8 @@ set(DEFAULT_GPU_TARGETS
     "gfx1101"
     "gfx1102"
     "gfx1250")
+    "gfx1151"
+    "gfx1152")
 
 set(OPENMP_GPU_TARGETS
     "${DEFAULT_GPU_TARGETS}"
