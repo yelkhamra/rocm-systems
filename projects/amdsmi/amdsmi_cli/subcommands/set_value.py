@@ -1640,7 +1640,7 @@ class SetValueCommands:
                     return
 
                 if lim_type == "min":
-                    if val > clk_tuple["max_clk"]:
+                    if isinstance(clk_tuple["max_clk"], int) and val > clk_tuple["max_clk"]:
                         self.logger.store_output(
                             args.gpu,
                             "clk_limit",
@@ -1653,7 +1653,7 @@ class SetValueCommands:
                     if val == clk_tuple["min_clk"]:
                         val_changed = False  # Clock limit value did not changed
                 elif lim_type == "max":
-                    if val < clk_tuple["min_clk"]:
+                    if isinstance(clk_tuple["min_clk"], int) and val < clk_tuple["min_clk"]:
                         self.logger.store_output(
                             args.gpu,
                             "clk_limit",
