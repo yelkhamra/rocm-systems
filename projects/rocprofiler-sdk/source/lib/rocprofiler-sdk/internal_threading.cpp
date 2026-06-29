@@ -22,6 +22,7 @@
 
 #include "lib/rocprofiler-sdk/internal_threading.hpp"
 #include "lib/common/container/stable_vector.hpp"
+#include "lib/common/logging.hpp"
 #include "lib/common/scope_destructor.hpp"
 #include "lib/common/static_object.hpp"
 #include "lib/common/utility.hpp"
@@ -53,6 +54,15 @@ namespace
 using task_group_vec_t     = std::vector<task_group_t*>;
 using thread_pool_config_t = PTL::ThreadPool::Config;
 
+template <typename ClockPointT>
+int64_t
+debug_elapsed_us(ClockPointT start)
+{
+    return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() -
+                                                                 start)
+        .count();
+}
+
 auto affinity_functor(intmax_t)
 {
     static auto assigned = std::atomic<intmax_t>{0};
@@ -79,44 +89,102 @@ get_thread_pool_config(size_t pool_size = 1)
 TaskGroup::TaskGroup(size_t pool_size)
 : parent_type{new thread_pool_t{get_thread_pool_config(pool_size)}, false}
 , m_pool{parent_type::thread_pool()}
-{}
+{
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] TaskGroup constructed this=" << static_cast<const void*>(this)
+                 << " pool=" << static_cast<const void*>(m_pool) << " pool_size=" << pool_size;
+}
 
 TaskGroup::~TaskGroup()
 {
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] TaskGroup destroy begin this=" << static_cast<const void*>(this)
+                 << " pool=" << static_cast<const void*>(m_pool)
+                 << " tasks_count=" << m_tasks_count.load(std::memory_order_relaxed);
     m_pool->destroy_threadpool();
     delete m_pool;
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] TaskGroup destroy end this=" << static_cast<const void*>(this);
 }
 
 void
 TaskGroup::exec(std::function<void()>&& _func)
 {
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] TaskGroup::exec begin this=" << static_cast<const void*>(this)
+                 << " pool=" << static_cast<const void*>(m_pool)
+                 << " queued_tasks=" << m_tasks.size()
+                 << " tasks_count=" << m_tasks_count.load(std::memory_order_relaxed);
     auto lk = std::unique_lock<std::mutex>{m_mutex};
     m_async_only.store(false, std::memory_order_release);
     m_tasks.emplace_back(parent_type::async(std::move(_func)));
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] TaskGroup::exec end this=" << static_cast<const void*>(this)
+                 << " queued_tasks=" << m_tasks.size()
+                 << " tasks_count=" << m_tasks_count.load(std::memory_order_relaxed);
 }
 
 void
 TaskGroup::async(std::function<void()>&& _func)
 {
-    ++m_tasks_count;
+    auto schedule_start = std::chrono::steady_clock::now();
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] TaskGroup::async enter this=" << static_cast<const void*>(this)
+                 << " pool=" << static_cast<const void*>(m_pool)
+                 << " tasks_count_before=" << m_tasks_count.load(std::memory_order_relaxed);
+
+    auto after_increment = ++m_tasks_count;
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] TaskGroup::async after-count-increment this="
+                 << static_cast<const void*>(this) << " tasks_count=" << after_increment;
+
     auto _async_func = [func = std::move(_func)](std::atomic<uint64_t>* tasks_count) {
+        auto task_start = std::chrono::steady_clock::now();
+        ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                     << "] TaskGroup::async task begin tasks_count_ptr="
+                     << static_cast<const void*>(tasks_count)
+                     << " tasks_count=" << tasks_count->load(std::memory_order_relaxed);
         // ensure m_tasks_count is decremented even if func throws
-        auto _dtor = common::scope_destructor{[tasks_count]() { --(*tasks_count); }};
+        auto _dtor = common::scope_destructor{[tasks_count, task_start]() {
+            auto remaining = --(*tasks_count);
+            ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                         << "] TaskGroup::async task end tasks_count_ptr="
+                         << static_cast<const void*>(tasks_count) << " remaining=" << remaining
+                         << " elapsed_us=" << debug_elapsed_us(task_start);
+        }};
         func();
     };
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] TaskGroup::async before-parent-async this=" << static_cast<const void*>(this)
+                 << " pool=" << static_cast<const void*>(m_pool)
+                 << " tasks_count=" << m_tasks_count.load(std::memory_order_relaxed);
     parent_type::async(std::move(_async_func), &m_tasks_count);
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] TaskGroup::async after-parent-async this=" << static_cast<const void*>(this)
+                 << " pool=" << static_cast<const void*>(m_pool)
+                 << " tasks_count=" << m_tasks_count.load(std::memory_order_relaxed)
+                 << " elapsed_us=" << debug_elapsed_us(schedule_start);
 }
 
 void
 TaskGroup::wait(bool async_only)
 {
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] TaskGroup::wait begin this=" << static_cast<const void*>(this)
+                 << " async_only=" << async_only
+                 << " tasks_count=" << m_tasks_count.load(std::memory_order_relaxed);
     while(m_tasks_count.load(std::memory_order_relaxed) > 0)
     {
         std::this_thread::yield();
         std::this_thread::sleep_for(std::chrono::microseconds{100});
     }
 
-    if(async_only || m_async_only.load(std::memory_order_acquire)) return;
+    if(async_only || m_async_only.load(std::memory_order_acquire))
+    {
+        ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                     << "] TaskGroup::wait async-only end this=" << static_cast<const void*>(this);
+        return;
+    }
 
     auto lk = std::unique_lock<std::mutex>{m_mutex};
     for(auto& itr : m_tasks)
@@ -127,6 +195,10 @@ TaskGroup::wait(bool async_only)
     // makes m_tasks empty but delays the destruction of the shared_ptrs until the next wait or the
     // destruction of the task group
     std::swap(m_tasks, m_completed_tasks);
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] TaskGroup::wait end this=" << static_cast<const void*>(this)
+                 << " queued_tasks=" << m_tasks.size()
+                 << " completed_tasks=" << m_completed_tasks.size();
 }
 
 void
@@ -334,6 +406,8 @@ get_task_group(rocprofiler_callback_thread_t cb_tid)
 std::unique_ptr<task_group_t>
 create_task_group(size_t pool_size)
 {
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] create_task_group(unique_ptr) begin pool_size=" << pool_size;
     // notify that rocprofiler library is about to create an internal thread
     notify_pre_internal_thread_create(ROCPROFILER_LIBRARY);
 
@@ -343,12 +417,18 @@ create_task_group(size_t pool_size)
     // notify that rocprofiler library finished creating an internal thread
     notify_post_internal_thread_create(ROCPROFILER_LIBRARY);
 
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] create_task_group(unique_ptr) end task_group="
+                 << static_cast<const void*>(_tg.get()) << " pool_size=" << pool_size;
     return _tg;
 }
 
 task_group_t*
 create_task_group(void* addr, size_t pool_size)
 {
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] create_task_group(placement) begin addr=" << addr
+                 << " pool_size=" << pool_size;
     // notify that rocprofiler library is about to create an internal thread
     notify_pre_internal_thread_create(ROCPROFILER_LIBRARY);
 
@@ -358,6 +438,9 @@ create_task_group(void* addr, size_t pool_size)
     // notify that rocprofiler library finished creating an internal thread
     notify_post_internal_thread_create(ROCPROFILER_LIBRARY);
 
+    ROCP_WARNING << "[TG-DEBUG tid=" << common::get_tid()
+                 << "] create_task_group(placement) end task_group="
+                 << static_cast<const void*>(_tg) << " pool_size=" << pool_size;
     return _tg;
 }
 }  // namespace internal_threading
