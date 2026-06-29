@@ -127,8 +127,8 @@ constexpr std::size_t kMaxArgsLen = 512;
 // Maximum number of operator inputs rendered into an args blob.
 constexpr std::size_t kMaxArgItems = 32;
 
-// Truncate an args blob longer than kMaxArgsLen characters and append an
-// ellipsis. A parenthesized blob keeps its trailing ')'.
+// Truncate an over-length args blob to kMaxArgsLen characters and append an
+// ellipsis, keeping the closing ')' when the blob is parenthesized.
 std::string cap_args_blob(std::string blob)
 {
     if (blob.size() <= kMaxArgsLen)

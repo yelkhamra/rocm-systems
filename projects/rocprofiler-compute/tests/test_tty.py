@@ -60,7 +60,7 @@ def test_format_node_args_absent() -> None:
 
 
 def test_print_operator_node_shows_args_by_default(capsys) -> None:
-    """Operator args are shown in the call-tree display without any opt-in."""
+    """Operator args are shown in the call-tree display."""
     node = CallTreeNode(name="aten::mm", args="(self=float32[2x2])")
     node.kernels["kernel_gemm"] = KernelStats(launches=1, total_duration_ns=1000.0)
 

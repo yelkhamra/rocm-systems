@@ -2864,7 +2864,7 @@ def test_torch_trace_profile(
         "No aggregated stats found in output"
     )
 
-    # 11b. Operator args are shown by default in the call-tree display
+    # 11b. Operator args appear inline in the call-tree display
     assert re.search(r"args=\([^)]", list_output), (
         "Operator args not shown in --list-torch-operators call-tree output"
     )
@@ -3120,7 +3120,7 @@ def test_triton_trace_profile(
         "No operator arguments captured in consolidated.csv Args column"
     )
 
-    # Operator args are shown by default in the call-tree display.
+    # Operator args appear inline in the call-tree display.
     assert re.search(r"args=\([^)]", list_output), (
         "Operator args not shown in --list-triton-operators call-tree output"
     )
@@ -3251,7 +3251,7 @@ def test_ml_api_trace_torch_compile_triton(
         "No operator arguments captured in consolidated.csv Args column"
     )
 
-    # Operator args are shown by default in the call-tree display.
+    # Operator args appear inline in the call-tree display.
     assert re.search(r"args=\([^)]", list_output), (
         "Operator args not shown in --list-triton-operators call-tree output"
     )

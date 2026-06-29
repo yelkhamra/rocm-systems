@@ -95,8 +95,7 @@ class CallTreeNode:
       - min_dispatch_ns / max_dispatch_ns / mean_dispatch_ns: per-kernel-dispatch
         duration stats. None when no non-zero-duration dispatch is in the subtree.
 
-    args holds the operator-argument blob for this frame (for example
-    ``(input=float32[2x2])``), empty when none was recorded.
+    args holds this frame's operator-argument blob, empty when none was recorded.
     """
 
     name: str
@@ -218,9 +217,9 @@ def decode_marker_name(name: str) -> str:
 def split_operator_args(blob: str) -> list[str]:
     """Split a parenthesized operator-args blob into top-level argument tokens.
 
-    Commas inside brackets, parentheses, braces, or quoted strings stay within
-    their token. The outer parentheses are removed. Returns an empty list when
-    the blob has no content.
+    The outer parentheses are removed. Commas inside brackets, parentheses,
+    braces, or quotes do not split a token. Returns an empty list when the blob
+    has no content.
     """
     text = blob.strip()
     if text.startswith("(") and text.endswith(")"):
@@ -364,7 +363,7 @@ def build_call_trees(
             if i < len(ctx_segments):
                 current_node.invocation_ids.add("/".join(ctx_segments[: i + 1]))
 
-        # Args describe the leaf operator. Keep the first value with content.
+        # Attach args to the leaf node, keeping the first non-empty value.
         if not current_node.args and split_operator_args(args_value):
             current_node.args = args_value
 
@@ -632,8 +631,7 @@ def process_ml_api_trace_output(
         raise ValueError(
             f"Consolidated ML API trace is missing required columns {missing_columns}"
         )
-    # Backend is added by utils_profile._augment_marker_csv. Args is optional
-    # and defaults to empty when absent.
+    # Backend is required; Args is optional and defaults to empty when absent.
     has_args = "Args" in consolidated_df.columns
     projection = [*required_columns, "Backend"]
     if has_args:

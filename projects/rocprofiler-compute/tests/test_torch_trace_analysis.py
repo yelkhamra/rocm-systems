@@ -29,8 +29,7 @@ from utils.utils_profile import (
 
 GUID = "abc-1234-def"
 
-# Function values carry the wire "|<backend>" suffix, exactly as emitted by
-# inject_roctx; Backend is derived from it the same way augmentation does.
+# Function values carry the wire "|<backend>" suffix.
 MARKER_ROWS = [
     (
         "roctx",
@@ -279,11 +278,8 @@ COUNTER_COLUMNS_CSV = [
 
 
 def build_marker_df(include_guid):
-    """Build the augmented marker dataframe from the marker rows.
-
-    Function/Backend are split out of the raw marker value with the same parser
-    augmentation uses, so the backend stays embedded in the marker itself.
-    """
+    """Build the augmented marker dataframe, splitting Function and Backend from
+    each raw marker value."""
     parsed = [_parse_function_fields(r[1]) for r in MARKER_ROWS]
     data = {
         "Domain": [r[0] for r in MARKER_ROWS],

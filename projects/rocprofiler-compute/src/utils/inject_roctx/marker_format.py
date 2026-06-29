@@ -41,8 +41,8 @@ def decode_args(encoded: str) -> str:
 
 
 def cap_args(blob: str) -> str:
-    """Truncate an args blob to ``MAX_ARGS_LEN`` characters, appending an
-    ellipsis. A parenthesized blob keeps its trailing ``)``."""
+    """Truncate an over-length args blob to ``MAX_ARGS_LEN`` characters and
+    append an ellipsis, keeping the closing ``)`` when the blob is parenthesized."""
     if len(blob) <= MAX_ARGS_LEN:
         return blob
     truncated = blob[:MAX_ARGS_LEN]
