@@ -218,9 +218,9 @@ def decode_marker_name(name: str) -> str:
 def split_operator_args(blob: str) -> list[str]:
     """Split a parenthesized operator-args blob into top-level argument tokens.
 
-    Commas inside brackets, parentheses, or braces stay within their token.
-    The outer parentheses are removed. Returns an empty list when the blob has
-    no content.
+    Commas inside brackets, parentheses, braces, or quoted strings stay within
+    their token. The outer parentheses are removed. Returns an empty list when
+    the blob has no content.
     """
     text = blob.strip()
     if text.startswith("(") and text.endswith(")"):
@@ -232,8 +232,21 @@ def split_operator_args(blob: str) -> list[str]:
     tokens: list[str] = []
     current: list[str] = []
     depth = 0
+    quote: Optional[str] = None
+    escaped = False
     for char in text:
-        if char in "([{":
+        if quote is not None:
+            current.append(char)
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in "'\"":
+            quote = char
+            current.append(char)
+        elif char in "([{":
             depth += 1
             current.append(char)
         elif char in ")]}":
@@ -244,9 +257,7 @@ def split_operator_args(blob: str) -> list[str]:
             current = []
         else:
             current.append(char)
-    tail = "".join(current).strip()
-    if tail:
-        tokens.append(tail)
+    tokens.append("".join(current).strip())
     return [token for token in tokens if token]
 
 
@@ -274,7 +285,8 @@ def format_operator_args(
         shown.append("...")
     rendered = "(" + ", ".join(shown) + ")"
     if len(rendered) > max_chars:
-        rendered = rendered[: max(max_chars - 4, 1)].rstrip() + "...)"
+        keep = max(max_chars - 4, 0)
+        rendered = (rendered[:keep].rstrip() + "...)")[:max_chars]
     return rendered
 
 
@@ -352,8 +364,8 @@ def build_call_trees(
             if i < len(ctx_segments):
                 current_node.invocation_ids.add("/".join(ctx_segments[: i + 1]))
 
-        # Args describe the leaf operator. Keep the first non-empty value.
-        if args_value and not current_node.args:
+        # Args describe the leaf operator. Keep the first value with content.
+        if not current_node.args and split_operator_args(args_value):
             current_node.args = args_value
 
         if kernel_name not in current_node.kernels:
