@@ -80,6 +80,8 @@ Full documentation for ROCm Compute Profiler is available at [https://rocm.docs.
     * Number of kernel dispatches
     * Min/Max/Mean and Total duration of kernel dispatches
 
+* ML API trace analysis now displays the captured operator arguments inline in the operator call tree as an `args=(...)` segment, when arguments were collected via `--ml-trace-with-params {shapes,values}`. Long argument blobs are truncated for readability while preserving balanced parentheses.
+
 * `--torch-trace` now captures backward-pass and nested operators that were previously missed or misattributed. The first run builds and caches a helper under `~/.cache/rocprofiler-compute/`, so it takes longer than later runs.
 
 * Profile workload output folder name for Strix Halo series (gfx1151) is changed from `strix_halo` to `rdna35_halo`
