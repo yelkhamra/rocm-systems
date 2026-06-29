@@ -45,6 +45,7 @@
 #include "device/devkernel.hpp"    // amd::Kernel, KernelParameterDescriptor
 #include "platform/kernel.hpp"     // amd::KernelSignature
 #include "opencl/amdocl/cl_kernel.h"  // T_POINTER enum
+#include "os/os.hpp"               // amd::Os::installExceptionHandlers()
 
 // Fat binary format structs (ClangOffloadBundleUncompressedHeader, etc.)
 #include "../hip_code_object.hpp"
@@ -53,7 +54,6 @@
 #include <algorithm>
 #include <atomic>
 #include <climits>
-#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -106,22 +106,19 @@ const char* hip_capture_output_dir() {
   return HIP_HRR_CAPTURE_OUTPUT;
 }
 
-// HIP_HRR_DEBUG_ARGS=<non-empty> also enables provenance tracing: every H2D
-// memcpy destination is logged so a kernel pointer arg can be matched to the
-// copy that filled it. Evaluated once.
+// HIP_HRR_DEBUG_ARGS also enables provenance tracing: every H2D memcpy
+// destination is logged so a kernel pointer arg can be matched to the copy that
+// filled it. Routed through the CLR flags registry (flags.hpp) like every other
+// HRR flag, so it is discoverable and honors AMD_LOG_LEVEL log routing.
 static bool hrr_dbg_args_enabled() {
-  static const bool e = []() {
-    const char* v = std::getenv("HIP_HRR_DEBUG_ARGS");
-    return v != nullptr && v[0] != '\0';
-  }();
-  return e;
+  return HIP_HRR_DEBUG_ARGS;
 }
 
 static void hrr_trace_h2d(const char* api, const void* dst, size_t sz) {
   if (hrr_dbg_args_enabled())
-    std::fprintf(stderr, "[HRR h2d] %s dst=0x%llx size=%zu\n", api,
-                 (unsigned long long)reinterpret_cast<uintptr_t>(dst),
-                 sz);
+    LogPrintfInfo("[HRR h2d] %s dst=0x%llx size=%zu", api,
+                  (unsigned long long)reinterpret_cast<uintptr_t>(dst),
+                  sz);
 }
 
 // Parse the extra[] sentinel format for packed kernarg buffers.
@@ -335,12 +332,10 @@ static void serialize_kernel_launch(
   push_u16(num_args);
   push_u16(0);  // num_snapshots
 
-  // HIP_HRR_DEBUG_ARGS=<non-empty> dumps every captured arg (kind, size, full
-  // bytes, detected embedded-pointer offsets) — used to confirm pointer layout.
-  static const bool dbg = []() {
-    const char* e = std::getenv("HIP_HRR_DEBUG_ARGS");
-    return e != nullptr && e[0] != '\0';
-  }();
+  // HIP_HRR_DEBUG_ARGS dumps every captured arg (kind, size, full bytes,
+  // detected embedded-pointer offsets) — used to confirm pointer layout. Use the
+  // single cached accessor rather than re-reading the env var here.
+  const bool dbg = hrr_dbg_args_enabled();
 
   // Serialize one argument: a whole-arg pointer (kind 1), or a scalar/struct
   // that we additionally scan for embedded device pointers (kind 3 if any are
@@ -353,9 +348,9 @@ static void serialize_kernel_launch(
       else for (uint16_t j = 0; j < sz; j++) push_u8(0);
       if (dbg) {
         uint64_t v = 0; if (bytes && sz >= 8) std::memcpy(&v, bytes, 8);
-        std::fprintf(stderr, "[HRR args] %s arg[%u] kind=1(ptr) size=%u value=0x%llx%s\n",
-                     kernel_name, idx, sz, (unsigned long long)v,
-                     bytes ? "" : " [TRUNCATED:no-bytes]");
+        LogPrintfInfo("[HRR args] %s arg[%u] kind=1(ptr) size=%u value=0x%llx%s",
+                      kernel_name, idx, sz, (unsigned long long)v,
+                      bytes ? "" : " [TRUNCATED:no-bytes]");
       }
       return;
     }
@@ -377,9 +372,9 @@ static void serialize_kernel_launch(
       }
       std::string off_str;
       for (uint16_t o : offs) { std::snprintf(tmp, sizeof(tmp), "%u ", o); off_str += tmp; }
-      std::fprintf(stderr, "[HRR args] %s arg[%u] kind=%u size=%u bytes=%s ptr_off=[%s]%s\n",
-                   kernel_name, idx, kind, sz, hex.c_str(), off_str.c_str(),
-                   bytes ? "" : " [TRUNCATED:no-bytes]");
+      LogPrintfInfo("[HRR args] %s arg[%u] kind=%u size=%u bytes=%s ptr_off=[%s]%s",
+                    kernel_name, idx, kind, sz, hex.c_str(), off_str.c_str(),
+                    bytes ? "" : " [TRUNCATED:no-bytes]");
     }
   };
 
@@ -393,9 +388,9 @@ static void serialize_kernel_launch(
         need = std::max<uint32_t>(need,
                  static_cast<uint32_t>(desc.offset_ + desc.size_));
       }
-      std::fprintf(stderr, "[HRR args] %s kbuf path: ksz=%zu need=%u n_all=%u%s\n",
-                   kernel_name, ksz, need, n_all,
-                   (ksz < need) ? " [KBUF-TOO-SMALL]" : "");
+      LogPrintfInfo("[HRR args] %s kbuf path: ksz=%zu need=%u n_all=%u%s",
+                    kernel_name, ksz, need, n_all,
+                    (ksz < need) ? " [KBUF-TOO-SMALL]" : "");
     }
     for (uint32_t i = 0; i < n_all; i++) {
       const auto& desc = sig.at(i);
@@ -1321,98 +1316,48 @@ static void record_fat_binary_blob(const void* blob_ptr) {
 // window while restoring a normal pre-init load path.
 
 // ---------------------------------------------------------------------------
-// Crash-time finalize — chained fatal-signal handlers.
+// Crash-time finalize through CLR exception handling.
 //
 // The archive is normally finalized from std::atexit(hip_capture_shutdown). If
-// the recorded process dies on a fatal signal (e.g. a GPU memory fault aborts
-// the host, or a host SIGSEGV), atexit never runs. These handlers best-effort
-// flush events.bin and write a manifest, then CHAIN to the previously installed
-// handler so ROCr still emits its GPU coredump (gpucore.<pid>) and the kernel
-// still produces the host core.
-//
-// Crash signals (SIGSEGV/SIGABRT/SIGBUS/SIGILL/SIGFPE) do NOT write the clean
-// trailer: its absence is exactly how the reader detects a crash-truncated
-// archive. Orderly-termination signals (SIGTERM/SIGINT) DO write the clean
-// trailer and a complete manifest, so killing a capture run with `kill -TERM`
-// is not misreported as a crash (see emergency_finalize's clean_shutdown path).
-//
-// POSIX only; on Windows the writer's periodic checkpoint still bounds loss.
+// the recorded process dies on a fatal signal/exception, atexit does not run.
+// Use CLR's cross-platform crash hook instead of an HRR-owned Linux-only
+// sigaction chain. The callback intentionally writes an incomplete manifest
+// without the clean trailer; periodic writer checkpoints still bound event loss
+// if the process dies before the callback can run.
 // ---------------------------------------------------------------------------
-#ifndef _WIN32
 namespace {
+std::once_flag g_hrr_exception_once;
 
-// Crash signals: the process is in an undefined state — the archive trailer is
-// deliberately NOT written so its absence flags a crash-truncated archive.
-// Clean-termination signals (SIGTERM/SIGINT): the process is being asked to exit
-// in an orderly fashion — write the clean trailer so a `kill -TERM` of a capture
-// run is not misreported as a crash (see hrr_signal_is_clean).
-constexpr int    kHrrFatalSignals[] = {SIGSEGV, SIGABRT, SIGBUS, SIGILL, SIGFPE, SIGTERM, SIGINT};
-constexpr size_t kHrrNumSignals     = sizeof(kHrrFatalSignals) / sizeof(kHrrFatalSignals[0]);
-
-struct sigaction g_hrr_prev_sa[kHrrNumSignals];
-std::atomic_flag g_hrr_in_handler = ATOMIC_FLAG_INIT;
-// Dedicated stack so a SIGSEGV from stack overflow can still run the handler.
-char             g_hrr_altstack_mem[65536];
-
-// SIGTERM/SIGINT are orderly-termination requests, not crashes.
-inline bool hrr_signal_is_clean(int signo) {
-  return signo == SIGTERM || signo == SIGINT;
+void hrr_clr_crash_callback() {
+  hrr_cap::writer::emergency_finalize(/*clean_shutdown=*/false);
 }
 
-void hrr_fatal_signal_handler(int signo, siginfo_t* info, void* uctx) {
-  // Only the first thread into the handler finalizes the archive.
-  if (!g_hrr_in_handler.test_and_set(std::memory_order_acq_rel)) {
-    hrr_cap::writer::emergency_finalize(/*clean_shutdown=*/hrr_signal_is_clean(signo));
-  }
-
-  // Chain to the handler that was installed before us (e.g. ROCr's GPU-coredump
-  // handler), so that behavior is preserved.
-  int idx = -1;
-  for (size_t i = 0; i < kHrrNumSignals; i++)
-    if (kHrrFatalSignals[i] == signo) { idx = static_cast<int>(i); break; }
-
-  if (idx >= 0) {
-    const struct sigaction& prev = g_hrr_prev_sa[idx];
-    if ((prev.sa_flags & SA_SIGINFO) && prev.sa_sigaction &&
-        prev.sa_sigaction != hrr_fatal_signal_handler) {
-      prev.sa_sigaction(signo, info, uctx);
-      return;
+void hrr_install_clr_exception_handler() {
+  std::call_once(g_hrr_exception_once, [] {
+    if (!amd::Os::installExceptionHandlers(hrr_clr_crash_callback)) {
+      LogPrintfWarning("[HRR capture] CLR crash handler installation failed; "
+                       "periodic checkpoints remain enabled");
     }
-    if (prev.sa_handler == SIG_IGN) return;
-    if (prev.sa_handler && prev.sa_handler != SIG_DFL &&
-        prev.sa_handler != reinterpret_cast<void (*)(int)>(hrr_fatal_signal_handler)) {
-      prev.sa_handler(signo);
-      return;
-    }
-  }
-
-  // No (usable) previous handler: restore the default disposition and re-raise
-  // so the kernel terminates the process with a core dump for `signo`.
-  signal(signo, SIG_DFL);
-  raise(signo);
-}
-
-void hrr_install_signal_handlers() {
-  stack_t ss{};
-  ss.ss_sp    = g_hrr_altstack_mem;
-  ss.ss_size  = sizeof(g_hrr_altstack_mem);
-  ss.ss_flags = 0;
-  sigaltstack(&ss, nullptr);
-
-  struct sigaction sa;
-  memset(&sa, 0, sizeof(sa));
-  sa.sa_sigaction = hrr_fatal_signal_handler;
-  sigemptyset(&sa.sa_mask);
-  sa.sa_flags = SA_SIGINFO | SA_NODEFER | SA_ONSTACK | SA_RESTART;
-  for (size_t i = 0; i < kHrrNumSignals; i++)
-    sigaction(kHrrFatalSignals[i], &sa, &g_hrr_prev_sa[i]);
+  });
 }
 
 }  // namespace
-#endif  // !_WIN32
 
 void hip_capture_init() {
   if (!hip_capture_enabled()) return;
+
+  // HIP_HRR_DEBUG_ARGS traces are emitted via LogPrintfInfo (amd::LOG_INFO).
+  // ClPrint filters anything above AMD_LOG_LEVEL, so a user who set the trace
+  // flag but left AMD_LOG_LEVEL below LOG_INFO would see nothing. Raise the
+  // level to LOG_INFO (never lower an already-higher level) so enabling
+  // HIP_HRR_DEBUG_ARGS alone is enough to get the traces, as it was when they
+  // went through raw fprintf(stderr).
+  if (hrr_dbg_args_enabled() && AMD_LOG_LEVEL < amd::LOG_INFO) {
+    AMD_LOG_LEVEL = amd::LOG_INFO;
+    LogPrintfInfo("[HRR capture] HIP_HRR_DEBUG_ARGS set — raised AMD_LOG_LEVEL "
+                  "to %d (LOG_INFO) so argument traces are visible",
+                  static_cast<int>(amd::LOG_INFO));
+  }
 
   // Snapshot the fully-initialized dispatch table and install runtime shims here
   // only (see comment above — no static-init capture hook).
@@ -1424,11 +1369,7 @@ void hip_capture_init() {
   // Open the events writer now — Flag::init() has run so output_dir is valid.
   if (!hrr_cap::writer::open(hip_capture_output_dir())) return;
 
-#ifndef _WIN32
-  // Install AFTER the runtime is up so we chain on top of ROCr's signal handlers
-  // (ours runs first, flushes the archive, then forwards to ROCr for gpucore).
-  hrr_install_signal_handlers();
-#endif
+  hrr_install_clr_exception_handler();
 
   // Install compiler dispatch shims now — hip::init() has completed so
   // the compiler dispatch table is fully populated.
@@ -1439,21 +1380,6 @@ void hip_capture_init() {
   hip::PlatformState::Instance().StatCO().ForEachFatBinaryBlob(record_fat_binary_blob);
 
   std::call_once(g_hrr_atexit_once, [] { std::atexit(hip_capture_shutdown); });
-}
-
-// Internal explicit-flush hook for multi-process hosts (e.g. a vLLM server
-// shutdown callback). This is deliberately NOT a public ABI symbol: it has
-// hidden visibility on Linux and is not exported on Windows, has no declaration
-// in any public HIP header, and carries no stability contract. Normal shutdown
-// is covered by the atexit(hip_capture_shutdown) hook; the periodic checkpoint
-// bounds crash loss. Appends the clean trailer and manifest without uninstalling
-// the capture shims so capture can continue afterwards.
-#ifndef _WIN32
-extern "C" __attribute__((visibility("hidden"))) void hipHrrCaptureFlush();
-#endif
-extern "C" void hipHrrCaptureFlush() {
-  if (!hip_capture_enabled() || !hrr_cap::writer::is_open()) return;
-  hrr_cap::writer::flush(hip_capture_output_dir());
 }
 
 void hip_capture_shutdown() {

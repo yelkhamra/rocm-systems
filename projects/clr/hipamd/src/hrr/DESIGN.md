@@ -59,14 +59,15 @@ fault aborts the host, or a host SIGSEGV):
 
 - **Periodic checkpoints.** The writer flushes the buffer and `fsync`s every
   `kCheckpointEvents` (4096) events, bounding how much a crash can lose.
-- **Chained fatal-signal handlers.** `hip_capture_init` installs `sigaction`
-  handlers (SIGSEGV/SIGABRT/SIGBUS/SIGILL/SIGFPE/SIGTERM/SIGINT) on an alternate
-  stack. On a fatal signal the handler `writer::emergency_finalize()`s — an
-  async-signal-safe `write()`+`fsync` of the event buffer plus a minimal
-  `manifest.json` (`complete:false`) via raw `open/write` — then **chains** to
-  the previously installed handler so ROCr still emits `gpucore.<pid>` and the
-  kernel still produces the host core dump. It deliberately does **not** write
-  the clean trailer.
+- **CLR crash callback.** When capture is enabled and `writer::open()` succeeds,
+  `hip_capture_init` registers a crash callback through
+  `amd::Os::installExceptionHandlers()` instead of installing an HRR-owned
+  Linux-only signal chain. On fatal signals/exceptions supported by CLR, the
+  callback `writer::emergency_finalize()`s with `complete:false` and deliberately
+  does **not** write the clean trailer — its absence is how the reader detects a
+  crash-truncated archive. Orderly shutdown is handled by the existing
+  `std::atexit(hip_capture_shutdown)` path, which writes the clean trailer and
+  `complete:true`.
 - **Clean-shutdown trailer.** A normal `writer::flush` appends an
   `hrr_eof_record` (event_type `HRR_EOF_MARKER`, payload carries the final event
   count + `HRR_EOF_MAGIC`) and writes `manifest.json` with `complete:true`. The
@@ -83,12 +84,44 @@ the whole load. `Archive::complete` reflects whether the trailer was found.
 archive (trimmed to the last complete record, trailer + manifest added) into a
 clean one.
 
+### Per-Process Archive Layout
+
+A single `HIP_HRR_CAPTURE_OUTPUT` directory can be inherited by multiple
+processes. Every HIP-owning process writes an independent sub-archive at
+`<base>/pid-<pid>/`, with its own `events.bin`, `blobs/`, `code_objects/`,
+`writer_state.json`, and per-process `manifest.json`. This avoids interleaving
+two live writers into one `events.bin` without needing an advisory lock.
+
+`writer::open()` (`hip_capture_writer.cpp`) always selects the current process's
+PID directory. A `fork()` child re-opens from the base dir in `atfork_child`, so
+the child naturally switches to its own `pid-<childpid>/` sub-archive. The root
+`manifest.json` is a common aggregate index with the schema fields
+`version`, `capture_mode`, `owner_pid`, and `processes[]`; each process rewrites
+it best-effort on clean shutdown by scanning existing `pid-*/manifest.json`
+files. Per-process manifests carry `pid`, `parent_pid`, `complete`,
+`event_count`, and `blob_count`.
+
+Because the PID directory is always part of the archive path, a crashed process
+that is restarted with a new PID creates a new sub-archive rather than resuming
+the prior process's `events.bin`. Resuming still applies if the same process
+re-opens its own writer and finds an existing `pid-<pid>/events.bin`.
+
+**Playback note:** `hrr-playback --info <base>` prints the root process summary.
+Point `hrr-playback` at a specific `<base>/pid-<pid>/` for detailed event info or
+replay. If a root contains exactly one `pid-<pid>/` sub-archive, the reader
+auto-resolves it for compatibility with simple single-process captures; a root
+with multiple process captures must be disambiguated.
+
 ### Archive Format (v3)
 ```
 capture.hrr/
-  events.bin         hrr_file_header(8) + [EventHeader(32) + payload]* + [hrr_eof_record(44)]
-  blobs/<2hex>/      content-addressed host buffers keyed by FNV-1a-128 hash
-  code_objects/      .hsaco ELFs (unused in current fat-binary path)
+  manifest.json      { version, capture_mode, owner_pid, processes[] }
+  pid-<pid>/
+    events.bin         hrr_file_header(8) + [EventHeader(32) + payload]* + [hrr_eof_record(44)]
+    manifest.json      { pid, parent_pid, complete, event_count, blob_count }
+    writer_state.json  checkpoint cursor (present only mid-capture; removed on clean shutdown)
+    blobs/<2hex>/      content-addressed host buffers keyed by FNV-1a-128 hash
+    code_objects/      .hsaco ELFs (unused in current fat-binary path)
 ```
 All handle values (stream, event, module, graph, device pointer) are stored as raw `uint64_t` pointer casts. Sequence IDs are a global atomic counter providing causal ordering across threads.
 
@@ -260,12 +293,16 @@ HRR_VERSION = 3
 
 ```
 <output_dir>/
-  manifest.json      { version, capture_mode, complete, event_count, blob_count }
+  manifest.json      { version, capture_mode, owner_pid, processes[] }
                      (version here is the manifest schema = 1, distinct from the
                       events.bin HRR_VERSION = 3)
-  events.bin         8-byte hrr_file_header, then repeated records
-  blobs/<2hex>/      FNV-1a-128 content-addressed raw buffers (.blob ext)
-  code_objects/      .hsaco ELFs keyed by hash
+  pid-<pid>/
+    manifest.json      { pid, parent_pid, complete, event_count, blob_count }
+    writer_state.json  checkpoint cursor (next_seq, event/blob counts, events file
+                       size); present only mid-capture, removed on clean shutdown
+    events.bin         8-byte hrr_file_header, then repeated records
+    blobs/<2hex>/      FNV-1a-128 content-addressed raw buffers (.blob ext)
+    code_objects/      .hsaco ELFs keyed by hash
 ```
 
 ### `events.bin` Layout
@@ -1126,6 +1163,12 @@ Replaying such workloads would require coordinating replay across multiple proce
 instances, handling inter-process communication interfaces, and re-establishing IPC
 handle relationships at replay time. This adds substantial complexity and is not
 currently supported.
+
+Note that processes sharing one `HIP_HRR_CAPTURE_OUTPUT` (e.g. vLLM's spawned
+`EngineCore` child) are each captured into a separate, self-contained
+`pid-<pid>/` sub-archive rather than being merged — see Per-Process Archive
+Layout. `hrr-playback --info <base>` summarizes the processes; each sub-archive
+replays independently and there is no cross-process merge.
 
 ### Single-File Archive Format
 

@@ -11,12 +11,12 @@
  * Binary format is compatible with hrr_reader.h / hrr_replay.cpp.
  *
  * Crash resilience: events.bin is written through a raw file descriptor with a
- * small app-managed buffer (not buffered stdio), so the buffer can be flushed
- * with a single async-signal-safe write()+fsync from a fatal-signal handler
- * (see emergency_finalize). The writer also checkpoints (flush+fsync) every
- * kCheckpointEvents events to bound how much a crash can lose. A clean shutdown
- * appends an hrr_eof_record trailer; its absence marks the archive as
- * crash-truncated for the reader, which recovers all complete records.
+ * small app-managed buffer (not buffered stdio). The writer checkpoints
+ * (flush+fsync) every kCheckpointEvents events to bound how much a crash can
+ * lose, and emergency_finalize can be called from CLR's crash callback as a
+ * final best-effort flush. A clean shutdown appends an hrr_eof_record trailer;
+ * its absence marks the archive as crash-truncated for the reader, which
+ * recovers all complete records.
  *
  * Thread-safety: write_event_raw() and write_blob() acquire the file mutex.
  * open()/close()/flush() are called from a single thread (init/shutdown).
@@ -38,11 +38,13 @@
 #include <string>
 #include <unordered_set>
 #include <algorithm>
+#include <vector>
 
 #ifdef _WIN32
 #  include <windows.h>
 #  include <io.h>
 #  include <fcntl.h>
+#  include <process.h>
 #  include <sys/stat.h>
 // Truncate: new archive. Append: resume into existing events.bin (must NOT use _O_TRUNC).
 #  define HRR_OPEN(p)          _open((p), _O_WRONLY | _O_CREAT | _O_TRUNC | _O_BINARY, _S_IREAD | _S_IWRITE)
@@ -53,7 +55,6 @@
 
 using hrr_stat_t = struct _stat64;
 static int hrr_stat_file(const char* path, hrr_stat_t* st) { return _stat64(path, st); }
-static int hrr_fstat_file(int fd, hrr_stat_t* st) { return _fstati64(fd, st); }
 static std::int64_t hrr_stat_size(const hrr_stat_t& st) { return st.st_size; }
 
 static int hrr_ftruncate_fd(int fd, std::int64_t len) {
@@ -68,11 +69,18 @@ static inline uint64_t current_thread_id() {
   static thread_local uint64_t cached = static_cast<uint64_t>(GetCurrentThreadId());
   return cached;
 }
+
+static inline uint64_t current_process_id() {
+  return static_cast<uint64_t>(_getpid());
+}
+
+static inline uint64_t current_parent_process_id() {
+  return 0;
+}
 #else
 #  include <unistd.h>
 #  include <fcntl.h>
 #  include <sys/stat.h>
-#  include <sys/file.h>
 #  include <sys/syscall.h>
 #  include <pthread.h>
 #  define HRR_OPEN(p)        ::open((p), O_WRONLY | O_CREAT | O_TRUNC, 0644)
@@ -83,7 +91,6 @@ static inline uint64_t current_thread_id() {
 
 using hrr_stat_t = struct stat;
 static int hrr_stat_file(const char* path, hrr_stat_t* st) { return stat(path, st); }
-static int hrr_fstat_file(int fd, hrr_stat_t* st) { return fstat(fd, st); }
 static std::int64_t hrr_stat_size(const hrr_stat_t& st) {
   return static_cast<std::int64_t>(st.st_size);
 }
@@ -99,6 +106,14 @@ static std::int64_t hrr_seek_end(int fd) {
 static inline uint64_t current_thread_id() {
   static thread_local uint64_t cached = static_cast<uint64_t>(syscall(SYS_gettid));
   return cached;
+}
+
+static inline uint64_t current_process_id() {
+  return static_cast<uint64_t>(getpid());
+}
+
+static inline uint64_t current_parent_process_id() {
+  return static_cast<uint64_t>(getppid());
 }
 #endif
 
@@ -143,12 +158,13 @@ static constexpr size_t   kPathMax          = 4096;
 static std::mutex   g_file_mu;
 static int          g_events_fd = -1;
 // g_base_dir is the archive path requested via HIP_HRR_CAPTURE_OUTPUT.
-// g_output_dir is the *effective* directory this process writes to: it equals
-// g_base_dir unless another live process already holds the base archive lock,
-// in which case this process is isolated into g_base_dir/pid-<pid>/ (see open()).
+// g_output_dir is the per-process archive directory this process writes to:
+// g_base_dir/pid-<pid>/.
 static std::string  g_base_dir;
 static std::string  g_output_dir;
 static char         g_manifest_path[kPathMax] = {0};
+static uint64_t     g_pid = 0;
+static uint64_t     g_parent_pid = 0;
 
 // App-managed write buffer for events.bin (protected by g_file_mu).
 static uint8_t  g_buf[kBufCap];
@@ -156,19 +172,15 @@ static size_t   g_buf_len            = 0;
 static uint64_t g_events_since_ckpt  = 0;
 static bool     g_trailer_written    = false;
 
-// Async-signal-safe guard over g_buf / g_buf_len, raised by writer threads while
-// they mutate the buffer. The fatal-signal handler (emergency_finalize) runs
-// from the SIGSEGV/SIGABRT/SIGBUS chain, where pthread_mutex_trylock/unlock are
-// NOT on the POSIX async-signal-safe list: if the crash interrupts a writer
-// mid-lock, poking g_file_mu's futex from the handler is UB (deadlock/corruption).
-// std::atomic_flag is the one type the standard guarantees lock-free and usable
-// from a signal handler, so the handler probes this flag with test_and_set
-// instead of touching the mutex. Writers still hold g_file_mu for thread<->thread
-// exclusion; the flag is purely the handler<->writer signal.
+// Crash-callback guard over g_buf / g_buf_len, raised by writer threads while
+// they mutate the buffer. If the crash interrupts a writer mid-lock,
+// emergency_finalize must not poke g_file_mu's futex from the handler. Writers
+// still hold g_file_mu for thread<->thread exclusion; the flag is purely the
+// crash-callback <-> writer coordination point.
 static std::atomic_flag g_buf_busy = ATOMIC_FLAG_INIT;
 
 // RAII for writer threads: take the thread<->thread mutex AND raise g_buf_busy so
-// the async-signal handler can tell a g_buf mutation is in flight. Member order
+// the crash callback can tell a g_buf mutation is in flight. Member order
 // matters: the mutex locks first and unlocks last, with the busy window nested
 // strictly inside it.
 struct BufWriteGuard {
@@ -213,7 +225,7 @@ static bool write_all_fd(int fd, const void* data, size_t len) {
 }
 
 // Drain the app buffer to the events fd. Caller must hold g_file_mu (or be the
-// signal handler that has claimed g_buf_busy via test_and_set). Does not fsync.
+// crash callback that has claimed g_buf_busy via test_and_set). Does not fsync.
 static void flush_buffer_locked() {
   if (g_events_fd < 0 || g_buf_len == 0) { g_buf_len = 0; return; }
   write_all_fd(g_events_fd, g_buf, g_buf_len);
@@ -236,6 +248,8 @@ static void ensure_dir(const std::string& path) {
   if (path.empty()) return;
   fs::create_directories(path);
 }
+
+static bool atomic_write_file(const std::string& path, const void* data, size_t len);
 
 // ---------------------------------------------------------------------------
 // manifest writers
@@ -417,13 +431,12 @@ static void atfork_child() {
     g_buf_len = 0;
     g_events_since_ckpt = 0;
     g_trailer_written = false;
-    // Re-open from the *base* dir so isolation is re-evaluated: the parent
-    // still holds the base lock, so this forked child redirects to its own
-    // pid-<pid> sub-archive (mirrors the spawn path).
+    // Re-open from the *base* dir so the forked child selects its own
+    // pid-<pid> sub-archive.
     dir = g_base_dir;
   }
   // NOTE: this is hrr_cap::writer::open(const char*) — the writer's archive-open
-  // routine — NOT POSIX ::open(). It runs fs::create_directories / fopen / flock,
+  // routine — NOT POSIX ::open(). It runs fs::create_directories / fopen,
   // which are not async-signal-safe in general, but pthread_atfork's child
   // handler runs in the (single-threaded) child immediately after fork() with no
   // mutex held, so these calls are safe here. We deliberately do NOT call this
@@ -446,16 +459,113 @@ static void write_manifest_stdio(const char* output_dir, bool complete) {
   if (!mf) return;
   fprintf(mf,
           "{\n"
-          "  \"version\": 1,\n"
-          "  \"capture_mode\": \"in-tree\",\n"
+          "  \"pid\": %llu,\n"
+          "  \"parent_pid\": %llu,\n"
           "  \"complete\": %s,\n"
           "  \"event_count\": %llu,\n"
           "  \"blob_count\": %llu\n"
           "}\n",
+          static_cast<unsigned long long>(g_pid),
+          static_cast<unsigned long long>(g_parent_pid),
           complete ? "true" : "false",
           static_cast<unsigned long long>(g_event_count.load()),
           static_cast<unsigned long long>(g_blob_count.load()));
   fclose(mf);
+}
+
+struct ProcessManifestEntry {
+  uint64_t pid = 0;
+  uint64_t parent_pid = 0;
+  uint64_t event_count = 0;
+  uint64_t blob_count = 0;
+  bool complete = false;
+};
+
+static bool read_process_manifest(const std::string& path, ProcessManifestEntry* out) {
+  FILE* f = fopen(path.c_str(), "r");
+  if (!f) return false;
+
+  ProcessManifestEntry e{};
+  bool saw_pid = false;
+  char line[256];
+  while (fgets(line, sizeof(line), f)) {
+    unsigned long long u = 0;
+    char b[8] = {};
+    if (sscanf(line, " \"pid\": %llu", &u) == 1) {
+      e.pid = static_cast<uint64_t>(u);
+      saw_pid = true;
+      continue;
+    }
+    if (sscanf(line, " \"parent_pid\": %llu", &u) == 1) {
+      e.parent_pid = static_cast<uint64_t>(u);
+      continue;
+    }
+    if (sscanf(line, " \"event_count\": %llu", &u) == 1) {
+      e.event_count = static_cast<uint64_t>(u);
+      continue;
+    }
+    if (sscanf(line, " \"blob_count\": %llu", &u) == 1) {
+      e.blob_count = static_cast<uint64_t>(u);
+      continue;
+    }
+    if (sscanf(line, " \"complete\": %7[^,\n ]", b) == 1) {
+      e.complete = (strcmp(b, "true") == 0);
+      continue;
+    }
+  }
+  fclose(f);
+  if (!saw_pid) return false;
+  *out = e;
+  return true;
+}
+
+static uint64_t derive_owner_pid(const std::vector<ProcessManifestEntry>& entries) {
+  if (entries.empty()) return 0;
+  for (const auto& candidate : entries) {
+    for (const auto& child : entries) {
+      if (child.parent_pid == candidate.pid)
+        return candidate.pid;
+    }
+  }
+  return entries.front().pid;
+}
+
+static void update_root_manifest() {
+  if (g_base_dir.empty()) return;
+
+  std::vector<ProcessManifestEntry> entries;
+  for (const auto& ent : fs::directory_iterator(g_base_dir)) {
+    if (!ent.is_directory()) continue;
+    const std::string name = ent.path().filename().string();
+    if (name.rfind("pid-", 0) != 0) continue;
+    ProcessManifestEntry entry{};
+    if (read_process_manifest((ent.path() / "manifest.json").string(), &entry))
+      entries.push_back(entry);
+  }
+
+  std::sort(entries.begin(), entries.end(),
+            [](const auto& a, const auto& b) { return a.pid < b.pid; });
+  const uint64_t owner_pid = derive_owner_pid(entries);
+
+  std::string json;
+  json += "{\n";
+  json += "  \"version\": 1,\n";
+  json += "  \"capture_mode\": \"in-tree\",\n";
+  json += "  \"owner_pid\": " + std::to_string(owner_pid) + ",\n";
+  json += "  \"processes\": [\n";
+  for (size_t i = 0; i < entries.size(); ++i) {
+    const auto& e = entries[i];
+    json += "    { \"pid\": " + std::to_string(e.pid) +
+            ", \"parent_pid\": " + std::to_string(e.parent_pid) +
+            ", \"complete\": " + (e.complete ? "true" : "false") +
+            ", \"event_count\": " + std::to_string(e.event_count) +
+            ", \"blob_count\": " + std::to_string(e.blob_count) + " }";
+    json += (i + 1 == entries.size()) ? "\n" : ",\n";
+  }
+  json += "  ]\n";
+  json += "}\n";
+
+  (void)atomic_write_file(g_base_dir + "/manifest.json", json.data(), json.size());
 }
 
 // ---------------------------------------------------------------------------
@@ -467,56 +577,20 @@ bool open(const char* output_dir) {
 #ifndef _WIN32
   install_atfork_handlers_once();
 #endif
-  g_base_dir   = output_dir;
-  g_output_dir = g_base_dir;
+  g_base_dir = output_dir;
   ensure_dir(g_base_dir);
+  g_pid = current_process_id();
+  g_parent_pid = current_parent_process_id();
+  char sub[64];
+  snprintf(sub, sizeof(sub), "/pid-%llu",
+           static_cast<unsigned long long>(g_pid));
+  g_output_dir = g_base_dir + sub;
 
-  // Buffer/checkpoint state is reset here so it is consistent regardless of
-  // which directory we end up writing to (base vs isolated subdir).
+  // Buffer/checkpoint state is reset here so it is consistent for this
+  // process's pid-<pid> sub-archive.
   g_buf_len           = 0;
   g_events_since_ckpt = 0;
   g_trailer_written   = false;
-
-#ifndef _WIN32
-  // ---------------------------------------------------------------------
-  // Per-process archive isolation.
-  //
-  // vLLM server mode runs GPU work in a *concurrently live* EngineCore child.
-  // Because HIP is already initialized in the api_server parent, vLLM uses the
-  // `spawn` start method, so the child is a fresh process that inherits
-  // HIP_HRR_CAPTURE_OUTPUT and finds the parent's events.bin already present.
-  // Two live processes must NOT interleave into one events.bin: they keep
-  // independent fds (no shared file offset) and independent in-memory event
-  // counters, so the on-disk event index ends up reflecting only one writer
-  // even though both wrote bytes (the original "58 MB but 4094 events" bug).
-  //
-  // We take an exclusive advisory lock (flock) on the base archive's
-  // events.bin. The first process in wins and writes the base archive. Any
-  // process that finds the lock already held by a *live* process redirects to
-  // its own private sub-archive  <base>/pid-<pid>/  — a complete, self-
-  // consistent archive just like an offline single-process capture.
-  //
-  // A *dead* prior process (the crash-resilience restart case) has released
-  // its lock, so a restart re-acquires the base lock and resumes the base
-  // archive exactly as before.
-  // ---------------------------------------------------------------------
-  {
-    std::string base_events = g_base_dir + "/events.bin";
-    int fd = ::open(base_events.c_str(), O_RDWR | O_CREAT, 0644);
-    if (fd >= 0 && flock(fd, LOCK_EX | LOCK_NB) != 0) {
-      // Another live process owns the base archive — isolate this one.
-      HRR_CLOSE(fd);
-      char sub[64];
-      snprintf(sub, sizeof(sub), "/pid-%ld", static_cast<long>(getpid()));
-      g_output_dir = g_base_dir + sub;
-      LogPrintfInfo("[HRR capture] Base archive in use by another process; "
-                    "isolating capture to %s", g_output_dir.c_str());
-    } else if (fd >= 0) {
-      // We own the base archive — hand this locked fd to the writer below.
-      g_events_fd = fd;
-    }
-  }
-#endif
 
   ensure_dir(g_output_dir);
   ensure_dir(g_output_dir + "/blobs");
@@ -528,17 +602,9 @@ bool open(const char* output_dir) {
 
   hrr_stat_t st{};
   bool exists = false;
-  if (g_events_fd >= 0) {
-    // We already hold the locked base events.bin fd.
-    exists = (hrr_fstat_file(g_events_fd, &st) == 0 && hrr_stat_size(st) > 0);
-  } else {
-    exists = (hrr_stat_file(events_path.c_str(), &st) == 0 && hrr_stat_size(st) > 0);
-  }
+  exists = (hrr_stat_file(events_path.c_str(), &st) == 0 && hrr_stat_size(st) > 0);
 
   if (exists) {
-    // True iff g_events_fd is the flock'd base events.bin handed over from the
-    // probe at :493. If false, we open (and must lock) the append fd ourselves.
-    const bool have_base_lock = (g_events_fd >= 0);
     if (g_events_fd < 0) {
       g_events_fd = HRR_OPEN_APPEND(events_path.c_str());
     }
@@ -546,44 +612,6 @@ bool open(const char* output_dir) {
       LogPrintfError("[HRR capture] Failed to open %s for append", events_path.c_str());
       return false;
     }
-#ifndef _WIN32
-    // If we reached the resume-append path without already holding the base
-    // lock (g_events_fd was opened just above rather than handed over from the
-    // locked probe fd at :493), the probe ::open at the top must have failed
-    // (e.g. EMFILE under a busy server) and we never acquired the flock. Two
-    // live processes would then interleave into one events.bin — the exact
-    // "big file, truncated event index" corruption flock prevents. Take the
-    // lock now; if another live process owns it, abandon the base archive and
-    // create a fresh isolated pid-<pid> sub-archive instead.
-    if (!have_base_lock &&
-        flock(g_events_fd, LOCK_EX | LOCK_NB) != 0) {
-      HRR_CLOSE(g_events_fd);
-      g_events_fd = -1;
-      char sub[64];
-      snprintf(sub, sizeof(sub), "/pid-%ld", static_cast<long>(getpid()));
-      g_output_dir = g_base_dir + sub;
-      LogPrintfInfo("[HRR capture] Base archive in use by another process; "
-                    "isolating capture to %s", g_output_dir.c_str());
-      ensure_dir(g_output_dir);
-      ensure_dir(g_output_dir + "/blobs");
-      ensure_dir(g_output_dir + "/code_objects");
-      events_path = g_output_dir + "/events.bin";
-      std::string sub_manifest = g_output_dir + "/manifest.json";
-      snprintf(g_manifest_path, sizeof(g_manifest_path), "%s", sub_manifest.c_str());
-      g_events_fd = ::open(events_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644);
-      if (g_events_fd < 0 || flock(g_events_fd, LOCK_EX | LOCK_NB) != 0) {
-        LogPrintfError("[HRR capture] Failed to open isolated %s for writing",
-                       events_path.c_str());
-        if (g_events_fd >= 0) { HRR_CLOSE(g_events_fd); g_events_fd = -1; }
-        return false;
-      }
-      g_seq_id.store(0, std::memory_order_relaxed);
-      g_event_count.store(0, std::memory_order_relaxed);
-      hrr_file_header fh{HRR_MAGIC, HRR_VERSION, 0};
-      buffer_append_locked(&fh, sizeof(fh));
-      return true;
-    }
-#endif
 
     uint64_t next_seq = 0, ev_count = 0, bl_count = 0;
     const std::string state_path = g_output_dir + "/writer_state.json";
@@ -634,12 +662,10 @@ bool open(const char* output_dir) {
     return true;
   }
 
-  // Fresh archive. g_events_fd may already be the locked base events.bin
-  // (size 0); otherwise open the (isolated subdir or Windows) events.bin now.
+  // Fresh per-process archive.
   if (g_events_fd < 0) {
 #ifndef _WIN32
     g_events_fd = ::open(events_path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0644);
-    if (g_events_fd >= 0) flock(g_events_fd, LOCK_EX | LOCK_NB);
 #else
     g_events_fd = HRR_OPEN(events_path.c_str());
 #endif
@@ -665,9 +691,8 @@ void checkpoint() {
 
 void flush(const char* /*output_dir*/) {
   // Always finalize the *effective* directory this process actually wrote to
-  // (g_output_dir), which may be an isolated pid-<pid> sub-archive. The caller
-  // passes the base HIP_HRR_CAPTURE_OUTPUT path, which is only correct for the
-  // process that owns the base archive.
+  // (g_output_dir), which is always a pid-<pid> sub-archive. The caller passes
+  // the base HIP_HRR_CAPTURE_OUTPUT path.
   std::string out_dir;
   {
     BufWriteGuard lk;
@@ -686,6 +711,7 @@ void flush(const char* /*output_dir*/) {
 
   if (out_dir.empty()) return;
   write_manifest_stdio(out_dir.c_str(), /*complete=*/true);
+  update_root_manifest();
   remove((out_dir + "/writer_state.json").c_str());
 }
 
@@ -700,7 +726,7 @@ void close() {
 }
 
 // ---------------------------------------------------------------------------
-// emergency_finalize — async-signal-safe crash path
+// emergency_finalize — best-effort crash callback path
 // ---------------------------------------------------------------------------
 
 // Async-signal-safe unsigned-to-decimal. Writes into out (no NUL), returns len.
@@ -723,21 +749,18 @@ void emergency_finalize(bool clean_shutdown) {
   if (g_events_fd < 0) return;
 
   // Flush the in-memory buffer only if no writer thread is mid-mutation.
-  // We must NOT touch g_file_mu here: pthread_mutex_trylock/unlock are not
-  // async-signal-safe, so probing the futex from a crash handler is UB. Instead
-  // probe the async-signal-safe g_buf_busy flag with test_and_set: if it was
-  // already set a writer holds g_buf (possibly a torn record in flight) so we
-  // only fsync already-written bytes; if it was clear we now own it and can
-  // safely flush. clear() releases it on the way out.
+  // We must NOT touch g_file_mu here: if the crash interrupts a writer mid-lock,
+  // probing the futex from the crash callback can deadlock or corrupt state.
+  // Instead probe g_buf_busy with test_and_set: if it was already set a writer
+  // holds g_buf (possibly a torn record in flight) so we only fsync
+  // already-written bytes; if it was clear we now own it and can safely flush.
+  // clear() releases it on the way out.
   bool locked = !g_buf_busy.test_and_set(std::memory_order_acquire);
   if (locked) {
     flush_buffer_locked();
-    // Clean-termination signals (SIGTERM/SIGINT) are NOT crashes: the recorded
-    // process is being asked to exit, so the archive is complete up to the last
-    // record. Append the clean-shutdown trailer (raw write of a fixed-size
-    // record — no stdio, no allocation) so the reader does not mistake an
-    // orderly `kill -TERM` for a crash. We can only do this when the lock was
-    // free (no torn record in flight); otherwise we fall back to the crash path.
+    // Clean shutdowns append the fixed-size trailer so the reader does not treat
+    // the archive as crash-truncated. The CLR crash callback passes
+    // clean_shutdown=false; normal shutdown uses flush().
     if (clean_shutdown && !g_trailer_written) {
       hrr_eof_record rec = hrr_make_eof_record(
           g_seq_id.fetch_add(1, std::memory_order_relaxed), g_event_count.load());
@@ -748,9 +771,9 @@ void emergency_finalize(bool clean_shutdown) {
   }
   HRR_FSYNC(g_events_fd);
 
-  // Best-effort manifest via raw open/write only (async-signal-safe). A clean
-  // termination writes complete:true (the trailer is present); a crash writes
-  // complete:false — its absence-of-trailer is how the reader detects truncation.
+  // Best-effort manifest via raw open/write only. A clean shutdown writes
+  // complete:true (the trailer is present); a crash writes complete:false — its
+  // absence-of-trailer is how the reader detects truncation.
   if (g_manifest_path[0] == '\0') return;
   bool complete = clean_shutdown && locked;
   int mfd = HRR_OPEN(g_manifest_path);
@@ -759,9 +782,11 @@ void emergency_finalize(bool clean_shutdown) {
   size_t p = 0;
   p = append_lit(buf, p,
                  "{\n"
-                 "  \"version\": 1,\n"
-                 "  \"capture_mode\": \"in-tree\",\n"
-                 "  \"complete\": ");
+                 "  \"pid\": ");
+  p += u64_to_dec(g_pid, buf + p);
+  p = append_lit(buf, p, ",\n  \"parent_pid\": ");
+  p += u64_to_dec(g_parent_pid, buf + p);
+  p = append_lit(buf, p, ",\n  \"complete\": ");
   p = append_lit(buf, p, complete ? "true" : "false");
   p = append_lit(buf, p, ",\n  \"event_count\": ");
   p += u64_to_dec(g_event_count.load(), buf + p);
@@ -793,7 +818,7 @@ void write_event_raw(uint16_t api_id, hrr_event_header* hdr, uint16_t payload_le
   // Acquire once: assign sequence_id and buffer the record atomically so IDs are
   // only consumed for events that are actually written. A full record is always
   // appended under the lock, so the buffer never holds a torn record — which is
-  // what makes the signal-handler flush in emergency_finalize() safe.
+  // what makes the crash-callback flush in emergency_finalize() safe.
   //
   // The checkpoint flush+fsync happens inside this single lock scope. An earlier
   // version released the lock and re-acquired it for the fsync, which let two
@@ -829,7 +854,7 @@ void write_event_raw(uint16_t api_id, hrr_event_header* hdr, uint16_t payload_le
 
 static bool atomic_write_file(const std::string& path,
                               const void* data, size_t len) {
-  std::string tmp = path + ".tmp";
+  std::string tmp = path + "." + std::to_string(current_process_id()) + ".tmp";
   FILE* f = fopen(tmp.c_str(), "wb");
   if (!f) return false;
   bool ok = (fwrite(data, 1, len, f) == len);
