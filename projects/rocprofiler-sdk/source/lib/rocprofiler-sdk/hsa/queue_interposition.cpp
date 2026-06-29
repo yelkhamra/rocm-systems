@@ -280,7 +280,29 @@ async_signal_handler_exists()
 {
     return common::static_object<internal_threading::task_group_t>::get();
 }
+}  // namespace
 
+size_t
+get_async_signal_handler_thread_count()
+{
+    constexpr auto fallback_thread_count = int64_t{4};
+
+    const auto gpu_thread_count = common::get_env("GPU_MAX_HW_QUEUES", fallback_thread_count);
+    const auto thread_count =
+        common::get_env("ROCPROFILER_ASYNC_SIGNAL_HANDLER_THREADS", gpu_thread_count);
+
+    if(thread_count < 1)
+    {
+        ROCP_WARNING << "ROCPROFILER_ASYNC_SIGNAL_HANDLER_THREADS/GPU_MAX_HW_QUEUES resolved to "
+                     << thread_count << "; using 1 async signal handler thread";
+        return 1;
+    }
+
+    return static_cast<size_t>(thread_count);
+}
+
+namespace
+{
 internal_threading::task_group_t*
 get_async_signal_handler()
 {
@@ -298,8 +320,7 @@ get_async_signal_handler()
     static auto*& _v =
         common::static_object<internal_threading::task_group_t>::construct_via_function(
             static_cast<create_task_group_fn_t>(&internal_threading::create_task_group),
-            common::get_env("ROCPROFILER_ASYNC_SIGNAL_HANDLER_THREADS",
-                            common::get_env("GPU_MAX_HW_QUEUES", 4)));
+            get_async_signal_handler_thread_count());
 
     return _v;
 }
