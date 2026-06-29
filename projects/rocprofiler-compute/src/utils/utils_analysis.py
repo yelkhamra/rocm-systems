@@ -613,6 +613,7 @@ def process_ml_api_trace_output(
     )
     required_columns = [
         "Function",
+        "Backend",
         "Kernel_Name",
         "Counter_Name",
         "Counter_Value",
@@ -631,9 +632,9 @@ def process_ml_api_trace_output(
         raise ValueError(
             f"Consolidated ML API trace is missing required columns {missing_columns}"
         )
-    # Backend is required; Args is optional and defaults to empty when absent.
+    # Args is optional and defaults to empty when absent.
     has_args = "Args" in consolidated_df.columns
-    projection = [*required_columns, "Backend"]
+    projection = [*required_columns]
     if has_args:
         projection.append("Args")
     consolidated_df = consolidated_df[projection]
