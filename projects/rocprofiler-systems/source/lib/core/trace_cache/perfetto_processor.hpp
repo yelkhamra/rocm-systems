@@ -103,7 +103,10 @@ private:
     // KFD node_id -> per-type GPU index matching kfd_sample.device_id.
     std::unordered_map<std::uint32_t, std::uint32_t> m_kfd_node_to_gpu_index_cache;
     std::map<std::uint32_t, std::uint64_t>           m_unified_memory_fault_counts;
-    output_file_registry&                            m_output_registry;
+#if ROCPROFSYS_HAS_ROCPROFILER_SDK_SPM
+    std::unordered_map<std::uint64_t, std::string> m_spm_counter_name_cache;
+#endif
+    output_file_registry& m_output_registry;
 };
 }  // namespace trace_cache
 }  // namespace rocprofsys
