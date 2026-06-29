@@ -677,6 +677,31 @@ def test_process_ml_api_trace_output_preserves_per_row_args(tmp_path):
             "(tensors=[float32[2], float32[2]], dim=0)",
             ["tensors=[float32[2], float32[2]]", "dim=0"],
         ),
+        # Commas inside nested parentheses stay within the token.
+        (
+            "(size=(2, 3), stride=(3, 1))",
+            ["size=(2, 3)", "stride=(3, 1)"],
+        ),
+        # Commas inside braces stay within the token.
+        (
+            "(options={dtype: float32, device: cuda}, x=1)",
+            ["options={dtype: float32, device: cuda}", "x=1"],
+        ),
+        # Commas inside a double-quoted string stay within the token.
+        (
+            '(name="a, b", count=2)',
+            ['name="a, b"', "count=2"],
+        ),
+        # Commas inside a single-quoted string stay within the token.
+        (
+            "(label='x, y', n=1)",
+            ["label='x, y'", "n=1"],
+        ),
+        # An escaped quote does not close the string, so its comma is kept.
+        (
+            '(s="a\\"b, c", n=1)',
+            ['s="a\\"b, c"', "n=1"],
+        ),
         # A blob without the wrapping parentheses still splits.
         ("a=1, b=2", ["a=1", "b=2"]),
     ],

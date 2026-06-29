@@ -279,6 +279,15 @@ TEST(ArgsRendering, CapArgsBlobTruncatesPastLimit)
     EXPECT_EQ(capped.substr(0, kMaxArgsLen), std::string(kMaxArgsLen, 'a'));
 }
 
+TEST(ArgsRendering, CapArgsBlobKeepsClosingParenWhenParenthesized)
+{
+    const std::string over   = "(" + std::string(kMaxArgsLen, 'a') + ")";
+    const std::string capped = cap_args_blob(over);
+    EXPECT_EQ(capped.size(), kMaxArgsLen + 4);
+    EXPECT_EQ(capped.compare(kMaxArgsLen, 4, "...)"), 0);
+    EXPECT_EQ(capped.front(), '(');
+}
+
 TEST_F(RoctxRecordFnTest, PushUserScopeEmitsArgsSegmentBeforeBackend)
 {
     start_capture();
