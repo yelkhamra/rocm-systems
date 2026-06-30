@@ -1280,20 +1280,15 @@ rocprofiler_set_api_table(const char* name,
         {
             auto non_queue_interposition_contexts = rocprofiler::context::get_registered_contexts(
                 [](const rocprofiler::context::context* ctx) {
-                    const bool has_kernel_tracing =
-                        ctx->is_tracing_one_of(ROCPROFILER_CALLBACK_TRACING_KERNEL_DISPATCH,
-                                               ROCPROFILER_BUFFER_TRACING_KERNEL_DISPATCH);
                     const bool has_scratch_reporting =
                         ctx->is_tracing_one_of(ROCPROFILER_CALLBACK_TRACING_SCRATCH_MEMORY,
                                                ROCPROFILER_BUFFER_TRACING_SCRATCH_MEMORY);
 
                     return (ctx->dispatch_counter_collection != nullptr ||
                             ctx->dispatch_thread_trace != nullptr ||
-                            (ctx->device_thread_trace != nullptr &&
-                             ctx->device_thread_trace->hasPerf()) ||
+                            ctx->device_thread_trace != nullptr ||
                             ctx->pc_sampler != nullptr || ctx->dispatch_spm != nullptr ||
-                            ctx->device_counter_collection != nullptr || has_kernel_tracing ||
-                            has_scratch_reporting);
+                            ctx->device_counter_collection != nullptr || has_scratch_reporting);
                 });
 
             ROCP_INFO << fmt::format(
