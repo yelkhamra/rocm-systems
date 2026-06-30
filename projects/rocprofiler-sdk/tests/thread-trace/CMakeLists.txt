@@ -10,15 +10,12 @@ project(
 
 find_package(rocprofiler-sdk REQUIRED)
 
-set(THREAD_TRACE_ENVIRONMENT "ROCPROFILER_QUEUE_INTERPOSITION=0")
-
 # Single dispatch test
 rocprofiler_add_integration_execute_test(
     thread-trace-api-single-test
     TARGET thread-trace-test-app
     TIMEOUT 10
     LABELS "integration-tests"
-    ENVIRONMENT ${THREAD_TRACE_ENVIRONMENT}
     PRELOAD "$<TARGET_FILE:thread-trace-single-tool>")
 
 # Multi dispatch test
@@ -27,7 +24,6 @@ rocprofiler_add_integration_execute_test(
     TARGET thread-trace-test-app
     TIMEOUT 10
     LABELS "integration-tests"
-    ENVIRONMENT ${THREAD_TRACE_ENVIRONMENT}
     PRELOAD "$<TARGET_FILE:thread-trace-multi-tool>")
 
 # Agent profiling test
@@ -36,7 +32,6 @@ rocprofiler_add_integration_execute_test(
     TARGET thread-trace-test-app
     TIMEOUT 10
     LABELS "integration-tests"
-    ENVIRONMENT ${THREAD_TRACE_ENVIRONMENT}
     PRELOAD "$<TARGET_FILE:thread-trace-agent-tool>")
 
 # Feature introduced in ROCm 7.1, however some pre-release CI builds for 7.1 dont have
@@ -58,7 +53,7 @@ rocprofiler_add_integration_execute_test(
     TIMEOUT 30
     LABELS "integration-tests"
     PRELOAD "$<TARGET_FILE:thread-trace-agent-tool>"
-    ENVIRONMENT ${THREAD_TRACE_ENVIRONMENT} "ATT_LARGE_BUFFER_TEST=1"
+    ENVIRONMENT "ATT_LARGE_BUFFER_TEST=1"
     DISABLED ${IS_DISABLED})
 
 # Test occupancy mode
@@ -67,7 +62,7 @@ rocprofiler_add_integration_execute_test(
     TARGET thread-trace-test-app
     TIMEOUT 10
     PRELOAD "$<TARGET_FILE:thread-trace-agent-tool>"
-    ENVIRONMENT ${THREAD_TRACE_ENVIRONMENT} "ATT_NODETAIL=1"
+    ENVIRONMENT "ATT_NODETAIL=1"
     DISABLED ${ROCPROFILER_DISABLE_UNSTABLE_CTESTS})
 
 rocprofiler_sdk_sqtt_triple_buffer_disabled(TRIPLE_BUFFER_DISABLED)
@@ -79,7 +74,7 @@ rocprofiler_add_integration_execute_test(
     TARGET thread-trace-test-app
     TIMEOUT 120
     PRELOAD "$<TARGET_FILE:thread-trace-triple-buffer-tool>"
-    ENVIRONMENT ${THREAD_TRACE_ENVIRONMENT} "TRIPLEBUFFER=1;ATT_NODETAIL=1;ATT_SLOW_CALLBACK=0"
+    ENVIRONMENT "TRIPLEBUFFER=1;ATT_NODETAIL=1;ATT_SLOW_CALLBACK=0"
     DISABLED ${TRIPLE_BUFFER_DISABLED})
 
 # Collects a lot of data, and check if parsing works successfully
@@ -88,7 +83,7 @@ rocprofiler_add_integration_execute_test(
     TARGET thread-trace-test-app
     TIMEOUT 240
     PRELOAD "$<TARGET_FILE:thread-trace-triple-buffer-tool>"
-    ENVIRONMENT ${THREAD_TRACE_ENVIRONMENT} "TRIPLEBUFFER=1;ATT_NODETAIL=0;ATT_SLOW_CALLBACK=0"
+    ENVIRONMENT "TRIPLEBUFFER=1;ATT_NODETAIL=0;ATT_SLOW_CALLBACK=0"
     DISABLED ${TRIPLE_BUFFER_DISABLED})
 
 # Tests for proper handling of when the tool is very slow
@@ -97,7 +92,7 @@ rocprofiler_add_integration_execute_test(
     TARGET thread-trace-test-app
     TIMEOUT 120
     PRELOAD "$<TARGET_FILE:thread-trace-triple-buffer-tool>"
-    ENVIRONMENT ${THREAD_TRACE_ENVIRONMENT} "TRIPLEBUFFER=1;ATT_NODETAIL=1;ATT_SLOW_CALLBACK=1"
+    ENVIRONMENT "TRIPLEBUFFER=1;ATT_NODETAIL=1;ATT_SLOW_CALLBACK=1"
     DISABLED ${TRIPLE_BUFFER_DISABLED})
 
 # Some runtime versions have a problem with this. Disabling until that is fully resolved.
@@ -107,7 +102,7 @@ rocprofiler_add_integration_execute_test(
     TARGET thread-trace-test-app
     TIMEOUT 120
     PRELOAD "$<TARGET_FILE:thread-trace-triple-buffer-tool>"
-    ENVIRONMENT ${THREAD_TRACE_ENVIRONMENT} "TRIPLEBUFFER=1;EXECUTE_PAUSE=0"
+    ENVIRONMENT "TRIPLEBUFFER=1;EXECUTE_PAUSE=0"
     DISABLED ${ROCPROFILER_DISABLE_UNSTABLE_CTESTS} OR ${TRIPLE_BUFFER_DISABLED})
 
 # Tests for thread trace starting and stopping multiple times during the application
@@ -116,5 +111,5 @@ rocprofiler_add_integration_execute_test(
     TARGET thread-trace-test-app
     TIMEOUT 120
     PRELOAD "$<TARGET_FILE:thread-trace-triple-buffer-tool>"
-    ENVIRONMENT ${THREAD_TRACE_ENVIRONMENT} "TRIPLEBUFFER=1;STARTSTOP=1;ATT_NODETAIL=1"
+    ENVIRONMENT "TRIPLEBUFFER=1;STARTSTOP=1;ATT_NODETAIL=1"
     DISABLED ${TRIPLE_BUFFER_DISABLED})

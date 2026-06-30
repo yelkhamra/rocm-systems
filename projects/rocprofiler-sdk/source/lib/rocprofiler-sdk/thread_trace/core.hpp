@@ -203,6 +203,16 @@ public:
     }
 
     const auto& get_agents() const { return agents; }
+    bool        hasPerf() const
+    {
+        std::unique_lock<std::mutex> lk(agent_mut);
+        for(const auto& itr : params)
+        {
+            const auto& param = itr.second;
+            if(param.perfcounter_ctrl != 0 && !param.perfcounters.empty()) return true;
+        }
+        return false;
+    }
 
     friend void flush_and_stop();
 
@@ -210,7 +220,7 @@ private:
     std::map<rocprofiler_agent_id_t, std::unique_ptr<ThreadTracerAgent>> agents{};
     std::map<rocprofiler_agent_id_t, thread_trace_parameter_pack>        params{};
 
-    std::mutex                        agent_mut;
+    mutable std::mutex                 agent_mut;
     std::shared_ptr<std::atomic<int>> worker_flag{nullptr};
 };
 
