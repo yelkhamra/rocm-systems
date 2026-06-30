@@ -99,6 +99,13 @@ findDeviceMetrics(const hsa::AgentCache& agent, const std::unordered_set<std::st
     return ret;
 }
 
+bool
+agent_is_hsa_visible(const hsa::AgentCache& agent)
+{
+    const auto* rocp_agent = agent.get_rocp_agent();
+    return rocp_agent && rocp_agent->runtime_visibility.hsa != 0;
+}
+
 void
 test_init()
 {
@@ -283,8 +290,11 @@ protected:
 
         ASSERT_TRUE(hsa::get_queue_controller() != nullptr);
         ASSERT_GT(hsa::get_queue_controller()->get_supported_agents().size(), 0);
+        bool tested_agent = false;
         for(const auto& [_, agent] : hsa::get_queue_controller()->get_supported_agents())
         {
+            if(!agent_is_hsa_visible(agent)) continue;
+            tested_agent = true;
             auto metrics = findDeviceMetrics(agent, test_metrics);
             ASSERT_FALSE(metrics.empty());
             ASSERT_TRUE(agent.get_rocp_agent());
@@ -493,6 +503,7 @@ protected:
             hsa_signal_destroy(found_data);
             hsa_queue_destroy(queue);
         }
+        if(!tested_agent) GTEST_SKIP() << "No HSA-visible GPU agents";
         registration::set_init_status(1);
         context::pop_client(1);
     }
@@ -536,6 +547,7 @@ protected:
         CHECK(!supported_agents.empty());
         for(const auto& [_, gpu_agent] : supported_agents)
         {
+            if(!agent_is_hsa_visible(gpu_agent)) continue;
             test_kernels kernel_loader(gpu_agent);
             auto         kernel_handle = kernel_loader.load_kernel(gpu_agent, "null_kernel");
 

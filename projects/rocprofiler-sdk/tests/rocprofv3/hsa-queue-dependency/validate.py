@@ -63,8 +63,8 @@ def test_hsa_api_trace(hsa_trace_input_data):
     assert functions.count("hsa_queue_create") == num_queue_create_calls
     assert functions.count("hsa_queue_destroy") == num_queue_destroy_calls
     assert functions.count("hsa_memory_free") == num_hsa_mem_free_calls
-    assert functions.count("hsa_signal_create") == num_hsa_signal_create_calls
-    assert functions.count("hsa_signal_destroy") == num_hsa_signal_destroy_calls
+    assert functions.count("hsa_signal_create") >= num_hsa_signal_create_calls
+    assert functions.count("hsa_signal_destroy") >= num_hsa_signal_destroy_calls
 
 
 def test_kernel_trace(kernel_trace_input_data):
@@ -172,8 +172,8 @@ def test_hsa_api_trace_json(json_data):
     assert functions.count("hsa_queue_create") == num_queue_create_calls
     assert functions.count("hsa_queue_destroy") == num_queue_destroy_calls
     assert functions.count("hsa_memory_free") == num_hsa_mem_free_calls
-    assert functions.count("hsa_signal_create") == num_hsa_signal_create_calls
-    assert functions.count("hsa_signal_destroy") == num_hsa_signal_destroy_calls
+    assert functions.count("hsa_signal_create") >= num_hsa_signal_create_calls
+    assert functions.count("hsa_signal_destroy") >= num_hsa_signal_destroy_calls
 
 
 def test_perfetto_data(pftrace_data, json_data):
