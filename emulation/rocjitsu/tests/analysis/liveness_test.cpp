@@ -674,7 +674,7 @@ std::vector<const Instruction *> insts_of(BasicBlock &block) {
 std::vector<std::unique_ptr<BasicBlock>> build_cdna4_blocks(std::vector<uint32_t> words) {
   TestCodeObject co(std::move(words));
   auto decoder = Decoder::create(ROCJITSU_CODE_ARCH_CDNA4);
-  return BasicBlock::build(co, *decoder);
+  return BasicBlock::build(co, *decoder, ROCJITSU_CODE_ARCH_CDNA4);
 }
 
 // Full end-to-end on real decoded instructions: `s_mov_b64 exec, -1` makes EXEC
