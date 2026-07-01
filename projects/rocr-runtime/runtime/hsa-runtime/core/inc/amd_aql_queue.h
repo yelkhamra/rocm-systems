@@ -325,6 +325,7 @@ class AqlQueue : public core::Queue, private core::LocalSignal, public core::Doo
     hsa_signal_t signal = {0};
     core::unique_signal_ptr retained_signal = nullptr;
     bool attached_signal = false;
+    bool pooled_signal = false;
     bool ext_dispatch = false;
   };
 
@@ -375,13 +376,18 @@ class AqlQueue : public core::Queue, private core::LocalSignal, public core::Doo
   // Exception notification signal
   Signal* exception_signal_;
 
+  bool dispatch_gap_debug_prealloc_done_;
   uint64_t dispatch_gap_debug_next_scan_pos_;
   uint64_t dispatch_gap_debug_dropped_records_;
   uint64_t dispatch_gap_debug_attached_signals_;
   uint64_t dispatch_gap_debug_existing_signals_;
+  uint64_t dispatch_gap_debug_pooled_signals_;
+  uint64_t dispatch_gap_debug_inline_signals_;
+  uint64_t dispatch_gap_debug_preallocated_signals_;
   uint64_t dispatch_gap_debug_scanned_packets_;
   uint64_t dispatch_gap_debug_kernel_packets_;
   std::mutex dispatch_gap_debug_lock_;
+  std::vector<core::unique_signal_ptr> dispatch_gap_debug_signal_pool_;
   std::vector<DispatchGapDebugPacketRecord> dispatch_gap_debug_records_;
 
   // Per-queue VM fault state, set by ExceptionHandler and stamped
