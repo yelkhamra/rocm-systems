@@ -51,6 +51,10 @@
 #endif
 
 #include <algorithm>
+#include <chrono>
+#include <cinttypes>
+#include <cstring>
+#include <cstdlib>
 #ifdef _WIN32
 #define WIN32_NO_STATUS
 #include <Windows.h>
@@ -78,6 +82,62 @@ namespace AMD {
 
 #define SCRATCH_ALT_RATIO 4
 
+namespace {
+
+struct QueueDispatchGapDebugConfig {
+  bool enabled = false;
+  bool attach_signals = true;
+  bool log_doorbells = false;
+  uint64_t threshold_ns = 50000;
+  uint64_t max_records = 1000000;
+};
+
+bool IsTruthyEnv(const char* name) {
+  const char* value = std::getenv(name);
+  if (value == nullptr) return false;
+  if (value[0] == '\0') return true;
+  return std::strcmp(value, "0") != 0 && std::strcmp(value, "false") != 0 &&
+         std::strcmp(value, "FALSE") != 0 && std::strcmp(value, "off") != 0 &&
+         std::strcmp(value, "OFF") != 0;
+}
+
+bool IsFalseyEnv(const char* name) {
+  const char* value = std::getenv(name);
+  if (value == nullptr || value[0] == '\0') return false;
+  return std::strcmp(value, "0") == 0 || std::strcmp(value, "false") == 0 ||
+         std::strcmp(value, "FALSE") == 0 || std::strcmp(value, "off") == 0 ||
+         std::strcmp(value, "OFF") == 0;
+}
+
+uint64_t EnvU64(const char* name, uint64_t fallback) {
+  const char* value = std::getenv(name);
+  if (value == nullptr || value[0] == '\0') return fallback;
+
+  char* end = nullptr;
+  const auto parsed = std::strtoull(value, &end, 10);
+  return (end != value) ? parsed : fallback;
+}
+
+const QueueDispatchGapDebugConfig& DispatchGapQueueDebugConfig() {
+  static const QueueDispatchGapDebugConfig config = [] {
+    QueueDispatchGapDebugConfig ret;
+    ret.enabled = IsTruthyEnv("HSA_DISPATCH_GAP_QUEUE_DEBUG") ||
+                  IsTruthyEnv("HSA_DISPATCH_GAP_DEBUG_STANDALONE") ||
+                  std::getenv("HSA_DISPATCH_GAP_QUEUE_DEBUG_NS") != nullptr;
+    ret.attach_signals = !IsFalseyEnv("HSA_DISPATCH_GAP_QUEUE_DEBUG_ATTACH_SIGNALS");
+    ret.log_doorbells = IsTruthyEnv("HSA_DISPATCH_GAP_QUEUE_DEBUG_DOORBELLS");
+    ret.threshold_ns = EnvU64(
+        "HSA_DISPATCH_GAP_QUEUE_DEBUG_NS",
+        EnvU64("HSA_DISPATCH_GAP_DEBUG_NS", ret.threshold_ns));
+    ret.max_records = EnvU64("HSA_DISPATCH_GAP_QUEUE_DEBUG_MAX_RECORDS", ret.max_records);
+    return ret;
+  }();
+
+  return config;
+}
+
+}  // namespace
+
 AqlQueue::AqlQueue(core::SharedQueue* shared_queue, GpuAgent* agent, size_t req_size_pkts,
                    HSAuint32 node_id, ScratchInfo& scratch, core::HsaEventCallback callback,
                    void* err_data, bool metadata_prefetch, uint64_t flags)
@@ -100,7 +160,13 @@ AqlQueue::AqlQueue(core::SharedQueue* shared_queue, GpuAgent* agent, size_t req_
       exceptionState(0),
       suspended_(false),
       priority_(HSA::HSA_AMD_QUEUE_PRIORITY_NORMAL),
-      exception_signal_(nullptr) {
+      exception_signal_(nullptr),
+      dispatch_gap_debug_next_scan_pos_(0),
+      dispatch_gap_debug_dropped_records_(0),
+      dispatch_gap_debug_attached_signals_(0),
+      dispatch_gap_debug_existing_signals_(0),
+      dispatch_gap_debug_scanned_packets_(0),
+      dispatch_gap_debug_kernel_packets_(0) {
 
   // Queue size is a function of several restrictions.
   const uint32_t min_pkts = ComputeRingBufferMinPkts();
@@ -295,6 +361,7 @@ AqlQueue::AqlQueue(core::SharedQueue* shared_queue, GpuAgent* agent, size_t req_
   amd_queue_.hsa_queue.id = this->GetQueueId();
 
   queue_id_ = queue_rsrc.QueueId;
+  MaybeEnableDispatchGapDebug();
   MAKE_NAMED_SCOPE_GUARD(QueueGuard, [&]() { agent_->driver().DestroyQueue(queue_id_); });
 
   amd_queue_.scratch_max_use_index = UINT64_MAX;
@@ -374,6 +441,8 @@ AqlQueue::~AqlQueue() {
                                      HSA_WAIT_STATE_BLOCKED);
     }
   }
+
+  DumpDispatchGapDebug();
 
   Inactivate();
 
@@ -479,7 +548,253 @@ uint64_t AqlQueue::AddWriteIndexRelease(uint64_t value) {
                      std::memory_order_release);
 }
 
+void AqlQueue::MaybeEnableDispatchGapDebug() {
+  const auto& config = DispatchGapQueueDebugConfig();
+  if (!config.enabled) return;
+
+  Queue::SetProfiling(true);
+  agent_->CheckClockTicks();
+  dispatch_gap_debug_next_scan_pos_ =
+      atomic::Load(&amd_queue_.write_dispatch_id, std::memory_order_relaxed);
+
+  fprintf(stderr,
+          "HSA dispatch gap queue debug enabled: node=%u queue_id=%" PRIu64
+          " hsa_queue_id=%" PRIu64 " threshold_ns=%" PRIu64
+          " attach_signals=%u max_records=%" PRIu64 " log_doorbells=%u\n",
+          agent_->node_id(), static_cast<uint64_t>(queue_id_),
+          static_cast<uint64_t>(amd_queue_.hsa_queue.id), config.threshold_ns,
+          config.attach_signals ? 1 : 0, config.max_records, config.log_doorbells ? 1 : 0);
+}
+
+void AqlQueue::MaybeCaptureDispatchGapDebug(hsa_signal_value_t doorbell_value) {
+  const auto& config = DispatchGapQueueDebugConfig();
+  if (!config.enabled || doorbell_value < 0) return;
+
+  const auto log_start = config.log_doorbells ? std::chrono::steady_clock::now()
+                                              : std::chrono::steady_clock::time_point{};
+
+  uint64_t scanned_packets = 0;
+  uint64_t kernel_packets = 0;
+  uint64_t attached_signals = 0;
+  uint64_t existing_signals = 0;
+  uint64_t dropped_records = 0;
+  uint64_t scan_start = 0;
+  uint64_t scan_end = 0;
+  uint64_t wptr = 0;
+  uint64_t rptr = 0;
+
+  {
+    std::lock_guard<std::mutex> lock(dispatch_gap_debug_lock_);
+
+    scan_start = dispatch_gap_debug_next_scan_pos_;
+    wptr = atomic::Load(&amd_queue_.write_dispatch_id, std::memory_order_acquire);
+    rptr = atomic::Load(&amd_queue_.read_dispatch_id, std::memory_order_acquire);
+
+    const uint64_t doorbell_end = static_cast<uint64_t>(doorbell_value) + 1;
+    scan_end = std::min(wptr, doorbell_end);
+    if (scan_end <= scan_start) return;
+
+    const uint64_t ring_size = amd_queue_.hsa_queue.size;
+    if ((scan_end - scan_start) > ring_size) {
+      const uint64_t missed = (scan_end - scan_start) - ring_size;
+      dispatch_gap_debug_dropped_records_ += missed;
+      dropped_records += missed;
+      scan_start = scan_end - ring_size;
+    }
+
+    for (uint64_t pos = scan_start; pos < scan_end; ++pos) {
+      auto* packet = static_cast<core::AqlPacket*>(ring_buf_) + (pos & (ring_size - 1));
+      const uint16_t header = __atomic_load_n(&packet->packet.header, __ATOMIC_ACQUIRE);
+      const auto packet_type = core::AqlPacket::type(header);
+      const bool is_dispatch = (packet_type == HSA_PACKET_TYPE_KERNEL_DISPATCH);
+      const bool is_ext_dispatch =
+          (packet_type == HSA_PACKET_TYPE_VENDOR_SPECIFIC &&
+           packet->amd_vendor.format == HSA_AMD_PACKET_TYPE_EXT_KERNEL_DISPATCH);
+
+      ++scanned_packets;
+      if (!is_dispatch && !is_ext_dispatch) continue;
+      ++kernel_packets;
+
+      if (config.max_records != 0 && dispatch_gap_debug_records_.size() >= config.max_records) {
+        ++dispatch_gap_debug_dropped_records_;
+        ++dropped_records;
+        continue;
+      }
+
+      hsa_signal_t* completion_signal =
+          is_ext_dispatch ? &packet->ext_dispatch.completion_signal
+                          : &packet->dispatch.completion_signal;
+
+      auto record = DispatchGapDebugPacketRecord{};
+      record.packet_index = pos;
+      record.ext_dispatch = is_ext_dispatch;
+
+      if (completion_signal->handle == 0) {
+        if (!config.attach_signals) continue;
+
+        record.retained_signal.reset(new core::DefaultSignal(1));
+        *completion_signal = core::Signal::Convert(record.retained_signal.get());
+        record.signal = *completion_signal;
+        record.attached_signal = true;
+        ++attached_signals;
+      } else {
+        core::Signal* retained = core::Signal::DuplicateHandle(*completion_signal);
+        if (retained == nullptr) continue;
+
+        record.retained_signal.reset(retained);
+        record.signal = *completion_signal;
+        ++existing_signals;
+      }
+
+      dispatch_gap_debug_records_.emplace_back(std::move(record));
+    }
+
+    dispatch_gap_debug_next_scan_pos_ = scan_end;
+    dispatch_gap_debug_scanned_packets_ += scanned_packets;
+    dispatch_gap_debug_kernel_packets_ += kernel_packets;
+    dispatch_gap_debug_attached_signals_ += attached_signals;
+    dispatch_gap_debug_existing_signals_ += existing_signals;
+  }
+
+  if (config.log_doorbells && kernel_packets > 0) {
+    const auto elapsed_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                std::chrono::steady_clock::now() - log_start)
+                                .count();
+    fprintf(stderr,
+            "HSA dispatch gap queue debug doorbell: node=%u queue_id=%" PRIu64
+            " hsa_queue_id=%" PRIu64 " doorbell_value=%" PRIu64 " wptr=%" PRIu64
+            " rptr=%" PRIu64 " scan_start=%" PRIu64 " scan_end=%" PRIu64
+            " scanned_packets=%" PRIu64 " kernel_packets=%" PRIu64
+            " attached_signals=%" PRIu64 " existing_signals=%" PRIu64
+            " dropped_records=%" PRIu64 " host_scan_ns=%" PRId64 "\n",
+            agent_->node_id(), static_cast<uint64_t>(queue_id_),
+            static_cast<uint64_t>(amd_queue_.hsa_queue.id), static_cast<uint64_t>(doorbell_value),
+            wptr, rptr, scan_start, scan_end, scanned_packets, kernel_packets, attached_signals,
+            existing_signals, dropped_records, static_cast<int64_t>(elapsed_ns));
+  }
+}
+
+void AqlQueue::DumpDispatchGapDebug() {
+  const auto& config = DispatchGapQueueDebugConfig();
+  if (!config.enabled) return;
+
+  struct TranslatedRecord {
+    uint64_t packet_index = 0;
+    hsa_signal_t signal = {0};
+    uint64_t raw_start = 0;
+    uint64_t raw_end = 0;
+    uint64_t translated_start = 0;
+    uint64_t translated_end = 0;
+    bool attached_signal = false;
+    bool ext_dispatch = false;
+  };
+
+  auto records = std::vector<TranslatedRecord>{};
+  uint64_t invalid_records = 0;
+  uint64_t captured_records = 0;
+  uint64_t dropped_records = 0;
+  uint64_t attached_signals = 0;
+  uint64_t existing_signals = 0;
+  uint64_t scanned_packets = 0;
+  uint64_t kernel_packets = 0;
+
+  {
+    std::lock_guard<std::mutex> lock(dispatch_gap_debug_lock_);
+    captured_records = dispatch_gap_debug_records_.size();
+    dropped_records = dispatch_gap_debug_dropped_records_;
+    attached_signals = dispatch_gap_debug_attached_signals_;
+    existing_signals = dispatch_gap_debug_existing_signals_;
+    scanned_packets = dispatch_gap_debug_scanned_packets_;
+    kernel_packets = dispatch_gap_debug_kernel_packets_;
+
+    records.reserve(dispatch_gap_debug_records_.size());
+    for (auto& record : dispatch_gap_debug_records_) {
+      core::Signal* signal = record.retained_signal.get();
+      if (signal == nullptr) {
+        ++invalid_records;
+        continue;
+      }
+
+      uint64_t raw_start = 0;
+      uint64_t raw_end = 0;
+      signal->GetRawTs(false, raw_start, raw_end);
+      if (raw_start == 0 || raw_end == 0) {
+        ++invalid_records;
+        continue;
+      }
+
+      records.push_back({record.packet_index, record.signal, raw_start, raw_end,
+                         agent_->TranslateTime(raw_start), agent_->TranslateTime(raw_end),
+                         record.attached_signal, record.ext_dispatch});
+    }
+
+    dispatch_gap_debug_records_.clear();
+  }
+
+  std::sort(records.begin(), records.end(), [](const auto& lhs, const auto& rhs) {
+    if (lhs.raw_start != rhs.raw_start) return lhs.raw_start < rhs.raw_start;
+    return lhs.raw_end < rhs.raw_end;
+  });
+
+  uint64_t large_gap_count = 0;
+  for (size_t i = 1; i < records.size(); ++i) {
+    const auto& previous = records[i - 1];
+    const auto& current = records[i];
+    const uint64_t raw_gap =
+        (current.raw_start >= previous.raw_end) ? (current.raw_start - previous.raw_end) : 0;
+    const uint64_t translated_gap =
+        (current.translated_start >= previous.translated_end)
+            ? (current.translated_start - previous.translated_end)
+            : 0;
+
+    if (translated_gap > config.threshold_ns) {
+      ++large_gap_count;
+      fprintf(stderr,
+              "HSA dispatch gap queue debug: node=%u queue_id=%" PRIu64
+              " hsa_queue_id=%" PRIu64 " sorted_index=%zu packet_index=%" PRIu64
+              " signal=0x%" PRIx64 " raw_gap_ticks=%" PRIu64
+              " translated_gap_ns=%" PRIu64 " raw_start=%" PRIu64 " raw_end=%" PRIu64
+              " raw_duration_ticks=%" PRIu64 " translated_start=%" PRIu64
+              " translated_end=%" PRIu64 " translated_duration_ns=%" PRIu64
+              " previous_packet_index=%" PRIu64 " previous_signal=0x%" PRIx64
+              " previous_raw_end=%" PRIu64 " previous_translated_end=%" PRIu64
+              " packet_delta=%" PRIu64 " attached_signal=%u previous_attached_signal=%u"
+              " ext_dispatch=%u previous_ext_dispatch=%u\n",
+              agent_->node_id(), static_cast<uint64_t>(queue_id_),
+              static_cast<uint64_t>(amd_queue_.hsa_queue.id), i, current.packet_index,
+              static_cast<uint64_t>(current.signal.handle), raw_gap, translated_gap,
+              current.raw_start, current.raw_end,
+              (current.raw_end >= current.raw_start) ? (current.raw_end - current.raw_start) : 0,
+              current.translated_start, current.translated_end,
+              (current.translated_end >= current.translated_start)
+                  ? (current.translated_end - current.translated_start)
+                  : 0,
+              previous.packet_index, static_cast<uint64_t>(previous.signal.handle),
+              previous.raw_end, previous.translated_end,
+              (current.packet_index >= previous.packet_index)
+                  ? (current.packet_index - previous.packet_index)
+                  : 0,
+              current.attached_signal ? 1 : 0, previous.attached_signal ? 1 : 0,
+              current.ext_dispatch ? 1 : 0, previous.ext_dispatch ? 1 : 0);
+    }
+  }
+
+  fprintf(stderr,
+          "HSA dispatch gap queue debug summary: node=%u queue_id=%" PRIu64
+          " hsa_queue_id=%" PRIu64 " scanned_packets=%" PRIu64
+          " kernel_packets=%" PRIu64 " captured_records=%" PRIu64
+          " valid_records=%zu invalid_records=%" PRIu64 " threshold_ns=%" PRIu64
+          " large_gaps=%" PRIu64 " attached_signals=%" PRIu64
+          " existing_signals=%" PRIu64 " dropped_records=%" PRIu64 "\n",
+          agent_->node_id(), static_cast<uint64_t>(queue_id_),
+          static_cast<uint64_t>(amd_queue_.hsa_queue.id), scanned_packets, kernel_packets,
+          captured_records, records.size(), invalid_records, config.threshold_ns,
+          large_gap_count, attached_signals, existing_signals, dropped_records);
+}
+
 void AqlQueue::StoreRelaxed(hsa_signal_value_t value) {
+  MaybeCaptureDispatchGapDebug(value);
+
   if (core::Runtime::runtime_singleton_->thunkLoader()->IsDTIF() ||
         core::Runtime::runtime_singleton_->thunkLoader()->IsDXG()) {
     HSAKMT_CALL(hsaKmtQueueRingDoorbell(queue_id_, value));

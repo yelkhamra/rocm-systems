@@ -49,6 +49,10 @@
 #include "core/inc/amd_gpu_agent.h"
 #include "core/util/locks.h"
 
+#include <cstdint>
+#include <mutex>
+#include <vector>
+
 namespace rocr {
 namespace AMD {
   const uint8_t METADATA_PREFETCH_VERSION_INVALID = 0xFF;
@@ -312,6 +316,18 @@ class AqlQueue : public core::Queue, private core::LocalSignal, public core::Doo
   /// @brief Fill queue properties
   void GetInfoProperties(uint8_t value[8]) const;
 
+  void MaybeEnableDispatchGapDebug();
+  void MaybeCaptureDispatchGapDebug(hsa_signal_value_t doorbell_value);
+  void DumpDispatchGapDebug();
+
+  struct DispatchGapDebugPacketRecord {
+    uint64_t packet_index = 0;
+    hsa_signal_t signal = {0};
+    core::unique_signal_ptr retained_signal = nullptr;
+    bool attached_signal = false;
+    bool ext_dispatch = false;
+  };
+
   // AQL packet ring buffer
   void* ring_buf_;
 
@@ -358,6 +374,15 @@ class AqlQueue : public core::Queue, private core::LocalSignal, public core::Doo
 
   // Exception notification signal
   Signal* exception_signal_;
+
+  uint64_t dispatch_gap_debug_next_scan_pos_;
+  uint64_t dispatch_gap_debug_dropped_records_;
+  uint64_t dispatch_gap_debug_attached_signals_;
+  uint64_t dispatch_gap_debug_existing_signals_;
+  uint64_t dispatch_gap_debug_scanned_packets_;
+  uint64_t dispatch_gap_debug_kernel_packets_;
+  std::mutex dispatch_gap_debug_lock_;
+  std::vector<DispatchGapDebugPacketRecord> dispatch_gap_debug_records_;
 
   // Per-queue VM fault state, set by ExceptionHandler and stamped
   // with address/reason by VMFaultHandler.
