@@ -88,6 +88,7 @@ struct QueueDispatchGapDebugConfig {
   bool enabled = false;
   bool attach_signals = true;
   bool log_doorbells = false;
+  bool enable_profiling = true;
   uint64_t threshold_ns = 50000;
   uint64_t max_records = 1000000;
   uint64_t prealloc_signals = 0;
@@ -127,6 +128,7 @@ const QueueDispatchGapDebugConfig& DispatchGapQueueDebugConfig() {
                   std::getenv("HSA_DISPATCH_GAP_QUEUE_DEBUG_NS") != nullptr;
     ret.attach_signals = !IsFalseyEnv("HSA_DISPATCH_GAP_QUEUE_DEBUG_ATTACH_SIGNALS");
     ret.log_doorbells = IsTruthyEnv("HSA_DISPATCH_GAP_QUEUE_DEBUG_DOORBELLS");
+    ret.enable_profiling = !IsFalseyEnv("HSA_DISPATCH_GAP_QUEUE_DEBUG_PROFILING");
     ret.threshold_ns = EnvU64(
         "HSA_DISPATCH_GAP_QUEUE_DEBUG_NS",
         EnvU64("HSA_DISPATCH_GAP_DEBUG_NS", ret.threshold_ns));
@@ -558,20 +560,22 @@ void AqlQueue::MaybeEnableDispatchGapDebug() {
   const auto& config = DispatchGapQueueDebugConfig();
   if (!config.enabled) return;
 
-  Queue::SetProfiling(true);
-  agent_->CheckClockTicks();
+  if (config.enable_profiling) {
+    Queue::SetProfiling(true);
+    agent_->CheckClockTicks();
+  }
   dispatch_gap_debug_next_scan_pos_ =
       atomic::Load(&amd_queue_.write_dispatch_id, std::memory_order_relaxed);
 
   fprintf(stderr,
           "HSA dispatch gap queue debug enabled: node=%u queue_id=%" PRIu64
           " hsa_queue_id=%" PRIu64 " threshold_ns=%" PRIu64
-          " attach_signals=%u max_records=%" PRIu64 " log_doorbells=%u"
+          " attach_signals=%u max_records=%" PRIu64 " log_doorbells=%u profiling=%u"
           " prealloc_signals=%" PRIu64 "\n",
           agent_->node_id(), static_cast<uint64_t>(queue_id_),
           static_cast<uint64_t>(amd_queue_.hsa_queue.id), config.threshold_ns,
           config.attach_signals ? 1 : 0, config.max_records, config.log_doorbells ? 1 : 0,
-          config.prealloc_signals);
+          config.enable_profiling ? 1 : 0, config.prealloc_signals);
 }
 
 void AqlQueue::MaybeCaptureDispatchGapDebug(hsa_signal_value_t doorbell_value) {
