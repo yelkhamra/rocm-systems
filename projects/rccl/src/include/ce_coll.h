@@ -11,11 +11,53 @@
 #include "nccl.h"
 #include "nccl_common.h"
 #include "bitops.h"
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <cuda_runtime.h>   // cudaStream_t, cudaEvent_t 
 
 // Memory operations per rank for different synchronization protocols
 #define NCCL_CE_SYNC_OPS_PER_RANK_MC 2
 #define NCCL_CE_SYNC_OPS_PER_RANK_UC 3
 #define RCCL_CE_NUM_COPY_STREAMS 8
+
+// Pipeline depth (number of in-flight scratch buffers) is runtime-tunable via
+// RCCL_CE_PIPELINE_DEPTH. The fixed-size ring/event arrays are sized to the
+// compile-time maximum; the resolved runtime depth is stored in
+// ncclCePipeline::depth and must satisfy 1 <= depth <= RCCL_CE_PIPELINE_MAX_DEPTH.
+#define RCCL_CE_PIPELINE_DEFAULT_DEPTH 2  // double buffer
+#define RCCL_CE_PIPELINE_MAX_DEPTH     16
+
+// One copy-back job handed producer (thread-1) -> copy worker (thread-2).
+struct ncclCeCopyJob {
+  uint8_t* userRecv;     // user recvbuff base
+  uint8_t* scratchHalf;  // scratch double-buffer half base
+  size_t   perRankSub;   // src stride in scratch (= subChunkBytes); 0 for scatter
+  size_t   userStride;   // dst stride in userRecv (= chunkBytes);   0 for scatter
+  size_t   userOff;      // byte offset within each user slot (= off)
+  size_t   n;            // bytes this round
+  int      nCopies;      // per-rank copies (nRanks; or 1 for scatter)
+  int      buf;          // double-buffer index 0/1
+  uint8_t* localSrc;     // local send source (= sendBuff+off); slot localCopyIdx is
+                         // copied from here directly, bypassing the scratch bounce
+  int      localCopyIdx; // rank slot sourced from localSrc instead of scratch (-1 = none)
+  bool     stop;         // sentinel to terminate worker
+};
+
+struct ncclCePipeline {
+  struct ncclComm* comm;
+  std::thread worker;
+  std::mutex  mtx;
+  std::condition_variable cvFull;   // a job was posted
+  std::condition_variable cvEmpty;  // a slot was freed
+  int depth;                                            // runtime pipeline depth (1..MAX)
+  ncclCeCopyJob ring[RCCL_CE_PIPELINE_MAX_DEPTH];
+  int head, tail, count;
+  cudaStream_t copyStream;                              // thread-2's stream
+  cudaEvent_t  readyEvent[RCCL_CE_PIPELINE_MAX_DEPTH];  // producer -> consumer (scratch filled)
+  cudaEvent_t  doneEvent[RCCL_CE_PIPELINE_MAX_DEPTH];   // consumer -> producer (scratch free)
+  ncclResult_t asyncErr;                                // sticky error from worker
+};
 
 struct ncclCeColl {
   uint8_t* baseUCSymReadyPtr;
@@ -33,6 +75,7 @@ struct ncclCeColl {
 #ifdef ENABLE_FAULT_INJECTION
   uint32_t ceFaults;  // bitmask of CE_FAULT_* bits; see ce_fault_inject.h
 #endif
+  struct ncclCePipeline* pipeline;  // non-null when CE_PIPELINE enabled
 };
 
 struct ncclCeInitTask {
@@ -56,6 +99,8 @@ struct alignas(16) ncclCeCollArgs {
   void** ddaPeerBases;      // host-side table of every rank's DDA scratch base pointer
   void*  ddaUserRecvBuff;   // user recvbuff (using DDA staging) or NULL otherwise (if recvbuffer is using symmetric windows)
   size_t ddaCopyBackBytes;  // bytes to copy scratch -> user recvbuff 
+  bool   ceDdaPipeline;
+  size_t ceDdaSubChunkBytes;
 };
 
 struct ncclCeBatchOpsParams {

@@ -167,6 +167,9 @@ static inline int ncclFuncTrafficPerByte(ncclFunc_t func, int nRanks) {
 
 RCCL_PARAM_DECLARE(EnableProxyTrace);
 RCCL_PARAM_DECLARE(DirectReduceScatterThreshold);
+RCCL_PARAM_DECLARE(CePipeline);
+RCCL_PARAM_DECLARE(CePipelineChunkBytes);
+
 /*****************************************************************************/
 /*       Launch system : synchronization and CUDA kernel launch              */
 /*****************************************************************************/
@@ -1881,6 +1884,8 @@ ncclResult_t ncclLaunchPrepare(struct ncclComm* comm) {
         plan->ceCollArgs->ddaUserRecvBuff = task->ddaUserRecvBuff;
         plan->ceCollArgs->ddaCopyBackBytes = task->ddaCopyBackBytes;
         plan->ceCollArgs->collApiEventHandle = task->collApiEventHandle;
+        plan->ceCollArgs->ceDdaPipeline = task->ceDdaPipeline;
+        plan->ceCollArgs->ceDdaSubChunkBytes = task->ceDdaSubChunkBytes;
 
         if (comm->rank == 0) {
           const char* nvlsSync = comm->nvlsSupport ? "; CE synchronization with NVLS" : "";
@@ -3225,6 +3230,8 @@ static ncclResult_t ceCollTaskAppend(
     struct ncclDevrWindow* recvWin,
     void* ddaRecvBase, // non-null -> DDA path: local scratch buffer
     void** ddaPeerBasesHost, // host [nRanks] peer scartch bases (DDA path)
+    bool ddaPipeline,            
+    size_t ddaSubChunkBytes,      
     struct ncclDevRedOpFull opDev) {
   struct ncclKernelPlanner *planner = &comm->planner;
 
@@ -3258,6 +3265,8 @@ static ncclResult_t ceCollTaskAppend(
   // site (ncclLaunchCeColl).
   t->ddaUserRecvBuff  = ddaRecvBase != nullptr ? info->recvbuff : nullptr;
   t->ddaCopyBackBytes = 0;
+  t->ceDdaPipeline      = ddaPipeline;
+  t->ceDdaSubChunkBytes = ddaSubChunkBytes;
   t->count = info->count;
   t->root = info->root;
   t->datatype = info->datatype;
@@ -3517,15 +3526,48 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
       NCCLCHECK(ncclGetSymRegType(sendWin, recvWin, &winRegType));
       bool ceAvailable = ncclCeAvailable(comm, info->coll, info->op, info->datatype, winRegType);
       bool CeScartchAvailable = ncclCeScartchAvailable(comm, info->coll, info->op, info->datatype, winRegType);
-      size_t recvBytes = (size_t)comm->nRanks * info->count * ncclTypeSize(info->datatype);
-      if (CeScartchAvailable && winRegType != ncclSymSendRegRecvReg && winRegType != ncclSymSendNonregRecvReg && rcclParamForceCe() && comm->ddaScratch != nullptr && recvBytes <= comm->ddaScratchBytes) {
-        INFO(NCCL_TUNING, "Using DDA scratch for CE collective, count=%zu, recvBytes=%zu", info->count, recvBytes);
+      size_t typeBytes = ncclTypeSize(info->datatype);
+      size_t recvBytes = (size_t)comm->nRanks * info->count * typeBytes;
+      bool unregistered = (winRegType != ncclSymSendRegRecvReg && winRegType != ncclSymSendNonregRecvReg);
+      // Tracks whether the DDA-scratch path actually appended a task. If the
+      // outer condition is satisfied but no sub-case handles the request (e.g.
+      // recvBytes > scratch but the pipeline is disabled, not an AllGather, or
+      // the sub-chunk would be smaller than one element), we must NOT silently
+      // drop the collective: fall through to the kernel-based path below so the
+      // recv buffer is always produced.
+      bool ddaHandled = false;
+      if (CeScartchAvailable && unregistered && rcclParamForceCe() && comm->ddaScratch != nullptr) {
+        if (recvBytes <= comm->ddaScratchBytes) {
+          // whole result fits -> single-shot DDA (no pipeline)
+          INFO(NCCL_TUNING, "Using DDA scratch for CE collective (single-shot), count=%zu, recvBytes=%zu", info->count, recvBytes);
           NCCLCHECK(ceCollTaskAppend(comm, info, /*sendWin=*/nullptr, /*recvWin=*/nullptr,
-                                     comm->ddaScratch, comm->ddaPeerPtrsHost, opDev));
+                                     comm->ddaScratch, comm->ddaPeerPtrsHost,
+                                     /*ddaPipeline=*/false, /*ddaSubChunkBytes=*/0, opDev));
+          ddaHandled = true;
+        } else if (rcclParamCePipeline() && comm->ceColl.pipeline != nullptr
+                   && info->coll == ncclFuncAllGather) {   // only AG is pipelined so far
+          // result > scratch -> pipeline through a multi-buffered scratch.
+          // all depth buffers must fit: depth * nRanks * sub <= ddaScratchBytes
+          size_t maxSub = comm->ddaScratchBytes / ((size_t)comm->ceColl.pipeline->depth * (size_t)comm->nRanks);
+          size_t sub = rcclParamCePipelineChunkBytes();
+          if (sub == 0 || sub > maxSub) sub = maxSub;   // auto-size / clamp to bound
+          sub = (sub / typeBytes) * typeBytes;          // element-align
+          if (sub >= typeBytes) {
+            INFO(NCCL_TUNING, "Using DDA scratch for CE collective (pipelined, sub=%zu)", sub);
+            NCCLCHECK(ceCollTaskAppend(comm, info, /*sendWin=*/nullptr, /*recvWin=*/nullptr,
+                                       comm->ddaScratch, comm->ddaPeerPtrsHost,
+                                       /*ddaPipeline=*/true, /*ddaSubChunkBytes=*/sub, opDev));
+            ddaHandled = true;
+          }
+        }
+        if (!ddaHandled) {
+          INFO(NCCL_TUNING, "DDA-scratch CE path not applicable (recvBytes=%zu, scratch=%zu, pipeline=%d); falling back to kernel collective",
+               recvBytes, comm->ddaScratchBytes, (int)(rcclParamCePipeline() && comm->ceColl.pipeline != nullptr));
+        }
       }
-      else if ((comm->config.CTAPolicy & NCCL_CTA_POLICY_ZERO) && ceAvailable) {
+      else if (!ddaHandled && (comm->config.CTAPolicy & NCCL_CTA_POLICY_ZERO) && ceAvailable) {
         INFO(NCCL_TUNING, "Using CE collective, count=%zu, recvBytes=%zu", info->count, recvBytes);
-        NCCLCHECK(ceCollTaskAppend(comm, info, sendWin, recvWin, /*ddaRecvBase=*/nullptr, /*ddaPeerBases=*/nullptr, opDev));
+        NCCLCHECK(ceCollTaskAppend(comm, info, sendWin, recvWin, /*ddaRecvBase=*/nullptr, /*ddaPeerBases=*/nullptr, /*ddaPipeline=*/false, /*ddaSubChunkBytes=*/0, opDev));
       }
       // Append kernel-based collective 
       else {
@@ -3582,7 +3624,7 @@ static ncclResult_t taskAppend(struct ncclComm* comm, struct ncclInfo* info) {
           NCCLCHECK(p2pTaskAppend(comm, info, ncclFuncRecv, collAPI, (void*)info->recvbuff, info->count, info->datatype, info->root, allowUB));
         } else if (ceAvailable && comm->symmetricSupport && info->coll == ncclFuncAllGather && info->count > ncclParamSymCeThreshold() && comm->minCompCap >= 100 && comm->isAllDirectNvlink) {
           // Use CE for Allgather on Blackwell with size > 8MB
-          NCCLCHECK(ceCollTaskAppend(comm, info, sendWin, recvWin, /*ddaRecvBase=*/nullptr, /*ddaPeerBases=*/nullptr, opDev));
+          NCCLCHECK(ceCollTaskAppend(comm, info, sendWin, recvWin, /*ddaRecvBase=*/nullptr, /*ddaPeerBases=*/nullptr, /*ddaPipeline=*/false, /*ddaSubChunkBytes=*/0, opDev));
         } else {
           NCCLCHECK(collTaskAppend(comm, info, opDev));
         }

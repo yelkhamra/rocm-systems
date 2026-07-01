@@ -41,7 +41,7 @@ ncclResult_t  ncclMemAlloc_impl(void **ptr, size_t size) {
     // Query device to see if FABRIC handle support is available
     flag = 0;
     (void) CUPFN(cuDeviceGetAttribute(&flag, CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_FABRIC_SUPPORTED, currentDev));
-    if (flag) requestedHandleTypes |= CU_MEM_HANDLE_TYPE_FABRIC;
+    if (flag) requestedHandleTypes = CU_MEM_HANDLE_TYPE_FABRIC;
 #endif
 #if defined(HIP_VMM_UNCACHED_MEMORY)
     memprop.type = hipMemAllocationTypeUncached;
