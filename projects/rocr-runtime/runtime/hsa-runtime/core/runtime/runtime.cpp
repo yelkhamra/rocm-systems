@@ -1179,7 +1179,11 @@ hsa_status_t Runtime::PtrInfo(const void* ptr, hsa_amd_pointer_info_t* info, voi
       assert(thunkInfo.NMappedNodes <= agents_by_node_.size() &&
              "PointerInfo: Thunk returned more than all agents in NMappedNodes.");
       mappedNodes = (uint32_t*)alloca(thunkInfo.NMappedNodes * sizeof(uint32_t));
-      memcpy(mappedNodes, thunkInfo.MappedNodes, thunkInfo.NMappedNodes * sizeof(uint32_t));
+
+      assert(thunkInfo.MappedNodes || thunkInfo.NMappedNodes == 0);
+      if (thunkInfo.MappedNodes) {
+        memcpy(mappedNodes, thunkInfo.MappedNodes, thunkInfo.NMappedNodes * sizeof(uint32_t));
+      }
     }
     retInfo.type = (hsa_amd_pointer_type_t)thunkInfo.Type;
     retInfo.agentBaseAddress = reinterpret_cast<void*>(thunkInfo.GPUAddress);
@@ -2811,14 +2815,7 @@ void Runtime::LoadTools() {
               getpid(), rocp_reg_status, rocprofiler_register_error_string(rocp_reg_status));
     }
 
-    // rocprofiler-register (v3) provides tracing only; the comgr hotswap tool must
-    // intercept and modify HSA calls (it wraps hsa_code_object_reader_create_from_memory),
-    // which requires the v1 HSA_TOOLS_LIB path. Allow v1 registration specifically for
-    // that first-party tool so it loads via HSA_TOOLS_LIB alone, without re-enabling v1
-    // for other tools. General v1 behavior is otherwise unchanged.
-    static constexpr const char* kHotswapToolLib = "libamd_comgr_hotswap_tool.so";
-    bool allow_v1_registration =
-        flag().tools_lib_names().find(kHotswapToolLib) != std::string::npos;
+    bool allow_v1_registration = false;
     if (os::IsEnvVarSet("HSA_TOOLS_ROCPROFILER_V1_TOOLS")) {
       // assume true if env variable is set
       allow_v1_registration = true;
@@ -4056,7 +4053,7 @@ Runtime::MappedHandleAllowedAgent::~MappedHandleAllowedAgent() {
     (void)result;
   }
   else {
-    hsa_status_t status = targetAgent->driver().DestroyImportedMemoryHandle(&driver_handle);
+    hsa_status_t status = targetAgent->driver().DestroyMemoryHandle(&driver_handle);
     assert(status == HSA_STATUS_SUCCESS);
     (void)status;
   }
