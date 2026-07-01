@@ -62,6 +62,7 @@
 #include "core/inc/amd_hsa_loader.hpp"
 #include "core/inc/amd_loader_context.hpp"
 #include "core/inc/hsa_ven_amd_loader_impl.h"
+#include "core/util/os.h"
 #include "inc/hsa_ven_amd_aqlprofile.h"
 #include "core/inc/hsa_ext_amd_impl.h"
 #include "core/inc/hotswap.hpp"
@@ -756,8 +757,9 @@ hsa_status_t hsa_queue_create(
     queue_create_flags = HSA_AMD_QUEUE_CREATE_DEVICE_MEM_RING_BUF;
 
   core::Queue* cmd_queue = nullptr;
+  const bool metadata_queue = !os::IsEnvVarSet("HSA_DISABLE_METADATA_PREFETCH");
   status = agent->QueueCreate(size, type, queue_create_flags, callback, data, private_segment_size,
-                              group_segment_size, true, &cmd_queue);
+                              group_segment_size, metadata_queue, &cmd_queue);
   if (status != HSA_STATUS_SUCCESS) return status;
 
   assert(cmd_queue != nullptr && "Queue not returned but status was success.\n");

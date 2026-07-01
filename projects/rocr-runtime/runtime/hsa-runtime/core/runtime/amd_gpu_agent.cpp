@@ -46,8 +46,11 @@
 #include <atomic>
 #include <cinttypes>
 #include <climits>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <map>
+#include <mutex>
 #include <set>
 #include <string>
 #include <vector>
@@ -97,6 +100,124 @@ namespace rocr {
 
 namespace AMD {
 const uint64_t CP_DMA_DATA_TRANSFER_CNT_MAX = (1 << 26);
+
+namespace {
+
+struct DispatchGapDebugRecord {
+  void* signal = nullptr;
+  uint64_t raw_start = 0;
+  uint64_t raw_end = 0;
+  uint64_t translated_start = 0;
+  uint64_t translated_end = 0;
+};
+
+using DispatchGapDebugRecords = std::map<uint32_t, std::vector<DispatchGapDebugRecord>>;
+
+std::mutex& DispatchGapDebugLock() {
+  static auto* lock = new std::mutex;
+  return *lock;
+}
+
+DispatchGapDebugRecords& DispatchGapDebugData() {
+  static auto* data = new DispatchGapDebugRecords;
+  return *data;
+}
+
+uint64_t DispatchGapDebugThresholdNs();
+
+void DumpDispatchGapDebug() {
+  const uint64_t threshold = DispatchGapDebugThresholdNs();
+  if (threshold == 0) return;
+
+  std::lock_guard<std::mutex> lock(DispatchGapDebugLock());
+
+  for (auto& node_records : DispatchGapDebugData()) {
+    const uint32_t node_id = node_records.first;
+    auto& records = node_records.second;
+    std::sort(records.begin(), records.end(), [](const auto& lhs, const auto& rhs) {
+      if (lhs.raw_start != rhs.raw_start) return lhs.raw_start < rhs.raw_start;
+      return lhs.raw_end < rhs.raw_end;
+    });
+
+    uint64_t large_gap_count = 0;
+    for (size_t i = 1; i < records.size(); ++i) {
+      const auto& previous = records[i - 1];
+      const auto& current = records[i];
+      const uint64_t raw_gap =
+          (current.raw_start >= previous.raw_end) ? (current.raw_start - previous.raw_end) : 0;
+      const uint64_t translated_gap = (current.translated_start >= previous.translated_end)
+                                          ? (current.translated_start - previous.translated_end)
+                                          : 0;
+
+      if (translated_gap > threshold) {
+        ++large_gap_count;
+        fprintf(
+            stderr,
+            "HSA dispatch gap debug: node=%u sorted_index=%zu signal=%p"
+            " raw_gap_ticks=%" PRIu64 " translated_gap_ns=%" PRIu64
+            " raw_start=%" PRIu64 " raw_end=%" PRIu64 " raw_duration_ticks=%" PRIu64
+            " translated_start=%" PRIu64 " translated_end=%" PRIu64
+            " translated_duration_ns=%" PRIu64 " previous_signal=%p"
+            " previous_raw_end=%" PRIu64 " previous_translated_end=%" PRIu64 "\n",
+            node_id, i, current.signal, raw_gap, translated_gap, current.raw_start,
+            current.raw_end,
+            (current.raw_end >= current.raw_start) ? (current.raw_end - current.raw_start) : 0,
+            current.translated_start, current.translated_end,
+            (current.translated_end >= current.translated_start)
+                ? (current.translated_end - current.translated_start)
+                : 0,
+            previous.signal, previous.raw_end, previous.translated_end);
+      }
+    }
+
+    fprintf(stderr,
+            "HSA dispatch gap debug summary: node=%u records=%zu threshold_ns=%" PRIu64
+            " large_gaps=%" PRIu64 "\n",
+            node_id, records.size(), threshold, large_gap_count);
+  }
+}
+
+bool DispatchGapDebugEnabled() {
+  if (os::IsEnvVarSet("HSA_DISPATCH_GAP_DEBUG_NS")) return true;
+  if (!os::IsEnvVarSet("HSA_DISPATCH_GAP_DEBUG")) return false;
+
+  const auto value = os::GetEnvVar("HSA_DISPATCH_GAP_DEBUG");
+  return value.empty() || (value != "0" && value != "false" && value != "FALSE" &&
+                           value != "off" && value != "OFF");
+}
+
+uint64_t DispatchGapDebugThresholdNs() {
+  static const uint64_t threshold = []() -> uint64_t {
+    if (!DispatchGapDebugEnabled()) return 0;
+
+    uint64_t parsed = 50000;
+    if (os::IsEnvVarSet("HSA_DISPATCH_GAP_DEBUG_NS")) {
+      const auto value = os::GetEnvVar("HSA_DISPATCH_GAP_DEBUG_NS");
+      if (!value.empty()) {
+        char* end = nullptr;
+        const auto value_parsed = std::strtoull(value.c_str(), &end, 10);
+        if (end != value.c_str() && value_parsed != 0) parsed = value_parsed;
+      }
+    }
+
+    std::atexit(DumpDispatchGapDebug);
+    return parsed;
+  }();
+
+  return threshold;
+}
+
+void MaybeRecordDispatchGap(uint32_t node_id, core::Signal* signal, uint64_t raw_start,
+                            uint64_t raw_end, uint64_t translated_start,
+                            uint64_t translated_end) {
+  if (DispatchGapDebugThresholdNs() == 0) return;
+
+  std::lock_guard<std::mutex> lock(DispatchGapDebugLock());
+  DispatchGapDebugData()[node_id].push_back(
+      {&signal->signal_, raw_start, raw_end, translated_start, translated_end});
+}
+
+}  // namespace
 
 GpuAgent::GpuAgent(HSAuint32 node, const HsaNodeProperties& node_props, bool xnack_mode,
                    uint32_t index, core::DriverType driver_type)
@@ -3057,6 +3178,7 @@ void GpuAgent::TranslateTime(core::Signal* signal, hsa_amd_profiling_dispatch_ti
   // not impacted by clock measurement latency jitter.
   time.end = TranslateTime(end);
   time.start = TranslateTime(start);
+  MaybeRecordDispatchGap(node_id(), signal, start, end, time.start, time.end);
 }
 
 void GpuAgent::TranslateTime(core::Signal* signal, hsa_amd_profiling_async_copy_time_t& time) {
