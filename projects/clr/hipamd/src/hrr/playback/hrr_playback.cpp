@@ -494,6 +494,18 @@ static bool needs_ordering(uint16_t etype) {
     case HRR_API_HIPHOSTFREE:
     case HRR_API_HIPMEMADDRESSFREE:
     case HRR_API_HIPMEMRELEASE:
+    // Host/pinned + VMM handle creation. These populate shared maps
+    // (alloc_map / host_reg_bufs / vmm_va_map / vmm_handle_map) that later
+    // consumers (e.g. hipMemMap, hipHostGetDevicePointer) translate against.
+    // They must be ordered so a cross-thread consumer can never run before the
+    // create populates the map (their destroy/free counterparts above are
+    // already ordered — this restores the symmetry).
+    case HRR_API_HIPHOSTREGISTER:
+    case HRR_API_HIPHOSTUNREGISTER:
+    case HRR_API_HIPHOSTGETDEVICEPOINTER:
+    case HRR_API_HIPHOSTMALLOC:
+    case HRR_API_HIPMEMADDRESSRESERVE:
+    case HRR_API_HIPMEMCREATE:
     // Stream create / destroy
     case HRR_API_HIPSTREAMCREATE:
     case HRR_API_HIPSTREAMCREATEWITHFLAGS:
@@ -811,6 +823,16 @@ static bool write_u(FILE* f, const void* p, size_t n) {
   return fwrite(p, 1, n, f) == n;
 }
 
+static uint64_t pid_from_archive_dir(const fs::path& archive_dir) {
+  const std::string name = archive_dir.filename().string();
+  if (name.rfind("pid-", 0) != 0) return 0;
+
+  char* end = nullptr;
+  unsigned long long pid = std::strtoull(name.c_str() + 4, &end, 10);
+  if (!end || *end != '\0') return 0;
+  return static_cast<uint64_t>(pid);
+}
+
 static int repair_archive(const hrr::Archive& archive) {
   std::string events_path = archive.path + "/events.bin";
   std::string tmp_path    = events_path + ".repair.tmp";
@@ -864,17 +886,24 @@ static int repair_archive(const hrr::Archive& archive) {
     return 1;
   }
 
-  std::string manifest_path = archive.path + "/manifest.json";
+  fs::path archive_dir(archive.path);
+  std::string manifest_path = (archive_dir / "manifest.json").string();
+  ProcessInfo info{};
+  if (!read_process_manifest(manifest_path, info))
+    info.pid = pid_from_archive_dir(archive_dir);
+
   FILE* mf = fopen(manifest_path.c_str(), "w");
   if (mf) {
     fprintf(mf,
             "{\n"
-            "  \"version\": 1,\n"
-            "  \"capture_mode\": \"in-tree\",\n"
+            "  \"pid\": %llu,\n"
+            "  \"parent_pid\": %llu,\n"
             "  \"complete\": true,\n"
             "  \"event_count\": %zu,\n"
             "  \"blob_count\": %zu\n"
             "}\n",
+            static_cast<unsigned long long>(info.pid),
+            static_cast<unsigned long long>(info.parent_pid),
             archive.events.size(), archive.blob_count);
     fclose(mf);
   }

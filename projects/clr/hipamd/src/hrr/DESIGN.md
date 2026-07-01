@@ -315,8 +315,8 @@ HRR_VERSION = 3
               sequence_id    u64   monotonically increasing (atomic)
               timestamp_ns   u64   MONOTONIC wall clock
               thread_id      u64   OS thread ID (cached per-thread)
-              payload_length u16   total size INCLUDING this 32-byte header
-              reserved       u8[4] zero
+              payload_length u32   total size INCLUDING this 32-byte header (v4)
+              reserved       u8[2] zero
             payload bytes    (payload_length - 32 bytes)
               ret            i32   hipError_t return value
               params         per hrr_args_* struct fields
@@ -903,25 +903,6 @@ cmake --build build_test --target hrr-validate    # or: ninja -C build_test hrr-
 # Produces: build_test/.../hrr-validate
 ```
 
-## Comparison with Out-of-Tree Proxy
-
-| Property                        | Out-of-tree proxy         | In-tree dispatch hook           |
-|---------------------------------|---------------------------|---------------------------------|
-| API coverage                    | Manual subset (~20 APIs)  | Every HIP API (~529 total)      |
-| Windows support                 | Separate proxy DLL        | Single code path                |
-| Linux support                   | Separate LD_PRELOAD       | Single code path                |
-| Stream handle capture           | No                        | Yes                             |
-| Event capture / ordering        | No                        | Yes                             |
-| `hipGraph*`                     | No                        | Yes (full capture + replay)     |
-| D2H data validation             | No                        | Yes (`hrr-playback` default)    |
-| Fat-binary launch path          | No                        | Yes (compiler table slot)       |
-| ROCm version coupling           | Breaks on ABI shift       | Owns the table, always in sync  |
-| Kernel arg type info            | ELF + msgpack parse       | `kernel->signature()` directly  |
-| Kernel arg pointer detection    | `value_kind` string match | `desc.type_ == T_POINTER`       |
-| Kernel name lookup              | `g.funcs[]` side table    | `kernel->name()`                |
-| Supporting code for args        | ~360 lines (hrr_code_object.c) | 0 lines                    |
-| Handle IDs                      | Sequential u32 per type   | Raw pointer cast to u64         |
-
 ## Known Limitations
 
 ### CPU Thread Synchronisation — Fundamentally Uncapturable
@@ -952,9 +933,10 @@ These compiler-generated functions populate the runtime's internal host-symbol �
 device-symbol table used by `hipMemcpyToSymbol`, `hipMemcpyFromSymbol`,
 `hipGetSymbolAddress`, and `hipGetSymbolSize`.
 
-The capture shims record events for `__hipRegisterVar` and `__hipRegisterManagedVar`
-but write empty payloads — the variable name, host pointer, size, and flags are not
-captured. The playback shims are no-ops.
+The capture shims record events for `__hipRegisterVar` and `__hipRegisterManagedVar`,
+but the symbol name is stored only as a raw `uint64_t` host pointer (a capture-time
+address, useless at replay) rather than the name string, and the playback shims are
+no-ops. The host-symbol → device-symbol table is therefore never rebuilt.
 
 **Impact:** workloads that use `hipMemcpyToSymbol` / `hipMemcpyFromSymbol` will fail
 at replay because the symbol table is never populated. Kernel launches and all
@@ -1028,26 +1010,37 @@ at any point. D2H validation blobs cover only explicitly synchronised
 `hipMemcpy`-family calls; data accessed by the CPU directly through a managed pointer
 is never captured.
 
-### Single-Device Replay
+### Single-Device Replay (partial multi-GPU support)
 
-All captured device pointers are translated relative to device 0. Multi-GPU workloads
-that allocate memory on specific devices (via `hipSetDevice` + `hipMalloc`) or use
-peer-to-peer transfers are not supported at replay. `hipSetDevice` events with an
-out-of-range device ordinal are silently clamped to device 0.
+Device pointers are translated by recorded-VA → live-pointer lookup (not relative to
+device 0), and peer copies and the recorded `hipSetDevice` ordinal *are* honored, so
+multi-GPU workloads partially replay. The residual single-device assumptions are:
+`hipMemCreate` hardcodes `location.id = 0`, there is no per-device capture context, and
+allocations are not tagged with the device they were made on. Multi-GPU workloads that
+depend on specific device placement or peer-to-peer transfers may still replay
+incorrectly.
+
+`hipSetDevice` ordinal handling: the clamp lives only on the special-event replay path
+(`playback/hrr_playback.cpp`), not the generated handler (which is dead code for this
+event). It clamps an ordinal `>= hipGetDeviceCount()` down to 0 but does **not** guard
+negative ordinals.
 
 ### No Replay of `hipIpcMemHandle` / `hipExternalMemory`
 
 IPC memory handles, external memory imports (`hipImportExternalMemory`), and
-semaphore imports (`hipImportExternalSemaphore`) are recorded as raw events but the
-playback shims are no-ops. Workloads that communicate with other processes via IPC
-handles cannot be replayed in isolation.
+semaphore imports (`hipImportExternalSemaphore`) are recorded as raw events, but the
+opaque handle bytes and import descriptors are never captured. At replay the shims call
+the real APIs with zeroed/stale handles (they are no longer literal no-ops), so the
+imported memory/semaphore is never validly mapped. Workloads that communicate with
+other processes via IPC handles cannot be replayed in isolation.
 
 ### `hipStreamCaptureModeThreadLocal` Downgraded
 
 If the workload uses `hipStreamBeginCapture` with `hipStreamCaptureModeThreadLocal`,
-the playback falls back to `hipStreamCaptureModeGlobal` because thread-local capture
-mode interacts with the single-submission-thread replay model. The graphs are
-reconstructed correctly but the capture mode semantics differ.
+playback attempts `ThreadLocal` first and preserves it on success; it downgrades to
+`hipStreamCaptureModeGlobal` only if the runtime rejects the ThreadLocal call. When a
+downgrade occurs the graph is reconstructed correctly but the capture-mode semantics
+differ.
 
 ### Archive Size — No Incremental / Ring-Buffer Mode
 
@@ -1090,9 +1083,20 @@ in `alloc_map`:
 | `hipMallocHost` | no-op |
 | `hipMemAllocHost` | no-op |
 | `hipMalloc3DArray` | no-op |
+| `hipMallocArray` | no-op |
+| `hipMallocMipmappedArray` | no-op |
 
-These APIs allocate pinned host memory or 3D arrays. At replay, no memory is
+These APIs allocate pinned host memory or array storage. At replay, no memory is
 actually allocated and no pointer is added to `alloc_map`.
+
+**`hipExtMallocWithFlags` is now fully replayed (finding H4, fixed).** It is a device
+allocation, so it is no longer a no-op: it is a `MANUAL_PLAYBACK_APIS` handler that
+calls the real `hipExtMallocWithFlags` (preserving the recorded flags), applies the
+same padding and zero-init as `hipMalloc`, and records the buffer in `alloc_map`. H2D,
+D2H, and kernel-argument pointers derived from it now translate correctly. (Previously
+it was simultaneously a declared device allocation *and* in `NOOP_PLAYBACK_APIS`; the
+no-op won, so nothing was allocated or recorded and every derived pointer translated to
+`nullptr`.)
 
 **What still works:**
 
@@ -1131,8 +1135,6 @@ created at replay time.
 
 **What still works:**
 
-- H2D memcpy that populates the underlying device array (e.g. `hipMemcpyToArray`)
-  is fully replayed from its blob.
 - D2H memcpy that reads back from a plain device allocation using the texture
   workload's `hipMalloc` buffer replays and validates correctly.
 
@@ -1141,10 +1143,18 @@ created at replay time.
 - Kernels that read from a texture object handle: the handle translates to
   `nullptr` (no entry in the handle maps), so the kernel reads from address 0
   and produces wrong results.
+- The entire `hipArray` path. Array creation (`hipMallocArray`,
+  `hipMallocMipmappedArray`, `hipMalloc3DArray`) is a no-op at replay, so
+  `array_map` / `mipmapped_map` are never populated. Array-backed copies
+  (`hipMemcpyToArray`/`FromArray`, `hipMemcpy2D{To,From}Array`, `hipMemcpyHtoA` /
+  `AtoH` / `AtoD` / `DtoA` / `AtoA`) capture **no blob** and replay as no-ops, so
+  array contents are never populated or validated. (Earlier revisions of this
+  document incorrectly claimed `hipMemcpyToArray` was "fully replayed from its blob";
+  it is not.)
 
 **Impact:** workloads that only create and destroy texture objects, then operate on
-the underlying device memory via regular memcpy, replay correctly. Workloads where
-GPU kernels perform texture fetches (the primary purpose of texture objects) will
+the underlying device memory via regular (non-array) memcpy, replay correctly.
+Workloads that perform texture fetches, or that read/write `hipArray` storage, will
 produce incorrect output.
 
 **Workaround:** none currently. Implementing texture replay would require recording
@@ -1227,10 +1237,131 @@ Other HIP features with similar complications include device-side enqueue, coope
 groups with CPU-side barriers, and persistent kernels with CPU-side steering. These are
 not currently handled.
 
+### Explicit Graph Construction — Not Supported (fails loudly)
+
+Only the **stream-capture** graph chain is supported (`hipStreamBeginCapture` →
+`hipStreamEndCapture` → `hipGraphInstantiate` → `hipGraphLaunch`). Graphs built
+explicitly through the node API are not — and replay no longer silently produces an
+empty graph with skipped launches (finding H1). The failure is split into two levels:
+
+- **Hard fail-loud at instantiate.** `hipGraphInstantiate` / `hipGraphInstantiateWithFlags`
+  (manual handlers) return `hipErrorNotSupported` — which the dispatcher treats as
+  fatal — when the graph handle is absent from `graph_map`. A miss can only happen for
+  a node-API-built graph, since the stream-capture chain always records its graph via
+  `hipStreamEndCapture`. This is the point that actually matters: a non-replayable
+  graph can never be launched as an empty graph.
+- **Attributable warning at construction (non-fatal).** `hipGraphCreate` /
+  `hipGraphClone` / every `hipGraphAdd*Node` / `hipGraphInstantiateWithParams` are
+  `ERROR_STUB_PLAYBACK_APIS`: they log a loud, per-API "explicit (node-API) graph
+  construction is NOT supported" message and return `hipSuccess`. They are deliberately
+  non-fatal so a program that merely *creates/clones* a graph (or exercises these APIs
+  for coverage) without instantiating it in an unsupported way still replays; if such a
+  graph is later instantiated, the instantiate gate above fires.
+- Node-parameter struct pointers are still stored as raw `uint64_t` without
+  dereferencing (full node-API replay remains future work).
+
+The supported stream-capture path is unaffected: it never emits `hipGraphCreate` /
+`hipGraphAdd*Node` events, and its graph is in `graph_map` so instantiate succeeds.
+
+### Wire-Format Size Limits
+
+The event wire format (finding H5):
+
+- **`payload_length` is now a `uint32_t` (wire v4).** `hrr_event_header::payload_length`
+  was widened from `uint16_t` to `uint32_t` (the 32-byte header size is preserved by
+  shrinking `reserved` to 2 bytes), so kernel launches with large serialized payloads
+  (many args / long mangled names / large by-value structs) up to ~4 GiB are recorded
+  normally instead of being dropped at 65535 bytes. `HRR_VERSION` was bumped to 4; the
+  writer's single-record buffer path now writes any oversized record straight through.
+- **Per-argument size limit (64 KiB) now fails loudly.** Each kernel arg's size is still
+  a `uint16_t`. A by-value struct argument ≥ 64 KiB cannot be represented, so the launch
+  is **dropped with an error-level log** and the whole archive is marked **incomplete**
+  via `hrr_cap::writer::mark_incomplete()` — the clean-shutdown trailer is omitted and
+  `manifest.complete=false`, so replay/validation cannot mistake a capture missing a GPU
+  launch for a faithful one. (Previously the size wrapped mod 65536, slipping past the
+  total-payload guard and writing a corrupt event.)
+- **Pointer-translation size precondition.** Whole-arg pointer translation requires the
+  recorded `arg_size >= 8`; a smaller pointer descriptor is copied through untranslated,
+  passing the stale capture-time VA to the kernel.
+
+### 2D/3D Memcpy and Memset — Blob Capture Status
+
+- `hipMemcpy2D` / `hipMemcpy2DAsync` are now blob-captured (finding H3), matching the 1D
+  and 3D families. They are `MANUAL_CAPTURE_APIS` / `MANUAL_PLAYBACK_APIS`: H2D snapshots
+  the pitched host `src` region (`spitch*(height-1)+width` bytes) as a blob, and at
+  replay the captured blob is substituted for the untranslatable capture-time host VA
+  and copied into the translated device `dst` with the recorded `dpitch`. D2H snapshots
+  the host `dst` after the copy and validates the device result against it at replay.
+  Row-padded image/tensor buffers are now handled.
+- `hipMemset3D` / `hipMemset3DAsync` drop the destination pitched pointer/extent at
+  capture (`pitchedDevPtr = 0`) and no-op at replay, so 3D-memset-initialized regions
+  are invisible to replay.
+
+### Multi-Thread Replay Ordering — Handle-Creating APIs
+
+`needs_ordering()` forces handle-lifecycle events into global capture order so a
+consumer never runs before its handle is created. The previously-missing
+handle-*creating* APIs — `hipHostRegister`, `hipHostGetDevicePointer`, `hipHostMalloc`,
+`hipMemAddressReserve`, `hipMemCreate` (plus `hipHostUnregister`) — are now ordered
+(finding H6), restoring symmetry with their already-ordered destroy/free counterparts.
+Under `--multi-thread`, a cross-thread consumer (e.g. `hipMemMap`) can no longer
+dispatch before the create populates the translation map and silently
+`return hipSuccess` while skipping the mapping.
+
+### Validation-Fidelity Caveats
+
+D2H validation can pass when replay actually diverged:
+
+- **Length clamp.** Comparison uses `min(copy_size, blob_size)`; a truncated or
+  crash-recovered blob validates only a prefix (the corrupted tail is unchecked) and
+  still counts as PASS. A zero-length compare counts as pass.
+- **Float-dtype guessing.** Blobs carry no dtype. On a byte mismatch the validator
+  tries `{fp32, bf16, fp16, fp64}` and passes on the first encoding within tolerance,
+  so integer/index/pointer output buffers can silently false-pass; both-NaN counts as
+  equal.
+- **Zero-init masks OOB.** Replay zero-initialises each (possibly over-allocated)
+  device allocation, so an out-of-bounds-reading kernel reads deterministic zeros
+  instead of faulting and may still validate. It also diverges from non-zero original
+  memory.
+- **Padded-range overlap.** With `HIP_HRR_REPLAY_ALLOC_PAD_FACTOR > 1`, a padded
+  `alloc_map` range can swallow the next allocation's base; a sub-pointer whose true
+  allocation is absent can resolve to the wrong neighbour at a plausible offset (no
+  fault, may pass tolerance).
+
+### Replay Robustness
+
+- **Query spin-loop has no escape.** The `hipEventQuery` / `hipStreamQuery` replay
+  loop spins on `hipErrorNotReady` with no `fatal_error` check and no watchdog (the
+  sync watchdog only bounds `hipDeviceSynchronize`). A never-completing producer hangs
+  the entire replay.
+- **Reader vs. playback divergence.** On a malformed kernel-arg stream the offline
+  reader rejects the whole launch (`return false`), while the live replayer `break`s
+  and launches with the partial arg list — so validation tooling cannot predict replay
+  behavior.
+- **H2D size clamp is silent.** On a destination-size mismatch, H2D copies a truncated
+  prefix, logs only to stderr, returns `hipSuccess`, and does not affect pass/fail
+  accounting or the exit code — masking allocation-size divergences.
+
+### `co_hash` Fallback — Wrong-Module Bind
+
+Beyond the documented "duplicate name + no hash" case: even with a valid recorded
+`co_hash`, if `hipModuleGetFunction` fails to find the symbol in the hashed module, the
+resolver scans **all** loaded modules and binds (and caches) the first same-named
+function from any code object, with no identity check — potentially binding the wrong
+kernel.
+
+### Host Callbacks and Struct-Pointer Inputs — Not Captured
+
+- `hipStreamAddCallback` / `hipLaunchHostFunc` record the callback pointer as 0; the
+  host-side work and any device-staging side effects it performs are never captured or
+  replayed. This is distinct from the app-thread CPU-sync limitation above.
+- By default the code generator stores an input struct-pointer parameter as a raw
+  `uint64_t` without serialising the pointed-to struct; only hand-written manual shims
+  copy struct bytes. A newly-captured, non-manual struct-input API therefore loses its
+  payload silently.
+
 ## Relationship to Original HRR Code
 
-- `hip_hrr.cpp` / `hip_hrr.h` — former in-tree recording hooks, superseded by this layer.
-  They are compiled but no longer called (wiring removed from `hip_context.cpp`).
 - `out_of_tree/hrr_proxy_win.c` — Windows proxy DLL; still useful for recording against
   a stock ROCm install where patching `amdhip64` is not possible.
 
