@@ -39,8 +39,9 @@ private:
     enum class IoProbeResult {
         NotRun,
         Ok,            // zero-sized read returned 0
-        NoDevice,      // -1/ENODEV: kernel/amdgpu/p2pdma not ready
         FsUnsupported, // -hipFileInternalError: filesystem not a valid fastpath target
+        NoDevice,      // -1/ENODEV: one of buffer not on NVMe device (e.g. lvm volume or md device), AIS not
+                       // initialized on device, or p2pdma not ready
         OtherError,    // any other result
     };
 

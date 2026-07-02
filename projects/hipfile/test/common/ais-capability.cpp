@@ -132,7 +132,8 @@ AisCapability::ioProbeReason(IoProbeResult result)
         case IoProbeResult::Ok:
             return "ok";
         case IoProbeResult::NoDevice:
-            return "no device / p2pdma not ready";
+            return "ENODEV: storage not on a P2PDMA-capable NVMe device (e.g. lvm/md "
+                   "volume), AIS not initialized on the device, or pcie_p2pdma_distance < 0";
         case IoProbeResult::FsUnsupported:
             return "filesystem not supported";
         case IoProbeResult::OtherError:
