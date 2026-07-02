@@ -177,11 +177,11 @@ AisCapability::report() const
 
     const char *io_status =
         io_probe == IoProbeResult::Ok ? "Pass" : (io_probe == IoProbeResult::NotRun ? "Skipped" : "Fail");
-    os << "  Test I/O check:     " << io_status << " (" << ioProbeReason(io_probe);
+    os << "  Test I/O check:     " << io_status;
     if (io_probe != IoProbeResult::Ok && io_probe != IoProbeResult::NotRun) {
-        os << "; ret=" << io_probe_ret << ", errno=" << io_probe_errno;
+        os << " (" << ioProbeReason(io_probe) << "; ret=" << io_probe_ret << ", errno=" << io_probe_errno
+           << ")";
     }
-    os << ")";
 
     return os.str();
 }
