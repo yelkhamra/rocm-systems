@@ -37,11 +37,11 @@ public:
 
 private:
     enum class IoProbeResult {
-        NotRun,
+        NotRun,        // zero-sized I/O probe unavailable (ROCm < 7.14)
         Ok,            // zero-sized read returned 0
-        FsUnsupported, // -hipFileInternalError: filesystem not a valid fastpath target
         NoDevice,      // -1/ENODEV: one of buffer not on NVMe device (e.g. lvm volume or md device), AIS not
                        // initialized on device, or p2pdma not ready
+        InternalError, // -hipFileInternalError: usually a fastpath score() rejection
         OtherError,    // any other result
     };
 

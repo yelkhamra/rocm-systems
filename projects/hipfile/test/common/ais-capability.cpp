@@ -118,7 +118,7 @@ AisCapability::classifyIoProbe(ssize_t ret, int err)
         return IoProbeResult::NoDevice;
     }
     if (ret == -static_cast<ssize_t>(hipFileInternalError)) {
-        return IoProbeResult::FsUnsupported;
+        return IoProbeResult::InternalError;
     }
     return IoProbeResult::OtherError;
 }
@@ -134,8 +134,9 @@ AisCapability::ioProbeReason(IoProbeResult result)
         case IoProbeResult::NoDevice:
             return "ENODEV: storage not on a P2PDMA-capable NVMe device (e.g. lvm/md "
                    "volume), AIS not initialized on the device, or pcie_p2pdma_distance < 0";
-        case IoProbeResult::FsUnsupported:
-            return "filesystem not supported";
+        case IoProbeResult::InternalError:
+            return "fastpath rejected the request (unsupported filesystem, misaligned I/O, "
+                   "or non-device buffer)";
         case IoProbeResult::OtherError:
             return "unexpected error (zero-sized I/O may be unsupported)";
         default:
