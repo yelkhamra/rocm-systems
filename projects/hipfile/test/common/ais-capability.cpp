@@ -152,9 +152,11 @@ AisCapability::populate(hipFileHandle_t handle, void *device_buffer)
     detectAmdgpu();
     detectIoProbe(handle, device_buffer);
 
-    std::cerr << "AIS kernel AIS-init support: " << (kernel_ais ? "yes" : "no") << "\n";
-    std::cerr << "AIS HIP runtime support:     " << (hip_runtime ? "yes" : "no") << "\n";
-    std::cerr << "AIS amdgpu support:          " << (amdgpu ? "yes" : "no") << "\n";
+    std::cerr << "amdgpu: AIS supported:            " << (amdgpu ? "yes" : "no") << "\n";
+    std::cerr << "amdgpu: AIS initialized:          " << (kernel_ais ? "yes" : "no") << "\n";
+    std::cerr << "HIP Runtime: AIS supported:       " << (hip_runtime ? "yes" : "no") << "\n";
+    std::cerr << "Zero sized I/O ran and supported: " << (io_probe == IoProbeResult::Ok ? "yes" : "no")
+              << "\n";
 
     if (fastpathAvailable()) {
         return GateDecision::Run;
