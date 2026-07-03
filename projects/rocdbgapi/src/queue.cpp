@@ -642,6 +642,7 @@ private:
 
     uint32_t grid_dimensions () const;
     std::array<uint32_t, 3> grid_sizes () const;
+    std::array<uint32_t, 3> cluster_sizes () const;
     std::array<uint16_t, 3> workgroup_sizes () const;
 
     void get_info (amd_dbgapi_dispatch_info_t query, size_t value_size,
@@ -773,6 +774,33 @@ aql_queue_t::aql_dispatch_t::grid_sizes () const
     m_packet);
 }
 
+std::array<uint32_t, 3>
+aql_queue_t::aql_dispatch_t::cluster_sizes () const
+{
+  return std::visit (
+    [] (auto &&p) -> std::array<uint32_t, 3>
+    {
+      using T = std::decay_t<decltype (p)>;
+      if constexpr (std::is_same_v<hsa_kernel_dispatch_packet_t, T>)
+        throw api_error_t (AMD_DBGAPI_STATUS_ERROR_NOT_SUPPORTED);
+      else
+        {
+          /* If not in cluster mode, cluster size is 1,1,1.  */
+          if (p.cluster_size_x == 1 && p.cluster_size_y == 1
+              && p.cluster_size_z == 1)
+            throw api_error_t (AMD_DBGAPI_STATUS_ERROR_NOT_AVAILABLE);
+
+          return { static_cast<uint32_t> (p.cluster_size_x
+                                          * p.workgroup_size_x),
+                   static_cast<uint32_t> (p.cluster_size_y
+                                          * p.workgroup_size_y),
+                   static_cast<uint32_t> (p.cluster_size_z
+                                          * p.workgroup_size_z) };
+        }
+    },
+    m_packet);
+}
+
 std::array<uint16_t, 3>
 aql_queue_t::aql_dispatch_t::workgroup_sizes () const
 {
@@ -897,6 +925,9 @@ aql_queue_t::aql_dispatch_t::get_info (amd_dbgapi_dispatch_info_t query,
       utils::get_info (
         value_size, value,
         std::visit ([] (auto &&p) { return p.completion_signal; }, m_packet));
+      return;
+    case AMD_DBGAPI_DISPATCH_INFO_CLUSTER_SIZES:
+      utils::get_info (value_size, value, cluster_sizes ());
       return;
     }
 
