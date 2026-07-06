@@ -24,7 +24,6 @@ from utils.utils_profile import (
     _parse_function_backend,
     _parse_function_fields,
 )
-from utils.utils_profile import _augment_marker_csv, _parse_function_backend
 
 GUID = "abc-1234-def"
 
