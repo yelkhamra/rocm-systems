@@ -136,11 +136,14 @@ class TestSnapClkLimitToDpm(unittest.TestCase):
                 amdsmi_set_value.SetValueCommands._snap_clk_limit_to_dpm(None, None, 1600)
             )
 
-    def test_sclk_two_level_snaps_down(self):
-        # Two-level domain ({500, 2100} MHz): an unaligned request snaps down to 500.
-        sclk_hz = [500_000_000, 2100_000_000]
-        self.assertEqual(self._snap(1500, sclk_hz), 500)
-        self.assertEqual(self._snap(2100, sclk_hz), 2100)
+    def test_two_level_dpm_snaps_down(self):
+        # Sparse two-level DPM table ({500, 2100} MHz): an unaligned request
+        # snaps down to 500. sclk is excluded from snapping at the CLI call
+        # site (it honors the exact requested max), so this only covers the
+        # generic discrete-table path used by mclk/fclk.
+        two_level_hz = [500_000_000, 2100_000_000]
+        self.assertEqual(self._snap(1500, two_level_hz), 500)
+        self.assertEqual(self._snap(2100, two_level_hz), 2100)
 
     def test_mclk_levels_snap_down(self):
         # Multi-level domain ({900, 1100, 1200, 1300} MHz).

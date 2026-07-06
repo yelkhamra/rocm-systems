@@ -1662,19 +1662,24 @@ class SetValueCommands:
                         self.logger.print_output()
                         self.logger.clear_multiple_devices_output()
                         return
-                    # Snap max down to the largest selectable DPM level. The
-                    # driver does not clamp caps that fall between levels, so an
-                    # unaligned request could otherwise run at the next-higher level.
-                    snapped_val = self._snap_clk_limit_to_dpm(args.gpu, amdsmi_clk_type, val)
-                    if snapped_val is not None and snapped_val != val:
-                        logging.debug(
-                            "snapping %s max from %dMHz to %dMHz "
-                            "(nearest reachable DPM level <= requested)",
-                            clk_type,
-                            val,
-                            snapped_val,
-                        )
-                        val = snapped_val
+                    # Snap max down to the largest selectable DPM level for
+                    # clocks that only expose a discrete DPM table (mclk, fclk).
+                    # The driver does not clamp caps that fall between those
+                    # levels, so an unaligned request could otherwise run at the
+                    # next-higher level. sclk (GFX) supports a continuous
+                    # frequency range and enforces an arbitrary cap exactly, so
+                    # its requested value is honored as-is and never snapped.
+                    if clk_type != "sclk":
+                        snapped_val = self._snap_clk_limit_to_dpm(args.gpu, amdsmi_clk_type, val)
+                        if snapped_val is not None and snapped_val != val:
+                            logging.debug(
+                                "snapping %s max from %dMHz to %dMHz "
+                                "(nearest reachable DPM level <= requested)",
+                                clk_type,
+                                val,
+                                snapped_val,
+                            )
+                            val = snapped_val
                     if val == clk_tuple["max_clk"]:
                         val_changed = False  # Clock limit value did not changed
             except amdsmi_exception.AmdSmiLibraryException as e:
