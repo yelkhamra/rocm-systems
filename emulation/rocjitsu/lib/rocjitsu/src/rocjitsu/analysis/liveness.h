@@ -67,8 +67,8 @@ struct LivenessAnalysisOptions {
 
   /// @brief Lanes per wavefront (EXEC bit width), passed to the EXEC-state
   /// analysis so it can tell full-EXEC writes from partial half-writes. 64 for
-  /// Wave64, 32 for Wave32. Defaults to 64.
-  uint8_t wave_size = 64;
+  /// Wave64, 32 for Wave32.
+  uint8_t wave_size = 0;
 };
 
 /// @brief Reverse-post-order traversal of one kernel's implicit CFG.
