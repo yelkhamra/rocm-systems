@@ -16,10 +16,11 @@ Full documentation for ROCm Compute Profiler is available at [https://rocm.docs.
 
 * Added experimental Triton support to ML API tracing. Profile with `--experimental --triton-trace` to emit a ROCTX marker per Triton/Inductor kernel launch attributed to the user call site, and analyze with `--experimental --list-triton-operators` or `--experimental --triton-operator <pattern>` to list or filter Triton operators independently of Torch.
 
+* Added ``--ml-trace-with-params {off,shapes,values}`` to capture operator arguments during ML API tracing (Torch and Triton). When set to ``shapes`` or ``values``, the captured arguments are written to a new ``Args`` column in ``ml_api_trace/consolidated.csv``.
+
 ### Changed
 
 * Split Python version requirements by mode. Profile mode now runs on Python 3.8+ (standard library only). Analyze mode requires Python 3.9+ and exits with a clear message on older interpreters instead of failing with an import error.
-
 * `--pc-sampling-sorting-type` now defaults to `count` (was `offset`), so the PC sampling table shows the most-sampled instructions first.
 
 * Renamed the `Pct of Peak` / `PoP` analysis column to `Percent of Peak` in analysis output.

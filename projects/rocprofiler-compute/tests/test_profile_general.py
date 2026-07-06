@@ -2841,6 +2841,13 @@ def test_torch_trace_profile(
     assert df["Counter_Value"].notnull().all()
     assert (df["Counter_Value"] != "").all(), "Empty Counter_Value in consolidated.csv"
 
+    # 8b. Operator-argument capture populates the Args column
+    assert "Args" in df.columns, "Args column missing from consolidated.csv"
+    captured_args = df["Args"].fillna("").astype(str).str.strip()
+    assert (captured_args.str.startswith("(") & (captured_args != "()")).any(), (
+        "No operator arguments captured in consolidated.csv Args column"
+    )
+
     # ---- Verify --list-torch-operators CLI output format (checks 9–14) ----
 
     # 9. Banner
@@ -3101,6 +3108,13 @@ def test_triton_trace_profile(
         "No Triton operators in consolidated.csv"
     )
 
+    # Operator-argument capture populates the Args column.
+    assert "Args" in df.columns, "Args column missing from consolidated.csv"
+    captured_args = df["Args"].fillna("").astype(str).str.strip()
+    assert (captured_args.str.startswith("(") & (captured_args != "()")).any(), (
+        "No operator arguments captured in consolidated.csv Args column"
+    )
+
     # ---- analyze --triton-operator ----
 
     capsys.readouterr()
@@ -3220,6 +3234,13 @@ def test_ml_api_trace_torch_compile_triton(
         "No Triton operators in consolidated.csv"
     )
 
+    # Operator-argument capture populates the Args column.
+    assert "Args" in df.columns, "Args column missing from consolidated.csv"
+    captured_args = df["Args"].fillna("").astype(str).str.strip()
+    assert (captured_args.str.startswith("(") & (captured_args != "()")).any(), (
+        "No operator arguments captured in consolidated.csv Args column"
+    )
+
     # ---- analyze --triton-operator ----
 
     capsys.readouterr()
@@ -3288,7 +3309,13 @@ def test_torch_trace_overhead(binary_handler_profile_rocprof_compute):
     returncode_with_flag = binary_handler_profile_rocprof_compute(
         config,
         workload_dir_with_flag,
-        ["--experimental", "--torch-trace", "--iteration-multiplexing"],
+        [
+            "--experimental",
+            "--torch-trace",
+            "--ml-trace-with-params",
+            "off",
+            "--iteration-multiplexing",
+        ],
         check_success=True,
         roof=False,
         app_name="torch_test_app",
