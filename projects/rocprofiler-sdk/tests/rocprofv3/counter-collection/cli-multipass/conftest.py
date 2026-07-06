@@ -22,8 +22,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-import csv
-import os
 import pytest
 
 
@@ -33,6 +31,14 @@ def pytest_addoption(parser):
         action="store",
         help="Path to output directory.",
     )
+    parser.addoption(
+        "--expected-counters",
+        action="store",
+        nargs="+",
+        default=[],
+        help="Ordered list of counters, one per pass (pass_1, pass_2, ...). "
+        "The number of passes is derived from the length of this list.",
+    )
 
 
 @pytest.fixture
@@ -41,48 +47,5 @@ def output_dir(request):
 
 
 @pytest.fixture
-def pass1_agent_info(output_dir):
-    """Agent info from pass 1"""
-    filename = os.path.join(output_dir, "pass_1", "out_agent_info.csv")
-    data = []
-    with open(filename, "r") as inp:
-        reader = csv.DictReader(inp)
-        for row in reader:
-            data.append(row)
-    return data
-
-
-@pytest.fixture
-def pass1_counter_data(output_dir):
-    """Counter data from pass 1"""
-    filename = os.path.join(output_dir, "pass_1", "out_counter_collection.csv")
-    data = []
-    with open(filename, "r") as inp:
-        reader = csv.DictReader(inp)
-        for row in reader:
-            data.append(row)
-    return data
-
-
-@pytest.fixture
-def pass2_agent_info(output_dir):
-    """Agent info from pass 2"""
-    filename = os.path.join(output_dir, "pass_2", "out_agent_info.csv")
-    data = []
-    with open(filename, "r") as inp:
-        reader = csv.DictReader(inp)
-        for row in reader:
-            data.append(row)
-    return data
-
-
-@pytest.fixture
-def pass2_counter_data(output_dir):
-    """Counter data from pass 2"""
-    filename = os.path.join(output_dir, "pass_2", "out_counter_collection.csv")
-    data = []
-    with open(filename, "r") as inp:
-        reader = csv.DictReader(inp)
-        for row in reader:
-            data.append(row)
-    return data
+def expected_counters(request):
+    return request.config.getoption("--expected-counters")

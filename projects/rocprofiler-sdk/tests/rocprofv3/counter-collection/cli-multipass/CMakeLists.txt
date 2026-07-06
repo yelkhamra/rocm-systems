@@ -32,15 +32,18 @@ project(
 
 find_package(rocprofiler-sdk REQUIRED)
 
+rocprofiler_configure_pytest_files(CONFIG pytest.ini COPY validate.py conftest.py
+                                                          input.json input.yml)
+
 string(REPLACE "LD_PRELOAD=" "ROCPROF_PRELOAD=" PRELOAD_ENV
                "${ROCPROFILER_MEMCHECK_PRELOAD_ENV}")
 
-# CLI multi-pass test using multiple --pmc flags
+# CLI multi-pass test using multiple --pmc flags (one group per pass)
 rocprofiler_add_integration_execute_test(
     rocprofv3-test-counter-collection-cli-multipass
     COMMAND
-        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --pmc SQ_WAVES --pmc GRBM_COUNT -d
-        ${CMAKE_CURRENT_BINARY_DIR}/%argt%-cc -o out -f csv --
+        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --pmc SQ_WAVES --pmc GRBM_COUNT --pmc
+        GRBM_GUI_ACTIVE -d ${CMAKE_CURRENT_BINARY_DIR}/%argt%-cc -o out -f csv --
         $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
@@ -53,7 +56,57 @@ rocprofiler_add_integration_validate_test(
     TEST_PATHS validate.py
     COPY conftest.py
     CONFIG pytest.ini
-    ARGS --output-dir ${CMAKE_CURRENT_BINARY_DIR}/simple-transpose-cc
+    ARGS --output-dir ${CMAKE_CURRENT_BINARY_DIR}/simple-transpose-cc --expected-counters
+         SQ_WAVES GRBM_COUNT GRBM_GUI_ACTIVE
     TIMEOUT 45
     LABELS "integration-tests"
     FIXTURES_REQUIRED rocprofv3-test-counter-collection-cli-multipass)
+
+# multi-pass test defining the pmc groups in a JSON input file
+rocprofiler_add_integration_execute_test(
+    rocprofv3-test-counter-collection-cli-multipass-json
+    COMMAND
+        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> -i
+        ${CMAKE_CURRENT_BINARY_DIR}/input.json -d
+        ${CMAKE_CURRENT_BINARY_DIR}/%argt%-cc-json -o out -f csv --
+        $<TARGET_FILE:simple-transpose>
+    DEPENDS simple-transpose
+    TIMEOUT 45
+    LABELS "integration-tests"
+    PRELOAD "${PRELOAD_ENV}"
+    FIXTURES_SETUP rocprofv3-test-counter-collection-cli-multipass-json)
+
+rocprofiler_add_integration_validate_test(
+    rocprofv3-test-counter-collection-cli-multipass-json
+    TEST_PATHS validate.py
+    COPY conftest.py input.json input.yml
+    CONFIG pytest.ini
+    ARGS --output-dir ${CMAKE_CURRENT_BINARY_DIR}/simple-transpose-cc-json
+         --expected-counters SQ_WAVES GRBM_COUNT GRBM_GUI_ACTIVE
+    TIMEOUT 45
+    LABELS "integration-tests"
+    FIXTURES_REQUIRED rocprofv3-test-counter-collection-cli-multipass-json)
+
+# multi-pass test defining the pmc groups in a YAML input file
+rocprofiler_add_integration_execute_test(
+    rocprofv3-test-counter-collection-cli-multipass-yaml
+    COMMAND
+        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> -i ${CMAKE_CURRENT_BINARY_DIR}/input.yml
+        -d ${CMAKE_CURRENT_BINARY_DIR}/%argt%-cc-yaml -o out -f csv --
+        $<TARGET_FILE:simple-transpose>
+    DEPENDS simple-transpose
+    TIMEOUT 45
+    LABELS "integration-tests"
+    PRELOAD "${PRELOAD_ENV}"
+    FIXTURES_SETUP rocprofv3-test-counter-collection-cli-multipass-yaml)
+
+rocprofiler_add_integration_validate_test(
+    rocprofv3-test-counter-collection-cli-multipass-yaml
+    TEST_PATHS validate.py
+    COPY conftest.py input.json input.yml
+    CONFIG pytest.ini
+    ARGS --output-dir ${CMAKE_CURRENT_BINARY_DIR}/simple-transpose-cc-yaml
+         --expected-counters SQ_WAVES GRBM_COUNT GRBM_GUI_ACTIVE
+    TIMEOUT 45
+    LABELS "integration-tests"
+    FIXTURES_REQUIRED rocprofv3-test-counter-collection-cli-multipass-yaml)
