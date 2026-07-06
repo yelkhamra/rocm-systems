@@ -87,7 +87,8 @@ public:
      * @param argv The command line arguments.
      */
     static void ParseCommandLine(std::string &input_path, std::string &output_file_path, bool &save_images, int &device_id,
-                                 RocJpegBackend &rocjpeg_backend, RocJpegDecodeParams &decode_params, int *num_threads, int *batch_size, int argc, char *argv[]) {
+                                 RocJpegBackend &rocjpeg_backend, RocJpegDecodeParams &decode_params, int *num_threads, int *batch_size, int argc, char *argv[],
+                                 int *pipeline_depth = nullptr) {
         if(argc <= 1) {
             ShowHelpAndExit("", num_threads != nullptr, batch_size != nullptr);
         }
@@ -162,6 +163,14 @@ public:
                 }
                 if (batch_size != nullptr)
                     *batch_size = atoi(argv[i]);
+                continue;
+            }
+            if (!strcmp(argv[i], "-pipeline_depth")) {
+                if (++i == argc) {
+                    ShowHelpAndExit("-pipeline_depth", num_threads != nullptr, batch_size != nullptr);
+                }
+                if (pipeline_depth != nullptr)
+                    *pipeline_depth = atoi(argv[i]);
                 continue;
             }
             if (!strcmp(argv[i], "-crop")) {
@@ -654,7 +663,8 @@ private:
             std::cout << "-t     [threads] - number of threads (<= 32) for parallel JPEG decoding - [optional - default: 1]\n";
         }
         if (show_batch_size) {
-            std::cout << "-b     [batch_size] - decode images from input by batches of a specified size - [optional - default: 1]\n";
+            std::cout << "-b     [batch_size] - decode images from input by batches of a specified size - [optional - default: 1]\n"
+                         "-pipeline_depth [N] - number of pipeline buffers for async GPU decode (N >= 2); increase if GPU decode latency >> CPU prep time - [optional - default: 2]\n";
         }
         exit(0);
     }
