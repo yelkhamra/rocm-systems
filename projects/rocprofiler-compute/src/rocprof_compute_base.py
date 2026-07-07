@@ -320,6 +320,12 @@ class RocProfCompute:
             self.handle_analyze_args()
 
     def handle_profile_args(self) -> None:
+        if "--join-type" in sys.argv:
+            console_warning(
+                "--join-type is deprecated and no longer has any effect; "
+                "it will be removed in a future release."
+            )
+
         # Handle list operations first - these are independent and exit immediately
         if getattr(self.__args, "list_sets", False):
             return

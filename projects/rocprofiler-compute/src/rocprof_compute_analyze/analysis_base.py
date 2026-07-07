@@ -308,12 +308,12 @@ class OmniAnalyze_Base:
                 console_error("analysis", "You cannot provide the same path twice.")
             seen_paths.add(dir_info[0])
 
+            validate_profiling_format(file_io.load_profiling_config(dir_info[0]))
+
         self._profiling_config: dict[str, Any] = file_io.load_profiling_config(
             args.path[0][0]
         )
         profiling_config = self.get_profiling_config()
-
-        validate_profiling_format(profiling_config)
 
         # --ml-api-trace enables every backend.
         ml_api_trace = profiling_config.get("ml_api_trace", False)

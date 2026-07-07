@@ -304,7 +304,10 @@ def create_df_pmc(
 
     df = pd.read_csv(pmc_perf_path)
 
-    if config_dict.get("format_rocprof_output") == "rocpd":
+    if (
+        config_dict.get("format_rocprof_output", _PROFILE_OUTPUT_FORMAT)
+        == _PROFILE_OUTPUT_FORMAT
+    ):
         df = utils_analysis.process_rocpd_csv(df)
 
     # Demangle original KernelNames
