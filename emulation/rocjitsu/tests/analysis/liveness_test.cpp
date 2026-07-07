@@ -280,7 +280,8 @@ std::vector<BasicBlock *> block_scope(const std::vector<std::unique_ptr<BasicBlo
 
 LivenessAnalysis analyze_scope(const std::vector<std::unique_ptr<BasicBlock>> &blocks) {
   auto scope = block_scope(blocks);
-  return LivenessAnalysis(KernelBlockScope(scope));
+  const ExecMaskAnalysis exec(KernelBlockScope(scope), /*wave_size=*/64);
+  return LivenessAnalysis(KernelBlockScope(scope), exec);
 }
 
 uint32_t pack_sopc(uint32_t op, uint16_t ssrc0, uint16_t ssrc1) {
@@ -914,7 +915,8 @@ TEST(LivenessAnalysis, MinFreeVgprForcesScratchAllocationAboveFloor) {
   LivenessAnalysisOptions options;
   options.min_free_vgpr = 4;
 
-  LivenessAnalysis liveness(KernelBlockScope(scope), options);
+  const ExecMaskAnalysis exec(KernelBlockScope(scope), /*wave_size=*/64);
+  LivenessAnalysis liveness(KernelBlockScope(scope), exec, options);
 
   const Instruction &use = *blocks[0]->instructions().begin();
   EXPECT_FALSE(liveness.is_live_before(use, {RegClass::VGPR, 0, 4}));
@@ -1001,7 +1003,8 @@ TEST(LivenessAnalysis, ExplicitBlockSubsetIgnoresOutsideSuccessors) {
   EXPECT_TRUE(all_decoded_liveness.is_live_before(def, {RegClass::VGPR, 0, 1}));
 
   std::vector<BasicBlock *> kernel_blocks{kernel0};
-  LivenessAnalysis kernel_liveness{KernelBlockScope(kernel_blocks)};
+  const ExecMaskAnalysis kernel_exec(KernelBlockScope(kernel_blocks), /*wave_size=*/64);
+  LivenessAnalysis kernel_liveness{KernelBlockScope(kernel_blocks), kernel_exec};
   EXPECT_FALSE(kernel_liveness.is_live_before(def, {RegClass::VGPR, 0, 1}));
 }
 

@@ -25,6 +25,7 @@
 namespace rocjitsu {
 
 class BasicBlock;
+class ExecMaskAnalysis;
 class Instruction;
 
 /// @brief The basic blocks reachable from one kernel entry.
@@ -64,11 +65,6 @@ struct LivenessAnalysisOptions {
   /// while scratch allocation can be forced above a descriptor-declared VGPR
   /// range to test whether semantic lowerings clobber guest registers.
   uint16_t min_free_vgpr = 0;
-
-  /// @brief Lanes per wavefront (EXEC bit width), passed to the EXEC-state
-  /// analysis so it can tell full-EXEC writes from partial half-writes. 64 for
-  /// Wave64, 32 for Wave32.
-  uint8_t wave_size = 0;
 };
 
 /// @brief Reverse-post-order traversal of one kernel's implicit CFG.
@@ -89,7 +85,10 @@ public:
   /// entry being translated, not every block decoded from the containing code
   /// object.
   /// @param blocks Blocks in one kernel CFG scope.
-  LivenessAnalysis(KernelBlockScope blocks, LivenessAnalysisOptions options = {},
+  /// @param exec Program-point EXEC-state analysis over the same @p blocks scope;
+  /// lets EXEC-masked vector defs count as kills where EXEC is provably full.
+  LivenessAnalysis(KernelBlockScope blocks, const ExecMaskAnalysis &exec,
+                   LivenessAnalysisOptions options = {},
                    std::span<const ScopedCfgEdge> extra_edges = {});
 
   /// @brief Block liveness by block object.
@@ -122,10 +121,10 @@ public:
                                                        uint16_t search_start = 0) const;
 
 private:
-  void analyze(KernelBlockScope blocks, std::span<const ScopedCfgEdge> extra_edges);
+  void analyze(KernelBlockScope blocks, const ExecMaskAnalysis &exec,
+               std::span<const ScopedCfgEdge> extra_edges);
 
   uint16_t min_free_vgpr_ = 0;
-  uint8_t wave_size_ = 0;
   std::vector<BlockLiveness> liveness_;
   std::unordered_map<const BasicBlock *, size_t> block_index_;
   std::unordered_map<const Instruction *, RegisterSet> live_before_;

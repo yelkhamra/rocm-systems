@@ -3,6 +3,7 @@
 
 #include "rocjitsu/code/dbt/binary_translator.h"
 
+#include "rocjitsu/analysis/exec_state.h"
 #include "rocjitsu/analysis/liveness.h"
 #include "rocjitsu/code/amdgpu_code_object.h"
 #include "rocjitsu/code/amdgpu_elf.h"
@@ -744,11 +745,13 @@ TranslatedCodeObject BinaryTranslator::translate(const AmdGpuCodeObject &obj) {
         scope.translation->target_vgpr_count, scope.translation->target_agpr_count,
         scope.translation->target_accvgpr_base, scope.translation->target_sgpr_count);
     LivenessAnalysisOptions liveness_options;
-    liveness_options.wave_size = scope.translation->guest_wavefront_size;
     if (options_.debug_min_free_vgpr)
       liveness_options.min_free_vgpr = *options_.debug_min_free_vgpr;
     const auto liveness_edges = scoped_call_liveness_edges(KernelBlockScope(scope.blocks), text);
-    LivenessAnalysis liveness(KernelBlockScope(scope.blocks), liveness_options, liveness_edges);
+    const ExecMaskAnalysis exec(KernelBlockScope(scope.blocks),
+                                scope.translation->guest_wavefront_size);
+    LivenessAnalysis liveness(KernelBlockScope(scope.blocks), exec, liveness_options,
+                              liveness_edges);
 
     // Phase 4: translate each relocated body instruction. Oversized semantic
     // expansions branch into this kernel's private cave immediately after the body.

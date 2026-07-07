@@ -99,14 +99,14 @@ std::vector<const BasicBlock *> reverse_post_order(KernelBlockScope blocks) {
   return postorder;
 }
 
-LivenessAnalysis::LivenessAnalysis(KernelBlockScope blocks, LivenessAnalysisOptions options,
+LivenessAnalysis::LivenessAnalysis(KernelBlockScope blocks, const ExecMaskAnalysis &exec,
+                                   LivenessAnalysisOptions options,
                                    std::span<const ScopedCfgEdge> extra_edges) {
   min_free_vgpr_ = options.min_free_vgpr;
-  wave_size_ = options.wave_size;
-  analyze(blocks, extra_edges);
+  analyze(blocks, exec, extra_edges);
 }
 
-void LivenessAnalysis::analyze(KernelBlockScope blocks,
+void LivenessAnalysis::analyze(KernelBlockScope blocks, const ExecMaskAnalysis &exec,
                                std::span<const ScopedCfgEdge> extra_edges) {
   liveness_.resize(blocks.size());
   for (size_t i = 0; i < blocks.size(); ++i) {
@@ -114,9 +114,6 @@ void LivenessAnalysis::analyze(KernelBlockScope blocks,
       block_index_.emplace(blocks[i], i);
   }
 
-  // Program-point EXEC approximation: lets EXEC-masked vector defs count as
-  // kills where EXEC is provably full.
-  const ExecMaskAnalysis exec(blocks, wave_size_);
   std::vector<std::vector<size_t>> successors(blocks.size());
   std::vector<std::vector<size_t>> predecessors(blocks.size());
   auto add_edge = [&](const BasicBlock *from, const BasicBlock *to) {
