@@ -9,7 +9,6 @@ import re
 import shlex
 import shutil
 import time
-import traceback
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
