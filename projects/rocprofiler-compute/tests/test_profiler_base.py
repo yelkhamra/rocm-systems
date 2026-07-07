@@ -336,6 +336,7 @@ def test_sdk_profiler_options_preserve_ld_preload_and_set_env(tmp_path, monkeypa
     assert options["LD_PRELOAD"] == "sdk_tool"
     assert options["ROCPROF_COUNTER_COLLECTION"] == "1"
 
+
 def test_rocprofv3_live_attach_uses_sync_output():
     """Unit test: rocprofv3 live attach requests synchronous output generation."""
     args = _make_sanitize_args(

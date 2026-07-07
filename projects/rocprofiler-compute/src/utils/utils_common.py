@@ -45,8 +45,7 @@ def is_gfx115x(gpu_arch: Optional[str]) -> bool:
 
 
 def validate_profiling_format(profiling_config: dict[str, Any]) -> None:
-    """Reject workloads produced by a removed profile backend.
-    """
+    """Reject workloads produced by a removed profile backend."""
     output_format = profiling_config.get("format_rocprof_output")
     if output_format is not None and output_format != _PROFILE_OUTPUT_FORMAT:
         console_error(
