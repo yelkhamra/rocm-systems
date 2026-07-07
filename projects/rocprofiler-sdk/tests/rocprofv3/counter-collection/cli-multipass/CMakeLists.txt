@@ -117,8 +117,8 @@ rocprofiler_add_integration_execute_test(
     rocprofv3-test-counter-collection-cli-multipass-combined
     COMMAND
         $<TARGET_FILE:rocprofiler-sdk::rocprofv3> -i
-        ${CMAKE_CURRENT_BINARY_DIR}/input-combined.json --pmc SQ_WAVES --pmc GRBM_COUNT
-        -d ${CMAKE_CURRENT_BINARY_DIR}/%argt%-cc-combined -o out -f csv --
+        ${CMAKE_CURRENT_BINARY_DIR}/input-combined.json --pmc SQ_WAVES --pmc GRBM_COUNT -d
+        ${CMAKE_CURRENT_BINARY_DIR}/%argt%-cc-combined -o out -f csv --
         $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
@@ -151,16 +151,15 @@ rocprofiler_add_integration_execute_test(
     TIMEOUT 45
     LABELS "integration-tests"
     PRELOAD "${PRELOAD_ENV}"
-    PASS_REGULAR_EXPRESSION
-        "multiple --pmc flags. is not compatible with attach mode")
+    PASS_REGULAR_EXPRESSION "multiple --pmc flags. is not compatible with attach mode")
 
 # multiple --pmc with --collection-period
 rocprofiler_add_integration_execute_test(
     rocprofv3-test-counter-collection-cli-multipass-rejects-collection-period
     COMMAND
         $<TARGET_FILE:rocprofiler-sdk::rocprofv3> --pmc SQ_WAVES --pmc GRBM_COUNT
-        --collection-period 0:100:1 -d ${CMAKE_CURRENT_BINARY_DIR}/%argt%-cc-err-cp -o
-        out -f csv -- $<TARGET_FILE:simple-transpose>
+        --collection-period 0:100:1 -d ${CMAKE_CURRENT_BINARY_DIR}/%argt%-cc-err-cp -o out
+        -f csv -- $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
     LABELS "integration-tests"
@@ -186,23 +185,25 @@ rocprofiler_add_integration_execute_test(
 rocprofiler_add_integration_execute_test(
     rocprofv3-test-counter-collection-cli-multipass-input-file-rejects-pid
     COMMAND
-        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> -i ${CMAKE_CURRENT_BINARY_DIR}/input.json
-        --pid 12345 -d ${CMAKE_CURRENT_BINARY_DIR}/%argt%-cc-err-inp-pid -o out -f csv --
+        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> -i
+        ${CMAKE_CURRENT_BINARY_DIR}/input.json --pid 12345 -d
+        ${CMAKE_CURRENT_BINARY_DIR}/%argt%-cc-err-inp-pid -o out -f csv --
         $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
     LABELS "integration-tests"
     PRELOAD "${PRELOAD_ENV}"
-    PASS_REGULAR_EXPRESSION
-        "multiple input-file jobs. is not compatible with attach mode")
+    PASS_REGULAR_EXPRESSION "multiple input-file jobs. is not compatible with attach mode"
+    )
 
 # input-file multi-pass (>1 job) with --collection-period
 rocprofiler_add_integration_execute_test(
     rocprofv3-test-counter-collection-cli-multipass-input-file-rejects-collection-period
     COMMAND
-        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> -i ${CMAKE_CURRENT_BINARY_DIR}/input.json
-        --collection-period 0:100:1 -d ${CMAKE_CURRENT_BINARY_DIR}/%argt%-cc-err-inp-cp -o
-        out -f csv -- $<TARGET_FILE:simple-transpose>
+        $<TARGET_FILE:rocprofiler-sdk::rocprofv3> -i
+        ${CMAKE_CURRENT_BINARY_DIR}/input.json --collection-period 0:100:1 -d
+        ${CMAKE_CURRENT_BINARY_DIR}/%argt%-cc-err-inp-cp -o out -f csv --
+        $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
     LABELS "integration-tests"

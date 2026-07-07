@@ -33,8 +33,8 @@ project(
 find_package(rocprofiler-sdk REQUIRED)
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-# GPU-free unit tests: import the rocprofv3 launcher (via --rocprofv3-path) and
-# exercise its multi-pass parsing/decision helpers. No execute fixture.
+# GPU-free unit tests: import the rocprofv3 launcher (via --rocprofv3-path) and exercise
+# its multi-pass parsing/decision helpers. No execute fixture.
 rocprofiler_add_integration_validate_test(
     rocprofv3-test-counter-collection-cli-multipass-unit
     TEST_PATHS test_multipass_parsing.py

@@ -40,7 +40,9 @@ def _write(tmp_path, name, text):
 # --pmc with action="append": one flag -> [["A","B"]] (single-pass, later
 # flattened by patch_args); two flags -> [["A"],["B"]] (multi-pass).
 def test_single_pmc_flag_is_single_pass(rocprofv3):
-    args, app = rocprofv3.parse_arguments(["--pmc", "SQ_WAVES", "GRBM_COUNT", "--", "./app"])
+    args, app = rocprofv3.parse_arguments(
+        ["--pmc", "SQ_WAVES", "GRBM_COUNT", "--", "./app"]
+    )
     assert args.pmc == [["SQ_WAVES", "GRBM_COUNT"]]
     assert len(args.pmc) == 1, "one --pmc flag must be a single group (single-pass)"
 
@@ -56,7 +58,10 @@ def test_multiple_pmc_flags_is_multipass(rocprofv3):
     assert len(args.pmc) > 1, "two --pmc flags must be two groups (multi-pass)"
 
     rocprofv3.patch_args(args)
-    assert args.pmc == [["SQ_WAVES"], ["GRBM_COUNT"]], "multi-pass groups must be preserved"
+    assert args.pmc == [
+        ["SQ_WAVES"],
+        ["GRBM_COUNT"],
+    ], "multi-pass groups must be preserved"
 
 
 def test_parse_input_json_three_jobs(rocprofv3, tmp_path):
