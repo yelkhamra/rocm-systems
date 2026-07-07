@@ -45,14 +45,7 @@ def is_gfx115x(gpu_arch: Optional[str]) -> bool:
 
 
 def validate_profiling_format(profiling_config: dict[str, Any]) -> None:
-    """Reject workloads explicitly produced by the removed CSV profile backend.
-
-    The CSV profile backend was removed, so analyze only supports rocpd
-    workloads. This is the single validation point every analyze mode funnels
-    through (and the natural precursor to Phase B's reader selection on
-    ``format_rocprof_output``). Only an explicit non-rocpd format (e.g. ``csv``)
-    is rejected; a missing key is accepted, since many older/minimal rocpd
-    workloads do not record ``format_rocprof_output`` at all.
+    """Reject workloads produced by a removed profile backend.
     """
     output_format = profiling_config.get("format_rocprof_output")
     if output_format is not None and output_format != _PROFILE_OUTPUT_FORMAT:
