@@ -2260,6 +2260,10 @@ class CodeGenerator:
             'mad_mixhi_bf16',
         }
     )
+    # D16 load semantic classes. Stores share the d16_hi/d16_lo flags, so the
+    # class gate is what restricts the partial-def treatment to loads.
+    # global/scratch loads use the 'flat_load' class.
+    _D16_LOAD_CLASSES = frozenset({'flat_load', 'buffer_load', 'tbuffer_load', 'ds_read'})
 
     def _dst_is_also_source(self, inst: Instruction) -> bool:
         """Return True if the instruction reads from its destination operand.
@@ -2269,15 +2273,26 @@ class CodeGenerator:
         accumulate, dot product accumulate, swap, bitset).  This method
         identifies such instructions via their semantics so the constructor
         can register the destination in both src_operands_ and dst_operands_.
+
+        D16(_HI) loads are also read-modify-writes: they write one 16-bit half
+        of vdst and preserve the other, so they read the old value.  This is a
+        partial def only for a single 16-bit element (num_elems == 1); multi-
+        component FORMAT loads fill whole registers and preserve nothing.
         """
         if not self.semantics:
             return False
         sem = self.semantics.instructions.get(inst.name)
         if not sem:
             return False
-        return (
+        if (
             sem.operation in self._READS_DST_OPS
             or sem.semantic_class in self._READS_DST_CLASSES
+        ):
+            return True
+        return (
+            (sem.d16_hi or sem.d16_lo)
+            and sem.num_elems == 1
+            and sem.semantic_class in self._D16_LOAD_CLASSES
         )
 
     _VGPR_MSB_SRC_ROLES = ('Src0', 'Src1', 'Src2')
