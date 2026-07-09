@@ -1596,7 +1596,7 @@ __device__ inline size_t ipc_tile_dst_offset(size_t flat_idx,
     const size_t extent = boundary[dim] - start_coord[dim];
     const size_t coord = flat_idx % extent;
     flat_idx /= extent;
-    offset += coord * dst_strides[dim];
+    offset += (start_coord[dim] + coord) * dst_strides[dim];
   }
   return offset;
 }
@@ -1772,6 +1772,7 @@ __device__ inline int IPCContext::tile_reduce_typed(
       for (int i = 0; i < team_obj->num_pes; i++) {
         wait_until(&pSync[i], ROCSHMEM_CMP_EQ, flag_val);
       }
+      threadfence_system();
     } else {
       fence(root_pe_world);
       internal_putmem(&pSync[team_obj->my_pe], &flag_val, sizeof(flag_val),
@@ -1828,6 +1829,7 @@ __device__ inline int IPCContext::tile_reduce_typed_wave(
         for (int i = 0; i < team_obj->num_pes; i++) {
           wait_until(&pSync[i], ROCSHMEM_CMP_EQ, flag_val);
         }
+        threadfence_system();
       } else {
         fence(root_pe_world);
         internal_putmem(&pSync[team_obj->my_pe], &flag_val, sizeof(flag_val),
@@ -1887,6 +1889,7 @@ __device__ inline int IPCContext::tile_reduce_typed_wg(
         for (int i = 0; i < team_obj->num_pes; i++) {
           wait_until(&pSync[i], ROCSHMEM_CMP_EQ, flag_val);
         }
+        threadfence_system();
       } else {
         fence(root_pe_world);
         internal_putmem(&pSync[team_obj->my_pe], &flag_val, sizeof(flag_val),
