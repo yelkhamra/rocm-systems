@@ -92,7 +92,7 @@ rocprofiler_add_integration_execute_test(
     TIMEOUT 45
     LABELS "integration-tests"
     PRELOAD "${PRELOAD_ENV}"
-    PASS_REGULAR_EXPRESSION "GPU:[0-9]*\\n*";
+    PASS_REGULAR_EXPRESSION "GPU:[0-9]*\\n*"
     DISABLED "${IS_DISABLED}")
 
 rocprofiler_add_integration_execute_test(
@@ -102,7 +102,7 @@ rocprofiler_add_integration_execute_test(
     TIMEOUT 45
     LABELS "integration-tests"
     PRELOAD "${PRELOAD_ENV}"
-    PASS_REGULAR_EXPRESSION "GPU"[ \t\r]":[0-9]*\\n*";
+    PASS_REGULAR_EXPRESSION "GPU[ \\t\\r]*:[0-9]*\\n*"
     DISABLED "${IS_DISABLED}")
 
 rocprofiler_add_integration_validate_test(
