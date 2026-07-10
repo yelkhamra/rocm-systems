@@ -2,16 +2,19 @@
 # SPDX-License-Identifier:  MIT
 
 import argparse
-import textwrap
 from pathlib import Path
 from typing import Any, Optional, Union
 
 import numpy as np
 import plotext as plt
+import plotly.colors as pcolors
 import plotly.graph_objects as go
 from dash import dcc, html
-from plotly.subplots import make_subplots
 
+from roofline.roofline_html import (
+    RooflineViewModel,
+    build_interactive_document,
+)
 from utils.logger import (
     console_debug,
     console_error,
@@ -42,7 +45,37 @@ ROOFLINE_SUPPORTED = [
     "gfx1152",
 ]
 
-SYMBOLS = [0, 1, 2, 3, 4, 5, 13, 17, 18, 20]
+# A kernel's memory peaks are told apart by marker shape. There are only ever
+# five memory levels, so these shapes never collide; kernel identity is carried
+# by color and the legend panel instead (which is what lets us drop the old
+# ten-symbol, reused-across-kernels scheme entirely).
+_PEAK_SYMBOLS: dict[str, str] = {
+    "L0": "circle",
+    "L1": "square",
+    "L2": "diamond",
+    "HBM": "cross",
+    "LDS": "triangle-up",
+}
+
+# One color per kernel from a high-contrast qualitative palette. Colors are
+# unique up to the palette size and only cycle beyond it; the legend panel and
+# hover always carry the name, so cycling stays unambiguous.
+_KERNEL_PALETTE: list[str] = pcolors.qualitative.Dark24 + pcolors.qualitative.Light24
+
+# Which memory peak the roofline opens on. "all" shows every level's dot per
+# kernel; a specific level (e.g. "HBM") would instead open with one dot per
+# kernel against that single roof.
+_DEFAULT_PEAK = "all"
+
+# Roofs represent mathematically infinite lines - a bandwidth diagonal is
+# y = BW * AI (a line through the origin), and a compute ceiling is a horizontal
+# line. We draw the segments so far past the data on both ends that no amount of
+# realistic panning/zooming reaches an endpoint. A log axis can never reach 0,
+# so "toward the origin" just means an arbitrarily small AI. (The "Autoscale"
+# modebar button is removed so it can't fit the view to these endpoints; "Reset
+# axes" still restores the sensible initial range.)
+_ROOF_EXTRAP_MIN_AI = 1e-150
+_ROOF_EXTRAP_MAX_AI = 1e150
 
 # Per cache-level / compute-roof trace colors. Keyed by category, with one
 # entry per rendering backend so both the HTML (Plotly hex) and CLI (plotext
@@ -69,22 +102,62 @@ def get_color(category: str, backend: str = "html") -> str:
     return _TRACE_COLORS[key][backend]
 
 
-def wrap_text(text: str, width: int = 100) -> str:
-    """
-    Wraps text using textwrap and joins lines with <br> for Plotly.
-    """
-    if not isinstance(text, str):
-        text = str(text)
-    wrapped_lines = textwrap.wrap(
-        text, width=width, break_long_words=True, replace_whitespace=False
-    )
-    return "<br>".join(wrapped_lines)
-
-
 def to_int(value: Union[float, None]) -> Union[int, float]:
     if value is None:
         return np.nan
     return int(value)
+
+
+def peak_symbol(level_name: str) -> str:
+    """Return the Plotly marker shape used for a memory peak."""
+    return _PEAK_SYMBOLS.get(level_name.upper(), "circle")
+
+
+def build_kernel_colors(num_kernels: int) -> list[str]:
+    """Assign one color per kernel, cycling only past the palette size."""
+    if num_kernels <= 0:
+        return []
+    palette = _KERNEL_PALETTE
+    return [palette[index % len(palette)] for index in range(num_kernels)]
+
+
+def roofline_axis_bounds(
+    ceiling_data: dict[str, Any],
+    ai_data: dict[str, Any],
+    sanitized_cache_hierarchy: list[str],
+    pad: float = 1.6,
+) -> tuple[float, float, float, float]:
+    """Compute explicit ``(x_lo, x_hi, y_lo, y_hi)`` log-axis bounds.
+
+    This is only the initial view: bounds span every roof ridge and every kernel
+    point (shown or not) so nothing is clipped on open and toggling the
+    peak/kernel filters never moves a point outside the view. ``pad`` widens the
+    range slightly on each side. The roofs themselves are drawn far past these
+    bounds (see ``_ROOF_EXTRAP_*``) so panning reveals them continuing.
+    """
+    roof_keys = [level.lower() for level in sanitized_cache_hierarchy]
+    roof_keys += ["valu", "matrix_ops"]
+
+    xs: list[float] = []
+    ys: list[float] = []
+
+    for key in roof_keys:
+        line = ceiling_data.get(key)
+        if line and len(line) >= 2 and line[0] and line[1]:
+            xs.extend(v for v in line[0] if v is not None and v > 0)
+            ys.extend(v for v in line[1] if v is not None and v > 0)
+
+    for cache_level in CACHE_LEVELS:
+        points = ai_data.get(cache_level)
+        if not points:
+            continue
+        xs.extend(v for v in points[0] if v is not None and v > 0)
+        ys.extend(v for v in points[1] if v is not None and v > 0)
+
+    if not xs or not ys:
+        return 0.01, 1000.0, 1.0, 100000.0
+
+    return min(xs) / pad, max(xs) * pad, min(ys) / pad, max(ys) * pad
 
 
 class Roofline:
@@ -100,6 +173,9 @@ class Roofline:
         self.__ai_data: Optional[dict[str, Any]] = None
         self.__ceiling_data: Optional[dict[str, Any]] = None
         self.__figure = go.Figure()
+        # Interactive view models keyed by "OP"/"FLOP" (the figure a kernel
+        # scatter belongs to), populated while building the Plotly figures.
+        self.__view_models: dict[str, RooflineViewModel] = {}
 
     def get_args(self) -> argparse.Namespace:
         return self.__args
@@ -182,6 +258,103 @@ class Roofline:
         else:
             return "Compute Bound"
 
+    def _build_kernel_traces(
+        self,
+        kernel_names: list[str],
+        kernel_colors: list[str],
+        sanitized_cache_hierarchy: list[str],
+        ceiling_data: dict[str, Any],
+        ops_flops: str,
+    ) -> tuple[list[go.Scatter], list[dict[str, Any]]]:
+        """Build one marker trace per kernel plus the matching view-model data.
+
+        Each kernel becomes a single scatter trace carrying all of its points
+        across the memory peaks: ``marker.color`` identifies the kernel and
+        ``marker.symbol`` identifies the peak. The returned model list mirrors
+        the traces one-for-one and is the source of truth the client-side
+        controller restyles from.
+        """
+        hovertemplate = (
+            "<b>%{fullData.name}</b><br>"
+            "%{customdata[0]} peak<br>"
+            f"AI %{{x:.2f}} {ops_flops}s/Byte<br>"
+            f"Perf %{{y:.2f}} G{ops_flops}/s<br>"
+            "%{customdata[1]}<extra></extra>"
+        )
+
+        traces: list[go.Scatter] = []
+        kernels_model: list[dict[str, Any]] = []
+
+        for kernel_index, kernel_name in enumerate(kernel_names):
+            xs: list[float] = []
+            ys: list[float] = []
+            symbols: list[str] = []
+            customdata: list[list[str]] = []
+            points: list[dict[str, Any]] = []
+
+            for cache_level in CACHE_LEVELS:
+                level_name = cache_level.removeprefix("ai_").upper()
+                if level_name not in sanitized_cache_hierarchy:
+                    continue
+                level_points = self.__ai_data.get(cache_level)
+                if not level_points or kernel_index >= len(level_points[0]):
+                    continue
+                ai_value = level_points[0][kernel_index]
+                performance = level_points[1][kernel_index]
+                if not (ai_value > 0 and performance > 0):
+                    continue
+
+                status = self._determine_kernel_bound_status(
+                    ai_value=ai_value,
+                    performance=performance,
+                    cache_level=cache_level,
+                    ceiling_data=ceiling_data,
+                )
+                xs.append(ai_value)
+                ys.append(performance)
+                symbols.append(peak_symbol(level_name))
+                customdata.append([level_name, status])
+                points.append({
+                    "peak": level_name,
+                    "ai": ai_value,
+                    "perf": performance,
+                    "status": status,
+                })
+
+            if not xs:
+                continue
+
+            color = (
+                kernel_colors[kernel_index]
+                if kernel_index < len(kernel_colors)
+                else None
+            )
+            traces.append(
+                go.Scatter(
+                    x=xs,
+                    y=ys,
+                    name=kernel_name,
+                    mode="markers",
+                    legendgroup=kernel_name,
+                    showlegend=False,
+                    marker=dict(
+                        color=color,
+                        size=10,
+                        symbol=symbols,
+                        line=dict(width=0.5, color="black"),
+                    ),
+                    customdata=customdata,
+                    hovertemplate=hovertemplate,
+                )
+            )
+            kernels_model.append({
+                "name": kernel_name,
+                "color": color,
+                "points": points,
+            })
+
+        return traces, kernels_model
+
     @demarcate
     def construct_plotly_figures(
         self, ai_data: dict[str, Any]
@@ -193,6 +366,7 @@ class Roofline:
         No I/O or HTML wrapping.
         """
         self.roof_setup()
+        self.__view_models = {}
 
         console_debug("roofline", f"Path: {self.__run_parameters.get('workload_dir')}")
 
@@ -287,18 +461,27 @@ class Roofline:
                     kernel_list += "_" + name
 
         workload_dir = self.__run_parameters["workload_dir"]
+        prefix = f"{workload_dir}/empirRoof_gpu-{dev_id}"
 
         wrote = False
         if ops_figure:
-            ops_figure.write_html(
-                f"{workload_dir}/empirRoof_gpu-{dev_id}{ops_dt_list}{kernel_list}.html"
+            document = build_interactive_document(
+                ops_figure,
+                self.__view_models.get("OP", RooflineViewModel()),
+                title="Empirical Roofline Analysis (Ops)",
             )
+            path = f"{prefix}{ops_dt_list}{kernel_list}.html"
+            Path(path).write_text(document, encoding="utf-8")
             wrote = True
 
         if flops_figure:
-            flops_figure.write_html(
-                f"{workload_dir}/empirRoof_gpu-{dev_id}{flops_dt_list}{kernel_list}.html"
+            document = build_interactive_document(
+                flops_figure,
+                self.__view_models.get("FLOP", RooflineViewModel()),
+                title="Empirical Roofline Analysis (Flops)",
             )
+            path = f"{prefix}{flops_dt_list}{kernel_list}.html"
+            Path(path).write_text(document, encoding="utf-8")
             wrote = True
 
         if wrote:
@@ -372,124 +555,26 @@ class Roofline:
             self.__run_parameters["mem_level"], self.__mspec.gpu_model
         )
 
+        num_kernels = 0
+        kernel_colors: list[str] = []
+
         if is_new_figure:
             if has_kernel_names:
                 raw_kernel_names = kernel_names_data.get("kernel_names", [])
                 num_kernels = len(raw_kernel_names)
-
-                wrapped_kernel_names = [wrap_text(name) for name in raw_kernel_names]
-                lines_per_kernel = [
-                    text.count("<br>") + 1 for text in wrapped_kernel_names
-                ]
-                temp_ceiling_data = construct_roof(
-                    roofline_parameters=self.__run_parameters,
-                    dtype=dtype,
-                    mspec=self.__mspec,
-                    ai_data=self.__ai_data,
-                )
-
-                plot_points_data = []
-
-                for cache_level in CACHE_LEVELS:
-                    level_name = cache_level.removeprefix("ai_").upper()
-                    if (
-                        cache_level in self.__ai_data
-                        and level_name in sanitized_cache_hierarchy
-                    ):
-                        x_vals = self.__ai_data[cache_level][0]
-                        y_vals = self.__ai_data[cache_level][1]
-
-                        for i in range(min(len(x_vals), num_kernels)):
-                            if x_vals[i] > 0 and y_vals[i] > 0:
-                                status = self._determine_kernel_bound_status(
-                                    ai_value=x_vals[i],
-                                    performance=y_vals[i],
-                                    cache_level=cache_level,
-                                    ceiling_data=temp_ceiling_data,
-                                )
-
-                                plot_points_data.append({
-                                    "symbol": None,
-                                    "color": get_color(cache_level),
-                                    "cache_level": cache_level.replace(
-                                        "ai_", "", 1
-                                    ).upper(),
-                                    "ai": f"{x_vals[i]:.2f}",
-                                    "performance": f"{y_vals[i]:.2f}",
-                                    "status": status,
-                                    "kernel_idx": i,
-                                })
-
-                ######################################
-                # Define Figure Measurement Constants
-                ######################################
-
-                ROOFLINE_PLOT_HEIGHT = 500  # Default height of plot itself
-
-                POINTS_ROW_HEIGHT = 25  # Pixel height of each plot point row
-                num_plot_points = len(plot_points_data)  # Number of plot points
-                PLOT_POINTS_HEIGHT = (
-                    num_plot_points + 2
-                ) * POINTS_ROW_HEIGHT  # +2 for header and spacing
-
-                BASE_ROW_HEIGHT = 15  # Base pixel height of each kernel name row
-                KERNEL_PADDING = 8  # Padding in between each kernel name row
-                kernel_indices_with_points = {
-                    point["kernel_idx"] for point in plot_points_data
-                }
-                active_kernel_indices = [
-                    i for i in range(num_kernels) if i in kernel_indices_with_points
-                ]
-                num_active_kernels = len(active_kernel_indices)
-                active_lines_per_kernel = [
-                    lines_per_kernel[i] for i in active_kernel_indices
-                ]
-                KERNEL_NAMES_HEIGHT = (
-                    sum(active_lines_per_kernel) * BASE_ROW_HEIGHT
-                    + max(num_active_kernels - 1, 0) * KERNEL_PADDING
-                    + BASE_ROW_HEIGHT
-                )
-
-                total_figure_height = (
-                    ROOFLINE_PLOT_HEIGHT + PLOT_POINTS_HEIGHT + KERNEL_NAMES_HEIGHT
-                )
-
-                total_content_height = (
-                    ROOFLINE_PLOT_HEIGHT + PLOT_POINTS_HEIGHT + KERNEL_NAMES_HEIGHT
-                )
-                roofline_ratio = ROOFLINE_PLOT_HEIGHT / total_content_height
-                plot_points_ratio = PLOT_POINTS_HEIGHT / total_content_height
-                kernel_names_ratio = 1 - roofline_ratio - plot_points_ratio
-                SUBPLOT_SPACING_PX = 80  # Constant - num of pixels between each subplot
-                fig = make_subplots(
-                    rows=3,
-                    cols=1,
-                    row_heights=[roofline_ratio, plot_points_ratio, kernel_names_ratio],
-                    subplot_titles=[
-                        f"Roofline Analysis ({dtype})",
-                        "Plot Points & Values",
-                        "Full Kernel Names",
-                    ],
-                    vertical_spacing=SUBPLOT_SPACING_PX / total_figure_height,
-                    specs=[
-                        [{"type": "scatter"}],  # Roofline plot
-                        [{"type": "scatter"}],  # Plot points table
-                        [{"type": "scatter"}],  # Kernel names table
-                    ],
-                )
-
-                subplot_row = 1
+                kernel_colors = build_kernel_colors(num_kernels)
+                # A single roofline plot. Kernel identity is carried by color
+                # plus the HTML legend panel, so the former plot-point and
+                # kernel-name symbol tables (and their extra subplots) are gone.
+                total_figure_height = 640
+                fig = go.Figure()
                 skipAI = False
             else:
                 # generate an empty figure object in the
                 # event that no kernel names are provided
                 fig = go.Figure()
         else:
-            # Adding to existing figure
-            if hasattr(fig, "_grid_ref") and fig._grid_ref is not None:
-                subplot_row = 1
-                if hasattr(fig, "layout") and hasattr(fig.layout, "height"):
-                    total_figure_height = fig.layout.height
+            # Adding to an existing figure (stacking another datatype's roofs).
             skipAI = True
 
         self.__ceiling_data = construct_roof(
@@ -512,36 +597,60 @@ class Roofline:
         ops_flops = "OP" if dtype.startswith("I") else "FLOP"
         subplot_kwargs = {"row": subplot_row, "col": 1} if subplot_row else {}
 
+        # Explicit log-axis bounds spanning every roof and point, so filtering
+        # by peak/kernel never rescales the view and horizontal peak roofs are
+        # drawn all the way to the right edge.
+        x_lo, x_hi, y_lo, y_hi = roofline_axis_bounds(
+            self.__ceiling_data, self.__ai_data or {}, sanitized_cache_hierarchy
+        )
+
         #######################
         # Plot Application AI
         #######################
-        if ops_flops == "FLOP" and not skipAI:
+        # One scatter trace per kernel (color = kernel, marker shape = peak).
+        # The matching view model is the source of truth the client controller
+        # restyles from when the peak dropdown or a kernel toggle changes.
+        if ops_flops == "FLOP" and not skipAI and has_kernel_names:
             kernel_names = self.__ai_data.get("kernelNames", [])
-            symbols_list = [SYMBOLS[i % len(SYMBOLS)] for i in range(len(kernel_names))]
+            kernel_traces, kernels_model = self._build_kernel_traces(
+                kernel_names=kernel_names,
+                kernel_colors=kernel_colors,
+                sanitized_cache_hierarchy=sanitized_cache_hierarchy,
+                ceiling_data=self.__ceiling_data,
+                ops_flops=ops_flops,
+            )
 
+            first_index = len(fig.data)
+            for kernel_trace in kernel_traces:
+                fig.add_trace(kernel_trace, **subplot_kwargs)
+            trace_indices = list(range(first_index, first_index + len(kernel_traces)))
+            for offset, kernel in enumerate(kernels_model):
+                kernel["traceIndex"] = trace_indices[offset]
+
+            present_peaks: list[str] = []
             for cache_level in CACHE_LEVELS:
-                name = cache_level.removeprefix("ai_").upper()
-                if (
-                    cache_level not in self.__ai_data
-                    or not self.__ai_data[cache_level][0]
-                    or name not in sanitized_cache_hierarchy
-                ):
+                level_name = cache_level.removeprefix("ai_").upper()
+                if level_name not in sanitized_cache_hierarchy:
                     continue
+                if any(
+                    point["peak"] == level_name
+                    for kernel in kernels_model
+                    for point in kernel["points"]
+                ):
+                    present_peaks.append(level_name)
 
-                fig.add_trace(
-                    go.Scatter(
-                        x=self.__ai_data[cache_level][0],
-                        y=self.__ai_data[cache_level][1],
-                        name=name,
-                        mode="markers",
-                        marker=dict(
-                            color=get_color(cache_level),
-                            size=10,
-                            symbol=symbols_list[: len(self.__ai_data[cache_level][0])],
-                        ),
-                    ),
-                    **subplot_kwargs,
-                )
+            default_peak = (
+                _DEFAULT_PEAK
+                if (_DEFAULT_PEAK == "all" or _DEFAULT_PEAK in present_peaks)
+                else (present_peaks[0] if present_peaks else "all")
+            )
+            self.__view_models[ops_flops] = RooflineViewModel(
+                peaks=present_peaks,
+                peak_symbols={peak: peak_symbol(peak) for peak in present_peaks},
+                default_peak=default_peak,
+                kernels=kernels_model,
+                kernel_trace_indices=trace_indices,
+            )
 
         #######################
         # Bandwidth Ceilings
@@ -608,12 +717,22 @@ class Roofline:
                     selector={"name": trace_to_update.name},
                 )
             else:
-                # New bandwidth line with value in legend
+                # New bandwidth line with value in legend. The diagonal is the
+                # infinite line y = BW * AI up to its ridge; draw it from an
+                # arbitrarily small AI (toward the origin) to the ridge so
+                # panning down-left never reaches an endpoint.
                 legend_name = f"{level.upper()}-{dtype}<br>{value} GB/s"
+                peak_bw_val = bw_line["value"]
+                ridge_x = bw_line["x"][1]
+                ridge_y = bw_line["y"][1]
+                low_x = _ROOF_EXTRAP_MIN_AI
+                low_y = (
+                    peak_bw_val * _ROOF_EXTRAP_MIN_AI if peak_bw_val > 0 else ridge_y
+                )
                 fig.add_trace(
                     go.Scatter(
-                        x=bw_line["x"],
-                        y=bw_line["y"],
+                        x=[low_x, ridge_x],
+                        y=[low_y, ridge_y],
                         name=legend_name,
                         mode="lines",
                         line=dict(color=get_color(level.lower())),
@@ -640,8 +759,8 @@ class Roofline:
             legend_name = f"Peak VALU-{dtype}<br>{to_int(valu_data[2])} G{ops_flops}/s"
             fig.add_trace(
                 go.Scatter(
-                    x=valu_data[0],
-                    y=valu_data[1],
+                    x=[valu_data[0][0], _ROOF_EXTRAP_MAX_AI],
+                    y=[valu_data[1][0], valu_data[1][0]],
                     name=legend_name,
                     mode="lines",
                     line=dict(color=get_color("valu")),
@@ -658,10 +777,12 @@ class Roofline:
                 f"Peak {matrix_ops_type}-{dtype}<br>"
                 f"{to_int(matrix_data[2])} G{ops_flops}/s"
             )
+            # Solid like develop and starting at develop's ridge, but extended
+            # right so panning never reaches the end of the compute ceiling.
             fig.add_trace(
                 go.Scatter(
-                    x=matrix_data[0],
-                    y=matrix_data[1],
+                    x=[matrix_data[0][0], _ROOF_EXTRAP_MAX_AI],
+                    y=[matrix_data[1][0], matrix_data[1][0]],
                     name=legend_name,
                     mode="lines",
                     line=dict(color=get_color("matrix_ops")),
@@ -671,370 +792,60 @@ class Roofline:
             )
 
         #######################
-        # Plot Points Table
-        #######################
-        if is_new_figure and has_kernel_names:
-            symbols_list = [SYMBOLS[i % len(SYMBOLS)] for i in range(num_kernels)]
-
-            for point in plot_points_data:
-                point["symbol"] = symbols_list[point["kernel_idx"]]
-
-            if not plot_points_data or len(plot_points_data) == 0:
-                fig.add_annotation(
-                    x=0.5,
-                    y=1,
-                    text="<b>No plot points available</b>",
-                    showarrow=False,
-                    xanchor="center",
-                    yanchor="middle",
-                    font=dict(size=12, color="black"),
-                    row=2,
-                    col=1,
-                )
-
-                fig.update_xaxes(visible=False, range=[0, 1], row=2, col=1)
-                fig.update_yaxes(visible=False, range=[0, 2], row=2, col=1)
-
-            else:
-                header_y = len(plot_points_data) + 1
-                header_positions = {
-                    "Symbol": 0.020,
-                    f"{ops_flops}s/Byte": 0.15,
-                    f"G{ops_flops}/s": 0.35,
-                    "Status": 0.55,
-                    "Cache Level": 0.80,
-                }
-
-                for header_text, x_pos in header_positions.items():
-                    fig.add_annotation(
-                        x=x_pos,
-                        y=header_y,
-                        text=f"<b>{header_text}</b>",
-                        showarrow=False,
-                        xanchor="left",
-                        yanchor="middle",
-                        font=dict(size=11, color="black"),
-                        row=2,
-                        col=1,
-                    )
-
-                # Scatter plot for symbols
-                symbol_x = []
-                symbol_y = []
-                symbol_markers = []
-                symbol_colors = []
-
-                for idx, point in enumerate(plot_points_data):
-                    symbol_x.append(0.05)
-                    symbol_y.append(len(plot_points_data) - idx)
-                    symbol_markers.append(point["symbol"])
-                    symbol_colors.append(point["color"])
-
-                fig.add_trace(
-                    go.Scatter(
-                        x=symbol_x,
-                        y=symbol_y,
-                        mode="markers",
-                        marker=dict(
-                            symbol=symbol_markers,
-                            size=11,
-                            color=symbol_colors,
-                            line=dict(width=0, color="black"),
-                        ),
-                        customdata=[
-                            [point["kernel_idx"], point["cache_level"]]
-                            for point in plot_points_data
-                        ],
-                        showlegend=False,
-                        hoverinfo="skip",
-                    ),
-                    row=2,
-                    col=1,
-                )
-                # ai, perf, status, cache_level
-                data_positions = [0.15, 0.35, 0.55, 0.80]
-
-                for idx, point in enumerate(plot_points_data):
-                    y_pos = len(plot_points_data) - idx
-
-                    # Background shading for every other row
-                    if idx % 2 == 0:
-                        fig.add_shape(
-                            type="rect",
-                            x0=0,
-                            x1=1,
-                            y0=y_pos - 1 / 2,
-                            y1=y_pos + 1 / 2,
-                            fillcolor="rgba(220, 220, 220, 0.3)",
-                            line_width=0,
-                            layer="below",
-                            row=2,
-                            col=1,
-                        )
-
-                    # Border lines for this row
-                    fig.add_shape(
-                        type="line",
-                        x0=0,
-                        x1=1,
-                        y0=y_pos - 0.5,
-                        y1=y_pos - 0.5,
-                        line=dict(color="rgba(150, 150, 150, 0.5)", width=1),
-                        row=2,
-                        col=1,
-                    )
-
-                    fig.add_annotation(
-                        x=data_positions[0],
-                        y=y_pos,
-                        text=point["ai"],
-                        showarrow=False,
-                        xanchor="left",
-                        yanchor="middle",
-                        font=dict(size=10, color="black"),
-                        row=2,
-                        col=1,
-                    )
-                    fig.add_annotation(
-                        x=data_positions[1],
-                        y=y_pos,
-                        text=point["performance"],
-                        showarrow=False,
-                        xanchor="left",
-                        yanchor="middle",
-                        font=dict(size=10, color="black"),
-                        row=2,
-                        col=1,
-                    )
-
-                    status_text = point["status"]
-
-                    if "Compute Bound" in status_text:
-                        status_color = "DarkOrange"
-                    elif "Memory Bound" in status_text:
-                        status_color = "blue"
-                    else:
-                        status_color = "gray"
-                    fig.add_annotation(
-                        x=data_positions[2],
-                        y=y_pos,
-                        text=status_text,
-                        showarrow=False,
-                        xanchor="left",
-                        yanchor="middle",
-                        font=dict(size=10, color=status_color),
-                        row=2,
-                        col=1,
-                    )
-
-                    fig.add_annotation(
-                        x=data_positions[3],
-                        y=y_pos,
-                        text=point["cache_level"],
-                        showarrow=False,
-                        xanchor="left",
-                        yanchor="middle",
-                        font=dict(size=10, color="black"),
-                        row=2,
-                        col=1,
-                    )
-
-                # Vertical column separators
-                column_x_positions = [0.12, 0.32, 0.52, 0.75]
-                for x_pos in column_x_positions:
-                    fig.add_shape(
-                        type="line",
-                        x0=x_pos,
-                        x1=x_pos,
-                        y0=0.5,
-                        y1=header_y + 0.5,
-                        line=dict(color="rgba(150, 150, 150, 0.5)", width=1),
-                        row=2,
-                        col=1,
-                    )
-
-                # Configure Plot Points subplot axes
-                fig.update_xaxes(
-                    visible=False, range=[0, 1], fixedrange=True, row=2, col=1
-                )
-                fig.update_yaxes(
-                    visible=False,
-                    range=[0, (len(plot_points_data) + 1.5)],
-                    fixedrange=True,
-                    row=2,
-                    col=1,
-                )
-
-            #######################
-            # Kernel Names Table
-            #######################
-
-            y_positions = []
-            row_heights = []
-            current_y = 0
-            KERNEL_PADDING = 0
-            for i in active_kernel_indices:
-                # Height for this kernel is proportional to its number of lines
-                kernel_height = lines_per_kernel[i]
-                row_heights.append(kernel_height)
-                # Position at the center of this kernel's allocated space
-                current_y += kernel_height / 2
-                y_positions.append(current_y)
-                current_y += kernel_height / 2 + KERNEL_PADDING
-
-            # Reverse to display top to bottom
-            y_positions = [current_y - y - KERNEL_PADDING / 2 for y in y_positions]
-            max_y = current_y
-            min_y = 0
-
-            kernel_symbol_x = []
-            kernel_symbol_y = []
-            kernel_symbol_markers = []
-
-            for row_idx, kernel_idx in enumerate(active_kernel_indices):
-                kernel_symbol_x.append(0.05)
-                kernel_symbol_y.append(y_positions[row_idx])
-                kernel_symbol_markers.append(symbols_list[kernel_idx])
-
-                # Background shading for every other row
-                if row_idx % 2 == 0:
-                    fig.add_shape(
-                        type="rect",
-                        x0=0,
-                        x1=1,
-                        y0=y_positions[row_idx] - row_heights[row_idx] / 2,
-                        y1=y_positions[row_idx] + row_heights[row_idx] / 2,
-                        fillcolor="rgba(220, 220, 220, 0.3)",
-                        line_width=0,
-                        layer="below",
-                        row=3,
-                        col=1,
-                    )
-
-                # Border lines for this kernel
-                fig.add_shape(
-                    type="line",
-                    x0=0,
-                    x1=1,
-                    y0=y_positions[row_idx] - row_heights[row_idx] / 2,
-                    y1=y_positions[row_idx] - row_heights[row_idx] / 2,
-                    line=dict(color="rgba(150, 150, 150, 0.5)", width=1),
-                    row=3,
-                    col=1,
-                )
-
-                # Kernel name annotation with wrapped text (left aligned)
-                fig.add_annotation(
-                    x=0.15,
-                    y=y_positions[row_idx],
-                    text=wrapped_kernel_names[kernel_idx],
-                    showarrow=False,
-                    xanchor="left",
-                    yanchor="middle",
-                    align="left",
-                    font=dict(size=10, color="black"),
-                    row=3,
-                    col=1,
-                )
-
-            # Vertical separator between symbol and kernel name
-            fig.add_shape(
-                type="line",
-                x0=0.12,
-                x1=0.12,
-                y0=min_y,
-                y1=max_y,
-                line=dict(color="rgba(150, 150, 150, 0.5)", width=1),
-                row=3,
-                col=1,
-            )
-
-            fig.add_trace(
-                go.Scatter(
-                    x=kernel_symbol_x,
-                    y=kernel_symbol_y,
-                    mode="markers",
-                    marker=dict(
-                        symbol=kernel_symbol_markers,
-                        size=11,
-                        color="black",
-                        line=dict(width=0, color="black"),
-                    ),
-                    showlegend=False,
-                    hoverinfo="skip",
-                ),
-                row=3,
-                col=1,
-            )
-
-            # Configure Kernel Names subplot axes
-            fig.update_xaxes(visible=False, range=[0, 1], fixedrange=True, row=3, col=1)
-            fig.update_yaxes(
-                visible=False, range=[min_y, max_y], fixedrange=True, row=3, col=1
-            )
-
-        #######################
         # Layout Configuration
         #######################
         if is_new_figure:
-            if subplot_row:
-                fig.update_xaxes(
-                    type="log",
-                    autorange=True,
-                    title_text=f"Arithmetic Intensity ({ops_flops}s/Byte)",
-                    row=1,
-                    col=1,
-                )
-                fig.update_yaxes(
-                    type="log",
-                    autorange=True,
-                    title_text=f"Performance (G{ops_flops}/sec)",
-                    row=1,
-                    col=1,
-                )
-                fig.update_layout(
-                    height=int(total_figure_height),
-                    width=1000,
-                    hovermode="x unified",
-                    margin=dict(l=50, r=180, b=50, t=80, pad=7),
-                    legend=dict(
-                        orientation="v",
-                        yanchor="top",
-                        y=1,
-                        xanchor="left",
-                        x=1.01,
-                        font=dict(size=10),
-                    ),
-                )
-            else:
-                # Fallback to simple figure without subplots
-                fig.update_layout(
-                    xaxis_title=f"Arithmetic Intensity ({ops_flops}s/Byte)",
-                    yaxis_title=f"Performance (G{ops_flops}/sec)",
-                    xaxis_type="log",
-                    yaxis_type="log",
-                    xaxis_autorange=True,
-                    yaxis_autorange=True,
-                    height=int(total_figure_height),
-                    hovermode="x unified",
-                    margin=dict(l=50, r=50, b=50, t=50, pad=7),
-                )
+            fig.update_xaxes(
+                type="log",
+                range=[float(np.log10(x_lo)), float(np.log10(x_hi))],
+                title_text=f"Arithmetic Intensity ({ops_flops}s/Byte)",
+                gridcolor="rgba(0, 0, 0, 0.08)",
+            )
+            fig.update_yaxes(
+                type="log",
+                range=[float(np.log10(y_lo)), float(np.log10(y_hi))],
+                title_text=f"Performance (G{ops_flops}/sec)",
+                gridcolor="rgba(0, 0, 0, 0.08)",
+            )
+            # make the plot pan on drag / zoom on wheel
+            fig.update_layout(
+                template="plotly_white",
+                title=dict(
+                    text=f"Empirical Roofline Analysis ({dtype})",
+                    x=0.5,
+                    xanchor="center",
+                    font=dict(size=15),
+                ),
+                height=int(total_figure_height),
+                width=1000,
+                dragmode="pan",
+                hovermode="closest",
+                margin=dict(l=70, r=40, b=55, t=62, pad=4),
+                legend=dict(
+                    title=dict(text="Roofs (click to toggle)", font=dict(size=11)),
+                    orientation="v",
+                    yanchor="bottom",
+                    y=0.02,
+                    xanchor="right",
+                    x=0.99,
+                    font=dict(size=11),
+                    bgcolor="rgba(255, 255, 255, 0.72)",
+                    bordercolor="rgba(0, 0, 0, 0.12)",
+                    borderwidth=1,
+                    itemsizing="constant",
+                ),
+                hoverlabel=dict(bgcolor="white", font_size=11),
+            )
 
-        # Update subplot title for additional datatypes
-        if (
-            not is_new_figure
-            and subplot_row
-            and hasattr(fig, "layout")
-            and hasattr(fig.layout, "annotations")
-        ):
-            for annotation in fig.layout.annotations:
-                if annotation.text and "Roofline Analysis" in annotation.text:
-                    if "(" in annotation.text and ")" in annotation.text:
-                        existing_text = annotation.text.split("(")[0]
-                        existing_types = annotation.text.split("(")[1].split(")")[0]
-                        new_types = f"{existing_types}, {dtype}"
-                        annotation.text = f"{existing_text}({new_types})"
-                    break
+        # For additional datatypes stacked onto an existing figure, extend the
+        # title so it lists every datatype shown.
+        if not is_new_figure and fig.layout.title.text:
+            title_text = fig.layout.title.text
+            if "(" in title_text and ")" in title_text:
+                prefix = title_text.split("(")[0]
+                existing_types = title_text.split("(")[1].split(")")[0]
+                if dtype not in existing_types.split(", "):
+                    fig.layout.title.text = f"{prefix}({existing_types}, {dtype})"
 
         return fig
 

@@ -529,13 +529,12 @@ Example with multiple ``--mem-level`` and ``--roofline-data-type`` options:
 
 Interactive Roofline HTML:
 
-* HTML plots have the ability to select/deselect specific rooflines and cache-level-specific kernels. In the right-hand legend of the plot, click on individual items in the legend once to display or remove the item from the plot. Double-click on an item to make it the only displayed item in the plot; double-click on any item in the legend to reset the plot to display all items.
-* Hovering your mouse on the plot displays a menu in the top right-hand corner of the page which has tools for the following:
-   * Saving the plot as a .png
-   * Zoom, pan, reset scale
-* Zooming in a specific area of the plot can also be done with click-and-drag box selection with your mouse to isolate the area you would like to see closer. Resetting the view can be done through the hover menu in the top right-hand corner of the page (described in the above bullet point)
+* **Memory peak dropdown:** Use the *Memory peak* selector at the top of the page to view kernel points against a single roof at a time (``L1``, ``L2``, ``HBM``, or ``LDS``) or against *All peaks* at once. Each kernel is drawn in its own color, and the marker shape indicates the memory peak (square = L1, diamond = L2, cross = HBM, triangle = LDS, circle = L0).
+* **Kernel filtering:** The *Kernels* panel to the right lists every kernel. Click a kernel row -- or click one of its dots in the plot -- to isolate just that kernel; click it again to show all. Ctrl-click (Cmd-click on macOS) to add or remove kernels from the selection, and use *Show all kernels* to reset. Isolating a single kernel also shows a per-peak details table (symbol, peak, arithmetic intensity, performance, and whether it is memory- or compute-bound).
+* **Roofs legend:** The roofs legend (bottom-right, inside the plot) lists the bandwidth and compute ceilings. Click a roof to show or hide it. The bandwidth diagonals and compute ceilings are drawn as extrapolated lines, so they continue as you pan.
+* **Navigation:** Drag to pan and scroll to zoom. Hovering over the plot reveals a menu in the top-right with tools to save the plot as a ``.png``, zoom in/out, and *Reset axes* to return to the initial view.
 
-Below is an example of HTML plot interactivity, with L2 kernel points, L2-FP32 empirical bandwidth, and Peak VALU-FP32 empirical roofline toggled on:
+Below is an example of the interactive HTML plot:
 
 .. image:: ../../data/analyze/cli/roofline_html_interact.png
    :align: center

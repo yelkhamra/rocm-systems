@@ -14,9 +14,13 @@ Full documentation for ROCm Compute Profiler is available at [https://rocm.docs.
 * Improved GPU Benchmarking and Roofline profiling/analysis support for gfx1150/gfx1151/gfx1152 architectures.
   * gfx11 supports Wave Matrix Multiply Accumulate (WMMA), replacing MFMA operations.
 
+* The standalone roofline HTML (``empirRoof_*.html``) interactability has been improved. A memory-peak dropdown shows kernel performance against one roof at a time, and clicking a kernel isolates it. Moreover, the plot pans on drag and zooms on scroll, and the bandwidth/compute roofs are drawn as extrapolated lines.
+
 * Added experimental Triton support to ML API tracing. Profile with `--experimental --triton-trace` to emit a ROCTX marker per Triton/Inductor kernel launch attributed to the user call site, and analyze with `--experimental --list-triton-operators` or `--experimental --triton-operator <pattern>` to list or filter Triton operators independently of Torch.
 
 ### Changed
+
+* Reworked kernel identification in the roofline plot: kernels are now identified by a unique color plus a name legend/panel, and marker shape encodes the memory peak, replacing the previous scheme that reused symbols across kernels once a workload had more than ten kernels. The two symbol and kernel-name annotation tables below the plot were removed in favor of the interactive kernel panel.
 
 * Split Python version requirements by mode. Profile mode now runs on Python 3.8+ (standard library only). Analyze mode requires Python 3.9+ and exits with a clear message on older interpreters instead of failing with an import error.
 
