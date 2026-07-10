@@ -144,6 +144,7 @@ class GlobalLoadD16U8Vglobal : public Vglobal {
 public:
   GlobalLoadD16U8Vglobal(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
+  void implicit_uses(RegisterSet &uses) const override;
   Operand vdst;
   Operand vaddr;
   Operand saddr;
@@ -153,6 +154,7 @@ class GlobalLoadD16I8Vglobal : public Vglobal {
 public:
   GlobalLoadD16I8Vglobal(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
+  void implicit_uses(RegisterSet &uses) const override;
   Operand vdst;
   Operand vaddr;
   Operand saddr;
@@ -162,6 +164,7 @@ class GlobalLoadD16B16Vglobal : public Vglobal {
 public:
   GlobalLoadD16B16Vglobal(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
+  void implicit_uses(RegisterSet &uses) const override;
   Operand vdst;
   Operand vaddr;
   Operand saddr;
@@ -171,6 +174,7 @@ class GlobalLoadD16HiU8Vglobal : public Vglobal {
 public:
   GlobalLoadD16HiU8Vglobal(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
+  void implicit_uses(RegisterSet &uses) const override;
   Operand vdst;
   Operand vaddr;
   Operand saddr;
@@ -180,6 +184,7 @@ class GlobalLoadD16HiI8Vglobal : public Vglobal {
 public:
   GlobalLoadD16HiI8Vglobal(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
+  void implicit_uses(RegisterSet &uses) const override;
   Operand vdst;
   Operand vaddr;
   Operand saddr;
@@ -189,6 +194,7 @@ class GlobalLoadD16HiB16Vglobal : public Vglobal {
 public:
   GlobalLoadD16HiB16Vglobal(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
+  void implicit_uses(RegisterSet &uses) const override;
   Operand vdst;
   Operand vaddr;
   Operand saddr;

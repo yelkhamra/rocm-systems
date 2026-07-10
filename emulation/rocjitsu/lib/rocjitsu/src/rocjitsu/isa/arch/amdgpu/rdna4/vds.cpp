@@ -3576,12 +3576,17 @@ DsLoadU8D16Vds::DsLoadU8D16Vds(const MachineInst *inst)
           make_exec_fn<DsLoadU8D16Vds>()),
       vdst(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vdst),
       addr(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->addr) {
-  src_operands_[0] = &vdst;
   dst_operands_[0] = &vdst;
-  src_operands_[1] = &addr;
-  num_src_ = 2;
+  src_operands_[0] = &addr;
+  num_src_ = 1;
   num_dst_ = 1;
   flags_ |= MEMORY_OP;
+}
+
+void DsLoadU8D16Vds::implicit_uses(RegisterSet &uses) const {
+  Vds::implicit_uses(uses);
+  if (auto r = vdst.to_register_ref())
+    uses.expand(*r);
 }
 
 void DsLoadU8D16Vds::execute_impl(amdgpu::Wavefront &wf) {
@@ -3601,12 +3606,17 @@ DsLoadU8D16HiVds::DsLoadU8D16HiVds(const MachineInst *inst)
           make_exec_fn<DsLoadU8D16HiVds>()),
       vdst(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vdst),
       addr(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->addr) {
-  src_operands_[0] = &vdst;
   dst_operands_[0] = &vdst;
-  src_operands_[1] = &addr;
-  num_src_ = 2;
+  src_operands_[0] = &addr;
+  num_src_ = 1;
   num_dst_ = 1;
   flags_ |= MEMORY_OP;
+}
+
+void DsLoadU8D16HiVds::implicit_uses(RegisterSet &uses) const {
+  Vds::implicit_uses(uses);
+  if (auto r = vdst.to_register_ref())
+    uses.expand(*r);
 }
 
 void DsLoadU8D16HiVds::execute_impl(amdgpu::Wavefront &wf) {
@@ -3626,12 +3636,17 @@ DsLoadI8D16Vds::DsLoadI8D16Vds(const MachineInst *inst)
           make_exec_fn<DsLoadI8D16Vds>()),
       vdst(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vdst),
       addr(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->addr) {
-  src_operands_[0] = &vdst;
   dst_operands_[0] = &vdst;
-  src_operands_[1] = &addr;
-  num_src_ = 2;
+  src_operands_[0] = &addr;
+  num_src_ = 1;
   num_dst_ = 1;
   flags_ |= MEMORY_OP;
+}
+
+void DsLoadI8D16Vds::implicit_uses(RegisterSet &uses) const {
+  Vds::implicit_uses(uses);
+  if (auto r = vdst.to_register_ref())
+    uses.expand(*r);
 }
 
 void DsLoadI8D16Vds::execute_impl(amdgpu::Wavefront &wf) {
@@ -3652,12 +3667,17 @@ DsLoadI8D16HiVds::DsLoadI8D16HiVds(const MachineInst *inst)
           make_exec_fn<DsLoadI8D16HiVds>()),
       vdst(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vdst),
       addr(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->addr) {
-  src_operands_[0] = &vdst;
   dst_operands_[0] = &vdst;
-  src_operands_[1] = &addr;
-  num_src_ = 2;
+  src_operands_[0] = &addr;
+  num_src_ = 1;
   num_dst_ = 1;
   flags_ |= MEMORY_OP;
+}
+
+void DsLoadI8D16HiVds::implicit_uses(RegisterSet &uses) const {
+  Vds::implicit_uses(uses);
+  if (auto r = vdst.to_register_ref())
+    uses.expand(*r);
 }
 
 void DsLoadI8D16HiVds::execute_impl(amdgpu::Wavefront &wf) {
@@ -3678,12 +3698,17 @@ DsLoadU16D16Vds::DsLoadU16D16Vds(const MachineInst *inst)
           make_exec_fn<DsLoadU16D16Vds>()),
       vdst(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vdst),
       addr(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->addr) {
-  src_operands_[0] = &vdst;
   dst_operands_[0] = &vdst;
-  src_operands_[1] = &addr;
-  num_src_ = 2;
+  src_operands_[0] = &addr;
+  num_src_ = 1;
   num_dst_ = 1;
   flags_ |= MEMORY_OP;
+}
+
+void DsLoadU16D16Vds::implicit_uses(RegisterSet &uses) const {
+  Vds::implicit_uses(uses);
+  if (auto r = vdst.to_register_ref())
+    uses.expand(*r);
 }
 
 void DsLoadU16D16Vds::execute_impl(amdgpu::Wavefront &wf) {
@@ -3703,12 +3728,17 @@ DsLoadU16D16HiVds::DsLoadU16D16HiVds(const MachineInst *inst)
           make_exec_fn<DsLoadU16D16HiVds>()),
       vdst(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vdst),
       addr(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->addr) {
-  src_operands_[0] = &vdst;
   dst_operands_[0] = &vdst;
-  src_operands_[1] = &addr;
-  num_src_ = 2;
+  src_operands_[0] = &addr;
+  num_src_ = 1;
   num_dst_ = 1;
   flags_ |= MEMORY_OP;
+}
+
+void DsLoadU16D16HiVds::implicit_uses(RegisterSet &uses) const {
+  Vds::implicit_uses(uses);
+  if (auto r = vdst.to_register_ref())
+    uses.expand(*r);
 }
 
 void DsLoadU16D16HiVds::execute_impl(amdgpu::Wavefront &wf) {

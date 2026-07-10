@@ -878,6 +878,7 @@ class DsLoadU8D16Vds : public Vds {
 public:
   DsLoadU8D16Vds(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
+  void implicit_uses(RegisterSet &uses) const override;
   Operand vdst;
   Operand addr;
 };
@@ -886,6 +887,7 @@ class DsLoadU8D16HiVds : public Vds {
 public:
   DsLoadU8D16HiVds(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
+  void implicit_uses(RegisterSet &uses) const override;
   Operand vdst;
   Operand addr;
 };
@@ -894,6 +896,7 @@ class DsLoadI8D16Vds : public Vds {
 public:
   DsLoadI8D16Vds(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
+  void implicit_uses(RegisterSet &uses) const override;
   Operand vdst;
   Operand addr;
 };
@@ -902,6 +905,7 @@ class DsLoadI8D16HiVds : public Vds {
 public:
   DsLoadI8D16HiVds(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
+  void implicit_uses(RegisterSet &uses) const override;
   Operand vdst;
   Operand addr;
 };
@@ -910,6 +914,7 @@ class DsLoadU16D16Vds : public Vds {
 public:
   DsLoadU16D16Vds(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
+  void implicit_uses(RegisterSet &uses) const override;
   Operand vdst;
   Operand addr;
 };
@@ -918,6 +923,7 @@ class DsLoadU16D16HiVds : public Vds {
 public:
   DsLoadU16D16HiVds(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
+  void implicit_uses(RegisterSet &uses) const override;
   Operand vdst;
   Operand addr;
 };
