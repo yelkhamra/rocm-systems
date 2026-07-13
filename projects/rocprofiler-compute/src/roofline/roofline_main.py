@@ -794,9 +794,10 @@ class Roofline:
             )
             compute_vm = self.__view_models.get(ops_flops)
             if compute_vm is not None:
-                compute_vm.compute_traces.append(
-                    {"traceIndex": len(fig.data) - 1, "peakPerf": peak_perf}
-                )
+                compute_vm.compute_traces.append({
+                    "traceIndex": len(fig.data) - 1,
+                    "peakPerf": peak_perf,
+                })
 
         if matrix_data:
             matrix_ops_type = get_matrix_ops_type(
@@ -823,9 +824,10 @@ class Roofline:
             )
             compute_vm = self.__view_models.get(ops_flops)
             if compute_vm is not None:
-                compute_vm.compute_traces.append(
-                    {"traceIndex": len(fig.data) - 1, "peakPerf": peak_perf}
-                )
+                compute_vm.compute_traces.append({
+                    "traceIndex": len(fig.data) - 1,
+                    "peakPerf": peak_perf,
+                })
 
         #######################
         # Layout Configuration
