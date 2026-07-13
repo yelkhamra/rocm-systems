@@ -3052,6 +3052,40 @@ amdsmi_status_t amdsmi_topo_get_p2p_status(amdsmi_processor_handle processor_han
   return amd::smi::rsmi_to_amdsmi_status(rstatus);
 }
 
+namespace amd {
+namespace smi {
+
+// Pure redirect decision for issue #100, factored out of
+// get_primary_partition_handle() so it can be unit tested without hardware.
+//
+// Given the partition ids of every logical GPU partition that shares a physical
+// device and the index of the querying partition within that list, return the
+// index of the primary partition (partition_id == 0) that partition-config
+// queries must be redirected to, or -1 when no redirect is needed: the device is
+// not split into multiple logical partitions, the querying partition is already
+// the primary, or no primary sibling exists. Siblings whose id could not be read
+// must be passed as UINT32_MAX so they are skipped. See ROCm/amdsmi issue #100.
+int primary_partition_redirect_index(const std::vector<uint32_t>& partition_ids,
+                                     size_t self_index) {
+  // A physical device that exposes a single logical GPU has no separate primary
+  // partition to redirect to.
+  if (partition_ids.size() <= 1) {
+    return -1;
+  }
+  for (size_t i = 0; i < partition_ids.size(); ++i) {
+    if (i == self_index) {
+      continue;
+    }
+    if (partition_ids[i] == 0) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+}  // namespace smi
+}  // namespace amd
+
 // See ROCm/amdsmi issue #100. On MI300-class accelerators that are split into
 // multiple logical partitions (for example CPX + NPS4), the compute- and
 // memory-partition sysfs nodes only respond on the primary partition
@@ -3091,26 +3125,33 @@ static amdsmi_processor_handle get_primary_partition_handle(
     return nullptr;
   }
 
-  // A physical device that exposes a single logical GPU has no separate primary
-  // partition to redirect to.
+  // Collect the partition id of every logical GPU partition on this physical
+  // device (marking siblings whose id cannot be read as unqueryable) and locate
+  // this processor within that list, then defer the redirect decision to the
+  // pure helper above.
   auto& siblings = owning_socket->get_processors(AMDSMI_PROCESSOR_TYPE_AMD_GPU);
-  if (siblings.size() <= 1) {
-    return nullptr;
-  }
-
-  for (auto* sibling : siblings) {
-    if (sibling == nullptr || sibling == processor) {
+  std::vector<uint32_t> partition_ids(siblings.size(), std::numeric_limits<uint32_t>::max());
+  size_t self_index = siblings.size();
+  for (size_t i = 0; i < siblings.size(); ++i) {
+    if (siblings[i] == processor) {
+      self_index = i;
+    }
+    if (siblings[i] == nullptr) {
       continue;
     }
-    auto sibling_handle = reinterpret_cast<amdsmi_processor_handle>(sibling);
+    auto sibling_handle = reinterpret_cast<amdsmi_processor_handle>(siblings[i]);
     uint32_t sibling_partition_id = std::numeric_limits<uint32_t>::max();
     if (rsmi_wrapper(rsmi_dev_partition_id_get, sibling_handle, 0, &sibling_partition_id) ==
-            AMDSMI_STATUS_SUCCESS &&
-        sibling_partition_id == 0) {
-      return sibling_handle;
+        AMDSMI_STATUS_SUCCESS) {
+      partition_ids[i] = sibling_partition_id;
     }
   }
-  return nullptr;
+
+  int primary_index = amd::smi::primary_partition_redirect_index(partition_ids, self_index);
+  if (primary_index < 0) {
+    return nullptr;
+  }
+  return reinterpret_cast<amdsmi_processor_handle>(siblings[primary_index]);
 }
 
 // Compute Partition functions
