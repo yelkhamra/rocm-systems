@@ -31,6 +31,9 @@
 
   var kernels = model.kernels || [];
   var kernelTraceIndices = model.kernelTraceIndices || [];
+  var rooflineTraces = model.rooflineTraces || [];
+  var computeTraces = model.computeTraces || [];
+  var roofMaxAi = model.roofMaxAi || 1e150;
   var peakSymbols = model.peakSymbols || {};
 
   // Unicode glyphs approximating the Plotly marker shapes, used in the details
@@ -66,7 +69,60 @@
     });
   }
 
+  function roofIsVisible(roof) {
+    return state.peak === "all" || roof.level === state.peak;
+  }
+
+  function renderRooflines() {
+    // Filter the memory-level bandwidth roofs to the selected peak
+    if (!gd || typeof Plotly === "undefined" || !rooflineTraces.length) {
+      return;
+    }
+    var indices = [];
+    var visibility = [];
+    rooflineTraces.forEach(function (roof) {
+      indices.push(roof.traceIndex);
+      visibility.push(roofIsVisible(roof) ? true : "legendonly");
+    });
+    Plotly.restyle(gd, { visible: visibility }, indices);
+
+    // Snap each compute ceiling's left endpoint to the steepest
+    // diagonal that is currently visible
+    if (!computeTraces.length) {
+      return;
+    }
+    var visibleBw = rooflineTraces
+      .filter(roofIsVisible)
+      .map(function (roof) {
+        return roof.bandwidth;
+      })
+      .filter(function (bw) {
+        return bw > 0;
+      });
+    if (!visibleBw.length) {
+      visibleBw = rooflineTraces
+        .map(function (roof) {
+          return roof.bandwidth;
+        })
+        .filter(function (bw) {
+          return bw > 0;
+        });
+    }
+    if (!visibleBw.length) {
+      return;
+    }
+    var maxBw = Math.max.apply(null, visibleBw);
+    var ceilingIndices = [];
+    var ceilingX = [];
+    computeTraces.forEach(function (ceiling) {
+      ceilingIndices.push(ceiling.traceIndex);
+      ceilingX.push([ceiling.peakPerf / maxBw, roofMaxAi]);
+    });
+    Plotly.restyle(gd, { x: ceilingX }, ceilingIndices);
+  }
+
   function render() {
+    renderRooflines();
     if (!gd || typeof Plotly === "undefined" || !kernelTraceIndices.length) {
       updatePanel();
       return;
@@ -207,30 +263,32 @@
     updateDetails();
   }
 
-  function updateDetails() {
-    if (!detailsEl) {
-      return;
-    }
-    detailsEl.innerHTML = "";
-    if (state.selected.size !== 1) {
-      return;
-    }
-    var name = state.selected.values().next().value;
-    var kernel = kernels.find(function (candidate) {
-      return candidate.name === name;
-    });
-    if (!kernel) {
-      return;
-    }
+  function buildKernelDetailBlock(kernel) {
+    var block = document.createElement("div");
+    block.className = "roofline-detail-block";
 
     var heading = document.createElement("div");
     heading.className = "roofline-details-name";
-    heading.textContent = kernel.name;
-    detailsEl.appendChild(heading);
+    heading.title = kernel.name;
+
+    var swatch = document.createElement("span");
+    swatch.className = "roofline-swatch";
+    swatch.style.backgroundColor = kernel.color || "#888888";
+    heading.appendChild(swatch);
+
+    var nameText = document.createElement("span");
+    nameText.className = "roofline-details-name-text";
+    nameText.textContent = kernel.name;
+    heading.appendChild(nameText);
+    block.appendChild(heading);
 
     var points = pointsForCurrentPeak(kernel);
     if (!points.length) {
-      return;
+      var note = document.createElement("div");
+      note.className = "roofline-detail-empty";
+      note.textContent = "No points at the selected peak.";
+      block.appendChild(note);
+      return block;
     }
 
     var table = document.createElement("table");
@@ -267,7 +325,58 @@
       });
       table.appendChild(row);
     });
-    detailsEl.appendChild(table);
+    block.appendChild(table);
+    return block;
+  }
+
+  function updateDetails() {
+    if (!detailsEl) {
+      return;
+    }
+    detailsEl.innerHTML = "";
+    if (state.selected.size === 0) {
+      return;
+    }
+    kernels.forEach(function (kernel) {
+      if (state.selected.has(kernel.name)) {
+        detailsEl.appendChild(buildKernelDetailBlock(kernel));
+      }
+    });
+  }
+
+  function buildShapeLegend() {
+    var legendEl = document.getElementById("roofline-shape-legend");
+    if (!legendEl) {
+      return;
+    }
+    var peaks = model.peaks || [];
+    if (!peaks.length) {
+      legendEl.style.display = "none";
+      return;
+    }
+    // Shape identifies the memory level and is the same for every kernel, so
+    // this stays a compact, always-visible reference regardless of how many
+    // kernels are selected.
+    var caption = document.createElement("span");
+    caption.className = "roofline-legend-caption";
+    caption.textContent = "Shape = memory level:";
+    legendEl.appendChild(caption);
+
+    peaks.forEach(function (peak) {
+      var item = document.createElement("span");
+      item.className = "roofline-legend-item";
+
+      var glyph = document.createElement("span");
+      glyph.className = "roofline-legend-glyph";
+      glyph.textContent = peakGlyph(peak);
+
+      var label = document.createElement("span");
+      label.textContent = peak;
+
+      item.appendChild(glyph);
+      item.appendChild(label);
+      legendEl.appendChild(item);
+    });
   }
 
   function wireEvents() {
@@ -312,11 +421,19 @@
     }, 50);
   }
 
+  function resizePlot() {
+    if (gd && typeof Plotly !== "undefined" && Plotly.Plots) {
+      Plotly.Plots.resize(gd);
+    }
+  }
+
   function init() {
     buildPeakOptions();
+    buildShapeLegend();
     buildKernelPanel();
     whenPlotReady(function () {
       wireEvents();
+      resizePlot();
       render();
     }, 40);
   }

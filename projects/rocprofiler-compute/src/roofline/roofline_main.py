@@ -673,6 +673,10 @@ class Roofline:
                     "dtype": dtype,
                 })
 
+        # Track the trace index of each memory-level roof so the peak dropdown
+        # can show/hide the matching bandwidth line
+        roofline_trace_indices: dict[str, int] = {}
+
         for bw_line in bandwidth_lines:
             value = to_int(bw_line["value"])
             level = bw_line["level"]
@@ -740,6 +744,24 @@ class Roofline:
                     ),
                     **subplot_kwargs,
                 )
+                roofline_trace_indices[level.upper()] = (
+                    len(fig.data) - 1,
+                    bw_line["value"],
+                )
+
+        # Attach the memory-roof trace indices (with bandwidth) to the view model
+        # built this call so the client controller can filter roofs by the
+        # selected peak and snap the compute ceilings to the steepest visible one.
+        if ops_flops == "FLOP" and not skipAI and has_kernel_names:
+            view_model = self.__view_models.get(ops_flops)
+            if view_model is not None:
+                view_model.roofline_traces = [
+                    {"level": roof_level, "traceIndex": idx, "bandwidth": bw}
+                    for roof_level, (idx, bw) in roofline_trace_indices.items()
+                ]
+                view_model.roof_max_ai = _ROOF_EXTRAP_MAX_AI
+
+        max_bw = max((bw_line["value"] for bw_line in bandwidth_lines), default=0.0)
 
         #######################
         # Peak Performance
@@ -757,10 +779,12 @@ class Roofline:
 
         if valu_data:
             legend_name = f"Peak VALU-{dtype}<br>{to_int(valu_data[2])} G{ops_flops}/s"
+            peak_perf = valu_data[1][0]
+            left_x = peak_perf / max_bw if max_bw > 0 else valu_data[0][0]
             fig.add_trace(
                 go.Scatter(
-                    x=[valu_data[0][0], _ROOF_EXTRAP_MAX_AI],
-                    y=[valu_data[1][0], valu_data[1][0]],
+                    x=[left_x, _ROOF_EXTRAP_MAX_AI],
+                    y=[peak_perf, peak_perf],
                     name=legend_name,
                     mode="lines",
                     line=dict(color=get_color("valu")),
@@ -768,6 +792,11 @@ class Roofline:
                 ),
                 **subplot_kwargs,
             )
+            compute_vm = self.__view_models.get(ops_flops)
+            if compute_vm is not None:
+                compute_vm.compute_traces.append(
+                    {"traceIndex": len(fig.data) - 1, "peakPerf": peak_perf}
+                )
 
         if matrix_data:
             matrix_ops_type = get_matrix_ops_type(
@@ -777,12 +806,14 @@ class Roofline:
                 f"Peak {matrix_ops_type}-{dtype}<br>"
                 f"{to_int(matrix_data[2])} G{ops_flops}/s"
             )
-            # Solid like develop and starting at develop's ridge, but extended
-            # right so panning never reaches the end of the compute ceiling.
+            # Extend left to the steepest (first) diagonal and right past the
+            # data so panning never reaches an end of the compute ceiling.
+            peak_perf = matrix_data[1][0]
+            left_x = peak_perf / max_bw if max_bw > 0 else matrix_data[0][0]
             fig.add_trace(
                 go.Scatter(
-                    x=[matrix_data[0][0], _ROOF_EXTRAP_MAX_AI],
-                    y=[matrix_data[1][0], matrix_data[1][0]],
+                    x=[left_x, _ROOF_EXTRAP_MAX_AI],
+                    y=[peak_perf, peak_perf],
                     name=legend_name,
                     mode="lines",
                     line=dict(color=get_color("matrix_ops")),
@@ -790,6 +821,11 @@ class Roofline:
                 ),
                 **subplot_kwargs,
             )
+            compute_vm = self.__view_models.get(ops_flops)
+            if compute_vm is not None:
+                compute_vm.compute_traces.append(
+                    {"traceIndex": len(fig.data) - 1, "peakPerf": peak_perf}
+                )
 
         #######################
         # Layout Configuration
@@ -807,7 +843,8 @@ class Roofline:
                 title_text=f"Performance (G{ops_flops}/sec)",
                 gridcolor="rgba(0, 0, 0, 0.08)",
             )
-            # make the plot pan on drag / zoom on wheel
+            # Make the plot pan on drag / zoom on wheel.
+            # No fixed width
             fig.update_layout(
                 template="plotly_white",
                 title=dict(
@@ -817,7 +854,6 @@ class Roofline:
                     font=dict(size=15),
                 ),
                 height=int(total_figure_height),
-                width=1000,
                 dragmode="pan",
                 hovermode="closest",
                 margin=dict(l=70, r=40, b=55, t=62, pad=4),

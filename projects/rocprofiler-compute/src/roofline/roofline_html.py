@@ -27,6 +27,7 @@ _PLOT_CONFIG: dict[str, Any] = {
     "displaylogo": False,
     "responsive": True,
     "scrollZoom": True,
+    "doubleClick": False,
     "modeBarButtonsToRemove": ["autoScale2d"],
 }
 
@@ -48,6 +49,12 @@ class RooflineViewModel:
             "perf", "status"}]}``.
         kernel_trace_indices: Indices into ``figure.data`` of the per-kernel
             scatter traces, in the same order as ``kernels``.
+        roofline_traces: Bandwidth-roof (memory-level) line traces the peak
+            dropdown filters, each ``{"level", "traceIndex", "bandwidth"}``.
+        compute_traces: Horizontal compute-ceiling traces (VALU/matrix), each
+            ``{"traceIndex", "peakPerf"}``. These always stay shown, but their
+            left endpoint tracks the steepest *visible* diagonal.
+        roof_max_ai: Right-edge AI the roofs extrapolate to.
         div_id: Id of the Plotly graph div.
     """
 
@@ -56,6 +63,9 @@ class RooflineViewModel:
     default_peak: Optional[str] = None
     kernels: list[dict[str, Any]] = field(default_factory=list)
     kernel_trace_indices: list[int] = field(default_factory=list)
+    roofline_traces: list[dict[str, Any]] = field(default_factory=list)
+    compute_traces: list[dict[str, Any]] = field(default_factory=list)
+    roof_max_ai: float = 0.0
     div_id: str = PLOT_DIV_ID
 
     def to_json(self) -> str:
@@ -71,6 +81,9 @@ class RooflineViewModel:
             "defaultPeak": self.default_peak,
             "kernels": self.kernels,
             "kernelTraceIndices": self.kernel_trace_indices,
+            "rooflineTraces": self.roofline_traces,
+            "computeTraces": self.compute_traces,
+            "roofMaxAi": self.roof_max_ai,
         }
         return json.dumps(payload, allow_nan=True).replace("</", "<\\/")
 
@@ -123,6 +136,8 @@ __PLOT_FRAGMENT__
       <p class="roofline-panel-help">Click a row to show only that kernel; click
         again to show all. Ctrl+click (&#8984;+click on Mac) to add or remove
         kernels.</p>
+      <div id="roofline-shape-legend" class="roofline-shape-legend"
+           aria-label="Marker shape for each memory level"></div>
       <ul id="roofline-kernel-list" class="roofline-kernel-list"></ul>
       <div id="roofline-kernel-details" class="roofline-kernel-details"></div>
     </aside>
