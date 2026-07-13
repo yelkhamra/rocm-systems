@@ -1283,6 +1283,20 @@ typedef enum {
 } amdsmi_link_status_t;
 
 /**
+ * @brief Unified link topology information between two processors
+ *
+ * @cond @tag{gpu_bm_linux} @tag{host} @endcond
+ */
+typedef struct {
+  uint64_t weight;                   //!< link weight
+  amdsmi_link_status_t link_status;  //!< HW status of the link
+  amdsmi_link_type_t link_type;      //!< type of the link
+  uint8_t num_hops;                  //!< number of hops
+  uint8_t fb_sharing;                //!< framebuffer sharing flag
+  uint32_t reserved[10];
+} amdsmi_link_topology_t;
+
+/**
  * @brief Link Metrics
  *
  * @cond @tag{gpu_bm_linux} @tag{host} @endcond
@@ -6804,6 +6818,44 @@ amdsmi_status_t amdsmi_get_minmax_bandwidth_between_processors(
 amdsmi_status_t amdsmi_topo_get_link_type(amdsmi_processor_handle processor_handle_src,
                                           amdsmi_processor_handle processor_handle_dst,
                                           uint64_t* hops, amdsmi_link_type_t* type);
+
+/**
+ *  @brief Retrieve the unified link topology information between 2 GPUs
+ *
+ *  @ingroup tagHWTopology
+ *
+ *  @platform{gpu_bm_linux} @platform{host}
+ *
+ *  @details Given a source processor handle @p processor_handle_src and a
+ *  destination processor handle @p processor_handle_dst, and a pointer to an
+ *  ::amdsmi_link_topology_t @p topology_info, this function writes the link
+ *  weight, link status, link type, abstracted hop count, and framebuffer
+ *  sharing flag for the connection between @p processor_handle_src and
+ *  @p processor_handle_dst to the memory pointed to by @p topology_info.
+ *
+ *  This is the unified topology query that aggregates the information
+ *  otherwise obtained from ::amdsmi_topo_get_link_type and
+ *  ::amdsmi_topo_get_link_weight into a single ::amdsmi_link_topology_t
+ *  structure, matching the host interface.
+ *
+ *  @note The @p num_hops value is the abstracted topology step count reported
+ *  by ::amdsmi_topo_get_link_type, not the number of physical xGMI links.
+ *  The @p link_status reflects whether a usable io_link exists between the two
+ *  devices, and @p fb_sharing reflects whether the two devices can directly
+ *  access each other's framebuffer over P2P.
+ *
+ *  @param[in] processor_handle_src the source processor handle
+ *
+ *  @param[in] processor_handle_dst the destination processor handle
+ *
+ *  @param[in,out] topology_info A pointer to an ::amdsmi_link_topology_t to
+ *  which the link topology information should be written.
+ *
+ *  @return ::amdsmi_status_t | ::AMDSMI_STATUS_SUCCESS on success, non-zero on fail
+ */
+amdsmi_status_t amdsmi_get_link_topology(amdsmi_processor_handle processor_handle_src,
+                                         amdsmi_processor_handle processor_handle_dst,
+                                         amdsmi_link_topology_t* topology_info);
 
 /**
  *  @brief Retrieve the set of GPUs that are nearest to a given device
