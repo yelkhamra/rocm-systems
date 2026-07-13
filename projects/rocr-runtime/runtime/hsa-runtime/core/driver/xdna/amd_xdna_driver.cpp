@@ -1126,7 +1126,6 @@ hsa_status_t XdnaDriver::SubmitCmdChain(hsa_queue_t& q, void* queue_metadata,
       }
       auto idx = kmq_metadata->pdi_cache.GetIndex(pdi_bo_handle.handle);
       if (idx == PDICache::NotFound) {
-        FlushCpuCache(pdi_bo_handle.vaddr, 0, pdi_bo_handle.size);
         hsa_status_t err = kmq_metadata->pdi_cache.SetNext(pdi_bo_handle.handle, idx);
         if (err != HSA_STATUS_SUCCESS) {
           assert(false && "Failed to set PDI in cache.");
@@ -1137,7 +1136,9 @@ hsa_status_t XdnaDriver::SubmitCmdChain(hsa_queue_t& q, void* queue_metadata,
       cached_pdi_index = static_cast<int>(idx);
     }
 
-    // Add the instruction sequence BO handle to bo_handles and flush cache.
+    // Add the instruction sequence BO handle. The PDI/insts blobs are immutable
+    // and were flushed from the CPU cache once at load time, so no per-dispatch
+    // flush is needed here (only the mutable kernargs are flushed, below).
     void* insts_addr = reinterpret_cast<void*>(desc->insts_dev_addr);
     auto instr_bo_handle = FindBOHandle(insts_addr);
     if (!instr_bo_handle.IsValid()) {
@@ -1145,7 +1146,6 @@ hsa_status_t XdnaDriver::SubmitCmdChain(hsa_queue_t& q, void* queue_metadata,
       return HSA_STATUS_ERROR_INVALID_ALLOCATION;
     }
     bo_handles.push_back(instr_bo_handle.handle);
-    FlushCpuCache(insts_addr, 0, desc->insts_size);
 
     // Add the argument BO handles to bo_handles.
     auto* kernarg_address = static_cast<uint64_t*>(pkt->kernarg_address);
