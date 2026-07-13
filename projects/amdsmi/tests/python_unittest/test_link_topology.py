@@ -32,6 +32,7 @@ safe to collect in any environment.
 
 import ctypes
 import unittest
+from unittest import mock
 
 try:
     import amdsmi
@@ -79,6 +80,34 @@ class TestLinkTopology(unittest.TestCase):
         # without needing a GPU present.
         with self.assertRaises(amdsmi_interface.AmdSmiParameterException):
             amdsmi_interface.amdsmi_get_link_topology("not-a-handle", "also-bad")
+
+    def test_success_path_returns_mapped_dict(self):
+        # Mock the ctypes entry point so the success path can be exercised
+        # without a GPU: it fills the out struct and reports success. This locks
+        # the interface mapping from struct fields to the returned dict.
+        src = amdsmi_wrapper.amdsmi_processor_handle()
+        dst = amdsmi_wrapper.amdsmi_processor_handle()
+
+        def _fill(_src, _dst, topology_ref):
+            topology = topology_ref._obj
+            topology.weight = 42
+            topology.link_status = 1
+            topology.link_type = 2
+            topology.num_hops = 3
+            topology.fb_sharing = 1
+            return 0
+
+        with mock.patch.object(amdsmi_wrapper, "amdsmi_get_link_topology", side_effect=_fill):
+            result = amdsmi_interface.amdsmi_get_link_topology(src, dst)
+
+        self.assertEqual(
+            set(result), {"weight", "link_status", "link_type", "num_hops", "fb_sharing"}
+        )
+        self.assertEqual(result["weight"], 42)
+        self.assertEqual(result["link_status"], 1)
+        self.assertEqual(result["link_type"], 2)
+        self.assertEqual(result["num_hops"], 3)
+        self.assertEqual(result["fb_sharing"], 1)
 
 
 if __name__ == "__main__":

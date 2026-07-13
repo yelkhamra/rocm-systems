@@ -8,6 +8,10 @@ Full documentation for amd_smi_lib is available at [https://rocm.docs.amd.com/pr
 
 ### Added
 
+- **Added unified `amdsmi_get_link_topology()` API on baremetal**.  
+  - New C API `amdsmi_get_link_topology()` returns a single `amdsmi_link_topology_t` aggregating link weight, link status, link type, hop count, and framebuffer-sharing capability between two GPUs.
+  - New Python API `amdsmi_get_link_topology()` exposes the same data, mirroring the host interface for binary compatibility.
+
 - **Added NIC processor discovery and information API surface**.  
   - New C APIs: `amdsmi_get_nic_processor_handles()`, `amdsmi_get_nic_device_bdf()`, `amdsmi_get_nic_fw_info()`, `amdsmi_get_nic_port_statistics()`, and `amdsmi_get_nic_vendor_statistics()`.
   - `amdsmi_get_nic_processor_handles()` enumerates NIC processors by socket; the BDF, firmware, and port/vendor statistics getters are reserved and currently return `AMDSMI_STATUS_NOT_YET_IMPLEMENTED`.

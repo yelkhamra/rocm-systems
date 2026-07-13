@@ -3090,10 +3090,14 @@ amdsmi_status_t amdsmi_get_link_topology(amdsmi_processor_handle processor_handl
   if (status != AMDSMI_STATUS_SUCCESS) return status;
   topology_info->weight = weight;
 
-  // A link that can be typed and weighted is enabled/active on baremetal.
-  topology_info->link_status = (link_type == AMDSMI_LINK_TYPE_NOT_APPLICABLE)
-                                   ? AMDSMI_LINK_STATUS_DISABLED
-                                   : AMDSMI_LINK_STATUS_ENABLED;
+  // A link is only reported as enabled/active on baremetal when it resolves to
+  // a concrete link type. NOT_APPLICABLE (no link) and UNKNOWN (type could not
+  // be determined) are both reported as disabled so we never imply an active
+  // link that cannot be characterized.
+  topology_info->link_status =
+      (link_type == AMDSMI_LINK_TYPE_NOT_APPLICABLE || link_type == AMDSMI_LINK_TYPE_UNKNOWN)
+          ? AMDSMI_LINK_STATUS_DISABLED
+          : AMDSMI_LINK_STATUS_ENABLED;
 
   // Framebuffer sharing: on baremetal two GPUs can share framebuffer memory
   // when they are directly accessible to each other over P2P (e.g. same xGMI
