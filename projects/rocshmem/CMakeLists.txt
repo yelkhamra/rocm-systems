@@ -44,8 +44,8 @@ endif()
 ###############################################################################
 
 option(PROFILE "Enable statistics and timing support" OFF)
-option(USE_RO "Enable RO conduit" ON)
-option(USE_IPC "Enable IPC support (using HIP)" OFF)
+option(USE_RO "Enable RO conduit" OFF)
+option(USE_IPC "Enable IPC support (using HIP)" ON)
 option(USE_GDA "Enable GDA conduit" OFF)
 option(USE_SDMA "Enable SDMA transport (MI300X+)" OFF)
 option(USE_THREADS "Enable workgroup threads to share network queues" OFF)
@@ -124,18 +124,43 @@ endif()
 # Try to find AMD SMI library
 find_package(amd_smi QUIET)
 
+set(HAVE_AMDSMI_GPU_FABRIC_INFO FALSE)
+
 if(TARGET amd_smi)
   include(CheckLibraryExists)
+  include(CheckCXXSourceCompiles)
   include(CMakePushCheckState)
+
+  # Check if AMD SMI library has fabric info support
   cmake_push_check_state(RESET)
   set(CMAKE_REQUIRED_LIBRARIES amd_smi)
-  check_library_exists(amd_smi amdsmi_get_gpu_fabric_info "" HAVE_AMDSMI_GPU_FABRIC_INFO)
+  check_library_exists(amd_smi amdsmi_get_gpu_fabric_info "" HAVE_AMDSMI_FABRIC_FUNC)
   cmake_pop_check_state()
 
-  if(HAVE_AMDSMI_GPU_FABRIC_INFO)
+  # Check if HIP runtime has hipMemFabricHandle_t
+  cmake_push_check_state(RESET)
+  set(CMAKE_REQUIRED_INCLUDES ${HIP_INCLUDE_DIRS})
+  check_cxx_source_compiles("
+    #include <hip/hip_runtime_api.h>
+    int main() {
+      hipMemFabricHandle_t handle;
+      (void)handle;
+      return 0;
+    }
+  " HAVE_HIP_FABRIC_HANDLE)
+  cmake_pop_check_state()
+
+  # Both conditions must be met for full fabric support
+  if(HAVE_AMDSMI_FABRIC_FUNC AND HAVE_HIP_FABRIC_HANDLE)
+    set(HAVE_AMDSMI_GPU_FABRIC_INFO TRUE)
     message(STATUS "AMD SMI library found with fabric info support - enabling pod-based IPC capability detection")
   else()
-    message(STATUS "AMD SMI library found but lacks amdsmi_get_gpu_fabric_info - disabling pod-based IPC capability detection")
+    if(NOT HAVE_AMDSMI_FABRIC_FUNC)
+      message(STATUS "AMD SMI library found but lacks amdsmi_get_gpu_fabric_info - disabling pod-based IPC capability detection")
+    endif()
+    if(NOT HAVE_HIP_FABRIC_HANDLE)
+      message(STATUS "HIP runtime lacks hipMemFabricHandle_t support (requires ROCm 7.14+) - disabling fabric handle features")
+    endif()
   endif()
 else()
   message(STATUS "AMD SMI library not found - disabling pod-based IPC capability detection")
@@ -149,14 +174,15 @@ if(USE_HEAP_DEVICE_VMM_FABRIC)
     message(FATAL_ERROR "USE_HEAP_DEVICE_VMM_FABRIC requires ROCm 7.next or newer. Current ROCm version: ${ROCM_MAJOR_VERSION}.${ROCM_MINOR_VERSION}")
   endif()
 
-  # VMM Fabric allocator requires fabric info support for pod-based IPC
+  # VMM Fabric allocator requires both AMD SMI fabric info and HIP fabric handle support
   if(NOT HAVE_AMDSMI_GPU_FABRIC_INFO)
-    message(FATAL_ERROR "USE_HEAP_DEVICE_VMM_FABRIC requires AMD SMI library with amdsmi_get_gpu_fabric_info support. "
-                        "Either update to a newer AMD SMI version or disable USE_HEAP_DEVICE_VMM_FABRIC.")
+    message(FATAL_ERROR "USE_HEAP_DEVICE_VMM_FABRIC requires both:\n"
+                        "  1. AMD SMI library with amdsmi_get_gpu_fabric_info support\n"
+                        "  2. HIP runtime with hipMemFabricHandle_t support (ROCm 7.14+)\n"
+                        "Either update to ROCm 7.14 or newer, or disable USE_HEAP_DEVICE_VMM_FABRIC.")
   endif()
 
-  # Note: Fabric handle support will be available in a future ROCm 7.x release
-  message(STATUS "USE_HEAP_DEVICE_VMM_FABRIC enabled. Requires fabric handle support (ROCm 7.next)")
+  message(STATUS "USE_HEAP_DEVICE_VMM_FABRIC enabled with full fabric handle support")
 endif()
 
 #############################################################################
@@ -172,6 +198,9 @@ set(DEFAULT_GPUS
 
 if(${ROCM_MAJOR_VERSION} GREATER 6)
   list(APPEND DEFAULT_GPUS gfx950)
+endif()
+
+if(${ROCM_MAJOR_VERSION} GREATER 7 OR (${ROCM_MAJOR_VERSION} EQUAL 7 AND ${ROCM_MINOR_VERSION} GREATER_EQUAL 14))
   list(APPEND DEFAULT_GPUS gfx1250)
 endif()
 
@@ -191,15 +220,62 @@ endif()
 set(DEFAULT_GPU_TARGETS "${DEFAULT_GPUS}" CACHE STRING
     "Target default GPUs if GPU_TARGETS is not defined.")
 
-if (COMMAND rocm_check_target_ids)
-  message(STATUS "Checking for ROCm support for GPU targets: " "${DEFAULT_GPU_TARGETS}")
-  rocm_check_target_ids(SUPPORTED_GPUS TARGETS ${DEFAULT_GPU_TARGETS})
-else()
-  message(WARNING "Unable to check for supported GPU targets.")
-  set(SUPPORTED_GPUS ${DEFAULT_GPU_TARGETS})
+# When the user supplies GPU_TARGETS:
+#   - Normalise comma/semicolon separators
+#   - Build a base→full map so feature suffixes (e.g. gfx950:sramecc+:xnack-)
+#     can be restored after validation
+#   - Produce a bare-arch list for rocm_check_target_ids and HIP compilation,
+#     which both reject feature-suffixed entries in --offload-arch
+if(GPU_TARGETS)
+  string(REPLACE "," ";" GPU_TARGETS "${GPU_TARGETS}")
+  set(_bare_targets "")
+  foreach(_t ${GPU_TARGETS})
+    string(REGEX REPLACE ":.*" "" _base "${_t}")
+    set(_USER_FULL_${_base} "${_t}")
+    list(APPEND _bare_targets "${_base}")
+  endforeach()
+  list(REMOVE_DUPLICATES _bare_targets)
 endif()
 
-set(GPU_TARGETS "${SUPPORTED_GPUS}" CACHE STRING "GPU architectures to compile for")
+if(COMMAND rocm_check_target_ids)
+  if(GPU_TARGETS)
+    message(STATUS "Checking for ROCm support for GPU targets: " "${_bare_targets}")
+    rocm_check_target_ids(SUPPORTED_GPUS TARGETS ${_bare_targets})
+  else()
+    message(STATUS "Checking for ROCm support for GPU targets: " "${DEFAULT_GPU_TARGETS}")
+    rocm_check_target_ids(SUPPORTED_GPUS TARGETS ${DEFAULT_GPU_TARGETS})
+  endif()
+else()
+  message(WARNING "Unable to check for supported GPU targets.")
+  if(GPU_TARGETS)
+    set(SUPPORTED_GPUS ${_bare_targets})
+  else()
+    set(SUPPORTED_GPUS ${DEFAULT_GPU_TARGETS})
+  endif()
+endif()
+
+# GPU_TARGETS_FULL: validated arch strings with feature suffixes restored.
+# Consumed by DeviceBitcode.cmake to embed correct amdhsa.target metadata in
+# HSACOs — HIP error 209 occurs if the suffix in the HSACO metadata does not
+# match the active feature configuration of the GPU.
+# Explicitly cleared when GPU_TARGETS is not set so a stale cached value from a
+# previous -DGPU_TARGETS=... configure run cannot persist into the defaults path.
+if(GPU_TARGETS)
+  set(_full_validated "")
+  foreach(_base ${SUPPORTED_GPUS})
+    if(DEFINED _USER_FULL_${_base})
+      list(APPEND _full_validated "${_USER_FULL_${_base}}")
+    else()
+      list(APPEND _full_validated "${_base}")
+    endif()
+  endforeach()
+  set(GPU_TARGETS_FULL "${_full_validated}" CACHE STRING
+    "Validated GPU arch strings with feature suffixes (consumed by DeviceBitcode.cmake)" FORCE)
+else()
+  unset(GPU_TARGETS_FULL CACHE)
+endif()
+
+set(GPU_TARGETS "${SUPPORTED_GPUS}" CACHE STRING "GPU architectures to compile for" FORCE)
 
 message(STATUS "Compiling for ${GPU_TARGETS}")
 
