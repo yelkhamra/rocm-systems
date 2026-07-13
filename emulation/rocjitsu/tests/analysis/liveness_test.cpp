@@ -284,6 +284,15 @@ LivenessAnalysis analyze_scope(const std::vector<std::unique_ptr<BasicBlock>> &b
   return LivenessAnalysis(KernelBlockScope(scope), exec);
 }
 
+// Wire the same scoped call/return edges into BOTH analyses, as BinaryTranslator
+// does; feeding them to only one makes the two disagree around calls and returns.
+LivenessAnalysis analyze_scope_with_edges(const std::vector<std::unique_ptr<BasicBlock>> &blocks,
+                                          std::span<const ScopedCfgEdge> extra_edges) {
+  auto scope = block_scope(blocks);
+  const ExecMaskAnalysis exec(KernelBlockScope(scope), /*wave_size=*/64, extra_edges);
+  return LivenessAnalysis(KernelBlockScope(scope), exec, /*options=*/{}, extra_edges);
+}
+
 uint32_t pack_sopc(uint32_t op, uint16_t ssrc0, uint16_t ssrc1) {
   constexpr uint32_t kSopcEncodingPrefix = 0x17e;
   return (kSopcEncodingPrefix << 23) | ((op & 0x7fu) << 16) | ((ssrc1 & 0xffu) << 8) |
@@ -872,6 +881,101 @@ TEST(ExecMaskAnalysis, CfgJoinMeetsToUnknownUnlessAllPredecessorsFull) {
 
   LivenessAnalysis liveness = analyze_scope(blocks);
   EXPECT_TRUE(liveness.is_live_before(def, {RegClass::VGPR, 0, 1}));
+}
+
+// Regression: EXEC must flow across the scoped caller->callee edge like liveness
+// does. Without the edge the callee looks like a scope entry (Unknown) and its
+// vector def is wrongly left a non-kill; with it EXEC is Full and the def kills.
+TEST(ExecMaskAnalysis, CallEdgeFlowsExecFullIntoCallee) {
+  // Caller: exec=all-ones; end.   Callee: def v0; use v0; end. The caller's End
+  // splits the callee into its own block, reachable only via the scoped edge.
+  auto blocks = build_test_blocks({TestOpcode::WriteExecFull, TestOpcode::End, TestOpcode::DefVgpr0,
+                                   TestOpcode::UseVgpr0, TestOpcode::End});
+  ASSERT_EQ(blocks.size(), 2u);
+  BasicBlock *caller = blocks[0].get();
+  BasicBlock *callee = blocks[1].get();
+  const Instruction &def = *callee->instructions().begin();
+
+  const std::array<ScopedCfgEdge, 1> edges{ScopedCfgEdge{.from = caller, .to = callee}};
+  auto scope = block_scope(blocks);
+
+  // No edge: callee is a scope entry, EXEC Unknown, def stays live.
+  {
+    ExecMaskAnalysis exec{KernelBlockScope(scope), 64};
+    EXPECT_EQ(exec.before(def), ExecState::Unknown);
+    LivenessAnalysis liveness = analyze_scope(blocks);
+    EXPECT_TRUE(liveness.is_live_before(def, {RegClass::VGPR, 0, 1}));
+  }
+
+  // Same edge in both: EXEC Full at the def, so it overwrites every lane and kills v0.
+  {
+    ExecMaskAnalysis exec{KernelBlockScope(scope), 64, edges};
+    EXPECT_EQ(exec.before(def), ExecState::Full);
+    LivenessAnalysis liveness = analyze_scope_with_edges(blocks, edges);
+    EXPECT_FALSE(liveness.is_live_before(def, {RegClass::VGPR, 0, 1}));
+  }
+}
+
+// Regression: a scoped return->continuation edge must pull the continuation to
+// Unknown when the returning path narrowed EXEC. Omitting it from exec leaves the
+// continuation looking Full (from its local branch pred) and unsoundly kills.
+TEST(ExecMaskAnalysis, ReturnEdgeToContinuationMeetsToUnknown) {
+  //   0:  WriteExecFull         (P0)
+  //   4:  CBranchToElseAfterTwo (delta +8 -> branch target 16)
+  //   8:  WriteExecNarrow       (P1) return block: narrows EXEC
+  //   12: End                    P1 terminates -> reaches cont only via the edge
+  //   16: DefVgpr0              (cont) branch target of P0; 20: UseVgpr0; 24: End
+  auto blocks = build_test_blocks({TestOpcode::WriteExecFull, TestOpcode::CBranchToElseAfterTwo,
+                                   TestOpcode::WriteExecNarrow, TestOpcode::End,
+                                   TestOpcode::DefVgpr0, TestOpcode::UseVgpr0, TestOpcode::End});
+  BasicBlock *ret_block = block_starting_at(blocks, 8);
+  BasicBlock *cont = block_starting_at(blocks, 16);
+  ASSERT_NE(ret_block, nullptr);
+  ASSERT_NE(cont, nullptr);
+  const Instruction &def = *cont->instructions().begin();
+
+  const std::array<ScopedCfgEdge, 1> edges{ScopedCfgEdge{.from = ret_block, .to = cont}};
+  auto scope = block_scope(blocks);
+
+  // No edge: cont sees only its Full branch pred, so EXEC looks Full and def kills.
+  {
+    ExecMaskAnalysis exec{KernelBlockScope(scope), 64};
+    EXPECT_EQ(exec.before(def), ExecState::Full);
+    LivenessAnalysis liveness = analyze_scope(blocks);
+    EXPECT_FALSE(liveness.is_live_before(def, {RegClass::VGPR, 0, 1}));
+  }
+
+  // With edge: meet of the Full branch and the narrowed return path is Unknown,
+  // so the def is not a kill and v0 stays live.
+  {
+    ExecMaskAnalysis exec{KernelBlockScope(scope), 64, edges};
+    EXPECT_EQ(exec.before(def), ExecState::Unknown);
+    LivenessAnalysis liveness = analyze_scope_with_edges(blocks, edges);
+    EXPECT_TRUE(liveness.is_live_before(def, {RegClass::VGPR, 0, 1}));
+  }
+}
+
+// Regression: a back-edge into the scope entry gives block 0 a predecessor, but
+// EXEC at kernel entry is set by dispatch and must stay Unknown -- the loop
+// back-edge must not let interior blocks' optimistic `Full` seed leak in. Guards
+// the `i == 0` pin in the predecessor-based entry detection.
+TEST(ExecMaskAnalysis, BackEdgeIntoScopeEntryStaysUnknown) {
+  //   0: CBranchToElse (+4)    header/entry: loop or exit at 8
+  //   4: BranchBackToStart(-8) latch: unconditional back-edge to offset 0
+  //   8: End                   loop exit
+  auto blocks = build_test_blocks(
+      {TestOpcode::CBranchToElse, TestOpcode::BranchBackToStart, TestOpcode::End});
+  BasicBlock *entry = blocks[0].get();
+  BasicBlock *latch = block_starting_at(blocks, 4);
+  ASSERT_NE(latch, nullptr);
+
+  // The latch back-edges into the entry, so it is not caught by the empty-pred
+  // case -- only the i==0 pin keeps it an entry.
+  EXPECT_TRUE(has_predecessor(*entry, latch));
+
+  auto scope = block_scope(blocks);
+  ExecMaskAnalysis exec{KernelBlockScope(scope), 64};
+  EXPECT_EQ(exec.before(*entry->instructions().begin()), ExecState::Unknown);
 }
 
 TEST(LivenessAnalysis, FindsDeadSgprAfterLiveSgpr) {

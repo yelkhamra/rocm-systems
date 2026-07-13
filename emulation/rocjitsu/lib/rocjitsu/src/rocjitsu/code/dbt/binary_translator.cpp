@@ -749,7 +749,7 @@ TranslatedCodeObject BinaryTranslator::translate(const AmdGpuCodeObject &obj) {
       liveness_options.min_free_vgpr = *options_.debug_min_free_vgpr;
     const auto liveness_edges = scoped_call_liveness_edges(KernelBlockScope(scope.blocks), text);
     const ExecMaskAnalysis exec(KernelBlockScope(scope.blocks),
-                                scope.translation->guest_wavefront_size);
+                                scope.translation->guest_wavefront_size, liveness_edges);
     LivenessAnalysis liveness(KernelBlockScope(scope.blocks), exec, liveness_options,
                               liveness_edges);
 

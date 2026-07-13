@@ -7,9 +7,11 @@
 #include "rocjitsu/isa/instruction.h"
 #include "rocjitsu/isa/operand.h"
 
+#include <algorithm>
 #include <deque>
 #include <optional>
 #include <stdexcept>
+#include <vector>
 
 namespace rocjitsu {
 
@@ -162,36 +164,58 @@ enum class Combinator { Other, Copy, Or };
 
 } // namespace
 
-ExecMaskAnalysis::ExecMaskAnalysis(KernelBlockScope blocks, uint8_t wave_size)
+ExecMaskAnalysis::ExecMaskAnalysis(KernelBlockScope blocks, uint8_t wave_size,
+                                   std::span<const ScopedCfgEdge> extra_edges)
     : wave_size_(wave_size) {
   if (wave_size != 32 && wave_size != 64)
     throw std::invalid_argument("ExecMaskAnalysis: wave_size must be 32 or 64");
-  analyze(blocks);
+  analyze(blocks, extra_edges);
 }
 
-void ExecMaskAnalysis::analyze(KernelBlockScope blocks) {
+void ExecMaskAnalysis::analyze(KernelBlockScope blocks,
+                               std::span<const ScopedCfgEdge> extra_edges) {
   states_.assign(blocks.size(), BlockExec{});
   for (size_t i = 0; i < blocks.size(); ++i) {
     if (blocks[i] != nullptr)
       block_index_.emplace(blocks[i], i);
   }
 
-  // A block is an entry when no predecessor is part of this scope. Entries are
-  // pinned to `Unknown`; interior blocks start optimistically `Full` so the
-  // forward `must` meet can pull them down to `Unknown` to a fixpoint.
-  for (size_t i = 0; i < blocks.size(); ++i) {
-    const BasicBlock *block = blocks[i];
+  // BasicBlock::successors()/predecessors() carry only context-free local CFG
+  // edges. Fold the caller-provided scoped call/return edges into an index-based
+  // adjacency the same way LivenessAnalysis does, so both analyses see the same
+  // graph. Only edges whose endpoints are both in scope are kept.
+  std::vector<std::vector<size_t>> successors(blocks.size());
+  std::vector<std::vector<size_t>> predecessors(blocks.size());
+  auto add_edge = [&](const BasicBlock *from, const BasicBlock *to) {
+    auto from_it = block_index_.find(from);
+    auto to_it = block_index_.find(to);
+    if (from_it == block_index_.end() || to_it == block_index_.end())
+      return;
+    auto &succs = successors[from_it->second];
+    if (std::ranges::find(succs, to_it->second) != succs.end())
+      return;
+    succs.push_back(to_it->second);
+    predecessors[to_it->second].push_back(from_it->second);
+  };
+
+  for (const BasicBlock *block : blocks) {
     if (block == nullptr)
       continue;
-    bool has_in_scope_pred = false;
-    for (const BasicBlock *pred : block->predecessors()) {
-      if (block_index_.contains(pred)) {
-        has_in_scope_pred = true;
-        break;
-      }
-    }
+    for (const BasicBlock *succ : block->successors())
+      add_edge(block, succ);
+  }
+  for (const ScopedCfgEdge &edge : extra_edges)
+    add_edge(edge.from, edge.to);
+
+  // A block is an entry when no in-scope predecessor reaches it (scoped edges
+  // included). Entries are pinned to `Unknown`; interior blocks start
+  // optimistically `Full` so the forward `must` meet can pull them down to
+  // `Unknown` to a fixpoint.
+  for (size_t i = 0; i < blocks.size(); ++i) {
+    if (blocks[i] == nullptr)
+      continue;
     // consider entry to be scope leader and blocks with no predecessors in scope
-    states_[i].is_entry = (!has_in_scope_pred || i == 0);
+    states_[i].is_entry = (predecessors[i].empty() || i == 0);
   }
 
   const auto rpo = reverse_post_order(blocks);
@@ -204,11 +228,16 @@ void ExecMaskAnalysis::analyze(KernelBlockScope blocks) {
     worklist.push_back(idx);
   };
 
+  // Seed in reverse-post-order for fast forward convergence, then queue any
+  // remaining blocks: a block reachable only through a scoped edge is absent
+  // from the successors()-based RPO but still needs to be processed.
   for (const BasicBlock *block : rpo) {
     auto it = block_index_.find(block);
     if (it != block_index_.end())
       enqueue(it->second);
   }
+  for (size_t idx = 0; idx < blocks.size(); ++idx)
+    enqueue(idx);
 
   while (!worklist.empty()) {
     const size_t idx = worklist.front();
@@ -224,11 +253,8 @@ void ExecMaskAnalysis::analyze(KernelBlockScope blocks) {
       in = ExecState::Unknown;
     } else {
       std::optional<ExecState> acc;
-      for (const BasicBlock *pred : block->predecessors()) {
-        auto pred_it = block_index_.find(pred);
-        if (pred_it == block_index_.end())
-          continue;
-        const ExecState pred_out = states_[pred_it->second].out;
+      for (size_t pred_idx : predecessors[idx]) {
+        const ExecState pred_out = states_[pred_idx].out;
         acc = acc ? meet(*acc, pred_out) : pred_out;
       }
       in = acc.value_or(ExecState::Unknown);
@@ -238,11 +264,8 @@ void ExecMaskAnalysis::analyze(KernelBlockScope blocks) {
     if (in != states_[idx].in || out != states_[idx].out) {
       states_[idx].in = in;
       states_[idx].out = out;
-      for (const BasicBlock *succ : block->successors()) {
-        auto succ_it = block_index_.find(succ);
-        if (succ_it != block_index_.end())
-          enqueue(succ_it->second);
-      }
+      for (size_t succ_idx : successors[idx])
+        enqueue(succ_idx);
     }
   }
 
