@@ -550,16 +550,20 @@ def print_operator_node(
     node_prefix = f"{indent}{branch_char}"
 
     args_segment = format_node_args(node)
+    source_segment = f" @ {node.source}" if node.source else ""
     if is_branching:
         print_wrapped_tree_line(
-            node_prefix, f"{node.name}{args_segment} {format_node_stats(node)}"
+            node_prefix,
+            f"{node.name}{args_segment}{source_segment} {format_node_stats(node)}",
         )
     else:
         if len(node.invocation_ids) > 0:
             suffix = f" (calls: {node.call_count})"
         else:
             suffix = ""
-        print_wrapped_tree_line(node_prefix, f"{node.name}{args_segment}{suffix}")
+        print_wrapped_tree_line(
+            node_prefix, f"{node.name}{args_segment}{source_segment}{suffix}"
+        )
 
     # Build new parent_pipes for children
     if is_last:
