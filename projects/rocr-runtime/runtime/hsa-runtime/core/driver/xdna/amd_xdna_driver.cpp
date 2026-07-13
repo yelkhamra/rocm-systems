@@ -1117,10 +1117,11 @@ hsa_status_t XdnaDriver::SubmitCmdChain(hsa_queue_t& q, void* queue_metadata,
     }
 
     // Determine if the PDI is cached, if not it will be added to the PDI cache and the hardware
-    // context will be reconfigured. A descriptor with no PDI (pdi_dev_addr == 0) uses CU index 0.
+    // context will be reconfigured. A descriptor with no PDI (pdi_bo_va == nullptr) uses CU index
+    // 0.
     PDICache::size_type cached_pdi_index = 0;
-    if (desc->pdi_dev_addr != 0) {
-      auto pdi_bo_handle = FindBOHandle(reinterpret_cast<void*>(desc->pdi_dev_addr));
+    if (desc->pdi_bo_va != nullptr) {
+      auto pdi_bo_handle = FindBOHandle(desc->pdi_bo_va);
       if (!pdi_bo_handle.IsValid()) {
         return HSA_STATUS_ERROR_INVALID_ALLOCATION;
       }
@@ -1139,7 +1140,7 @@ hsa_status_t XdnaDriver::SubmitCmdChain(hsa_queue_t& q, void* queue_metadata,
     // Add the instruction sequence BO handle. The PDI/insts blobs are immutable
     // and were flushed from the CPU cache once at load time, so no per-dispatch
     // flush is needed here (only the mutable kernargs are flushed, below).
-    void* insts_addr = reinterpret_cast<void*>(desc->insts_dev_addr);
+    void* insts_addr = desc->insts_bo_va;
     auto instr_bo_handle = FindBOHandle(insts_addr);
     if (!instr_bo_handle.IsValid()) {
       assert(false && "Failed to find instruction sequence BO for command packet.");
