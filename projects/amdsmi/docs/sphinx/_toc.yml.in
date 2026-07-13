@@ -59,6 +59,8 @@ subtrees:
   - file: conceptual/perf-determinism.md
     title: Performance determinism
   - file: conceptual/ras.md
+  - file: conceptual/test-design.md
+    title: Test suite design
 
 - caption: Tutorials
   entries:
