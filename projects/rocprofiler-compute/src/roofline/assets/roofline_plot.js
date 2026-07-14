@@ -3,9 +3,8 @@
 //
 // Client-side controller for the interactive roofline. It reads the embedded
 // JSON model (#roofline-model), then keeps two pieces of state:
-//
-//   * peak      -- which memory roof's points are shown ("all" or a level)
-//   * selected  -- a Set of isolated kernel names (empty means "show all")
+//   * peak      -- which memory roof's points are shown
+//   * selected  -- a Set of isolated kernel names
 
 (function () {
   "use strict";
@@ -35,6 +34,8 @@
   var computeTraces = model.computeTraces || [];
   var roofMaxAi = model.roofMaxAi || 1e150;
   var peakSymbols = model.peakSymbols || {};
+  var aiUnit = model.aiUnit || "FLOPs/Byte";
+  var perfUnit = model.perfUnit || "GFLOP/s";
 
   var hasTruncatedNames = kernels.some(function (kernel) {
     return kernel.hoverName && kernel.hoverName !== kernel.name;
@@ -57,6 +58,12 @@
 
   function peakGlyph(peak) {
     return SYMBOL_GLYPHS[peakSymbols[peak]] || SYMBOL_GLYPHS.circle;
+  }
+
+  function boundLabel(status) {
+    return status === "Memory" || status === "Compute"
+      ? status + " Bound"
+      : status;
   }
 
   function kernelIsVisible(kernel) {
@@ -159,7 +166,7 @@
       );
       customdata.push(
         points.map(function (point) {
-          return [hoverName, point.peak, point.status];
+          return [hoverName, point.peak, boundLabel(point.status)];
         })
       );
       visibility.push(visible && points.length > 0);
@@ -312,12 +319,14 @@
     var table = document.createElement("table");
     table.className = "roofline-details-table";
     var head = document.createElement("tr");
-    // Leading empty header is the marker-symbol column.
-    ["", "Peak", "AI", "Perf", "Bound"].forEach(function (label) {
-      var th = document.createElement("th");
-      th.textContent = label;
-      head.appendChild(th);
-    });
+    // Leading empty header is the marker-symbol column; AI/Perf carry units.
+    ["", "Peak", "AI (" + aiUnit + ")", "Perf (" + perfUnit + ")", "Bound"].forEach(
+      function (label) {
+        var th = document.createElement("th");
+        th.textContent = label;
+        head.appendChild(th);
+      }
+    );
     table.appendChild(head);
 
     points.forEach(function (point) {

@@ -45,10 +45,7 @@ ROOFLINE_SUPPORTED = [
     "gfx1152",
 ]
 
-# A kernel's memory peaks are told apart by marker shape. There are only ever
-# five memory levels, so these shapes never collide; kernel identity is carried
-# by color and the legend panel instead (which is what lets us drop the old
-# ten-symbol, reused-across-kernels scheme entirely).
+# A kernel's memory peaks are told apart by marker shape.
 _PEAK_SYMBOLS: dict[str, str] = {
     "L0": "circle",
     "L1": "square",
@@ -57,35 +54,24 @@ _PEAK_SYMBOLS: dict[str, str] = {
     "LDS": "triangle-up",
 }
 
-# One color per kernel from a high-contrast qualitative palette. Colors are
-# unique up to the palette size and only cycle beyond it; the legend panel and
-# hover always carry the name, so cycling stays unambiguous.
+# One color per kernel from a high-contrast qualitative palette.
 _KERNEL_PALETTE: list[str] = pcolors.qualitative.Dark24 + pcolors.qualitative.Light24
 
-# Which memory peak the roofline opens on. "all" shows every level's dot per
-# kernel; a specific level (e.g. "HBM") would instead open with one dot per
-# kernel against that single roof.
+# Which memory peak the roofline opens on.
 _DEFAULT_PEAK = "all"
 
 # Kernel names can be hundreds of characters, so the hover
-# tooltip shows a truncated form. The full name stays available in the
-# legend panel while the client uses the same threshold to
-# decide whether to surface the "hover for full name" tip.
+# tooltip shows a truncated form. Store the max length of a 
+# kernel name here before it is truncated.
 _HOVER_NAME_LIMIT = 48
 
-# Roofs represent mathematically infinite lines - a bandwidth diagonal is
-# y = BW * AI (a line through the origin), and a compute ceiling is a horizontal
-# line. We draw the segments so far past the data on both ends that no amount of
+# We draw the segments so far past the data on both ends that no amount of
 # realistic panning/zooming reaches an endpoint. A log axis can never reach 0,
-# so "toward the origin" just means an arbitrarily small AI. (The "Autoscale"
-# modebar button is removed so it can't fit the view to these endpoints; "Reset
-# axes" still restores the sensible initial range.)
+# so "toward the origin" just means an arbitrarily small AI.
 _ROOF_EXTRAP_MIN_AI = 1e-150
 _ROOF_EXTRAP_MAX_AI = 1e150
 
-# Per cache-level / compute-roof trace colors. Keyed by category, with one
-# entry per rendering backend so both the HTML (Plotly hex) and CLI (plotext
-# token) plots draw from a single source of truth.
+# Per cache-level / compute-roof trace colors.
 _TRACE_COLORS: dict[str, dict[str, str]] = {
     "l0": {"html": "#F0E442", "cli": "brown+"},
     "l1": {"html": "#0072B2", "cli": "red+"},
@@ -187,8 +173,6 @@ class Roofline:
         self.__ai_data: Optional[dict[str, Any]] = None
         self.__ceiling_data: Optional[dict[str, Any]] = None
         self.__figure = go.Figure()
-        # Interactive view models keyed by "OP"/"FLOP" (the figure a kernel
-        # scatter belongs to), populated while building the Plotly figures.
         self.__view_models: dict[str, RooflineViewModel] = {}
 
     def get_args(self) -> argparse.Namespace:
@@ -329,10 +313,13 @@ class Roofline:
                     cache_level=cache_level,
                     ceiling_data=ceiling_data,
                 )
+                hover_status = (
+                    f"{status} Bound" if status in ("Memory", "Compute") else status
+                )
                 xs.append(ai_value)
                 ys.append(performance)
                 symbols.append(peak_symbol(level_name))
-                customdata.append([hover_name, level_name, status])
+                customdata.append([hover_name, level_name, hover_status])
                 points.append({
                     "peak": level_name,
                     "ai": ai_value,
@@ -670,6 +657,8 @@ class Roofline:
                 default_peak=default_peak,
                 kernels=kernels_model,
                 kernel_trace_indices=trace_indices,
+                ai_unit=f"{ops_flops}s/Byte",
+                perf_unit=f"G{ops_flops}/s",
             )
 
         #######################

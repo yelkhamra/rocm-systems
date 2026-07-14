@@ -155,16 +155,19 @@ def test_build_kernel_traces_one_trace_per_kernel_color_and_peak_shape() -> None
     valid = {"Memory", "Compute", "Unknown"}
     assert all(p["status"] in valid for k in model for p in k["points"])
 
+    def _hover_bound(status: str) -> str:
+        return f"{status} Bound" if status in ("Memory", "Compute") else status
+
     assert model[0]["hoverName"] == "kA"
     assert list(traces[0].customdata[0]) == [
         "kA",
         "L2",
-        model[0]["points"][0]["status"],
+        _hover_bound(model[0]["points"][0]["status"]),
     ]
     assert list(traces[0].customdata[1]) == [
         "kA",
         "HBM",
-        model[0]["points"][1]["status"],
+        _hover_bound(model[0]["points"][1]["status"]),
     ]
 
 
@@ -216,8 +219,9 @@ def test_view_model_to_json_round_trips() -> None:
     assert payload["peaks"] == ["L2", "HBM"]
     assert payload["kernelTraceIndices"] == [0]
     assert payload["kernels"][0]["name"] == "kA"
-    # Roof/ceiling filtering and roof extrapolation are driven by these fields.
-    for key in ("rooflineTraces", "computeTraces", "roofMaxAi"):
+    # Roof/ceiling filtering, roof extrapolation, and table units are driven by
+    # these fields.
+    for key in ("rooflineTraces", "computeTraces", "roofMaxAi", "aiUnit", "perfUnit"):
         assert key in payload
 
 

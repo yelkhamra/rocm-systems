@@ -66,6 +66,8 @@ class RooflineViewModel:
     roofline_traces: list[dict[str, Any]] = field(default_factory=list)
     compute_traces: list[dict[str, Any]] = field(default_factory=list)
     roof_max_ai: float = 0.0
+    ai_unit: str = "FLOPs/Byte"
+    perf_unit: str = "GFLOP/s"
     div_id: str = PLOT_DIV_ID
 
     def to_json(self) -> str:
@@ -84,6 +86,8 @@ class RooflineViewModel:
             "rooflineTraces": self.roofline_traces,
             "computeTraces": self.compute_traces,
             "roofMaxAi": self.roof_max_ai,
+            "aiUnit": self.ai_unit,
+            "perfUnit": self.perf_unit,
         }
         return json.dumps(payload, allow_nan=True).replace("</", "<\\/")
 
@@ -162,10 +166,6 @@ def build_interactive_document(
     title: str = "Empirical Roofline Analysis",
 ) -> str:
     """Build a fully self-contained interactive roofline HTML document.
-
-    The Plotly figure is rendered as an offline fragment (embedded ``plotly.js``,
-    no CDN) and wrapped with the memory-peak dropdown, the kernel legend panel,
-    the JSON model, and the inlined CSS/JS controller.
     """
     fragment = figure.to_html(
         full_html=False,

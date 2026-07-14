@@ -296,6 +296,8 @@ body {
 .roofline-details-table th {
   color: var(--roofline-muted);
   font-weight: 600;
+  white-space: normal;
+  overflow: visible;
 }
 
 /* Symbol | Peak | AI | Perf | Bound */
