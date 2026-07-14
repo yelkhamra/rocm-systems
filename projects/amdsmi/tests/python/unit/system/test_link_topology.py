@@ -18,44 +18,29 @@
 # COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+"""Unified ``amdsmi_get_link_topology`` binding unit tests.
 
-"""Unit tests for the unified ``amdsmi_get_link_topology`` binding.
-
-These tests are hardware independent. They validate that the ctypes
-``amdsmi_link_topology_t`` structure matches the C ABI (64 bytes, matching the
-host struct), that the high-level ``amdsmi_get_link_topology`` symbol is
-exported, and that argument validation rejects non-handle inputs before any
-library call is made. The whole suite is skipped when the ``amdsmi`` package
-cannot be imported (for example when the shared library is not built), so it is
-safe to collect in any environment.
+Hardware independent: validates that the ctypes ``amdsmi_link_topology_t``
+structure matches the C ABI (64 bytes, matching the host struct), that the
+high-level ``amdsmi_get_link_topology`` symbol is exported, and that argument
+validation and the success-path dict mapping behave without a GPU present.
 """
 
 import ctypes
 import unittest
 from unittest import mock
 
-try:
-    import amdsmi
-    from amdsmi import amdsmi_interface
-    from amdsmi import amdsmi_wrapper
-
-    _IMPORT_ERROR = None
-except Exception as exc:  # pragma: no cover - depends on build/runtime env
-    amdsmi = None
-    amdsmi_interface = None
-    amdsmi_wrapper = None
-    _IMPORT_ERROR = exc
+from common.common import amdsmi
 
 
-@unittest.skipIf(amdsmi is None, f"amdsmi package unavailable: {_IMPORT_ERROR}")
 class TestLinkTopology(unittest.TestCase):
     def test_struct_size_matches_host_abi(self):
         # The unified struct must be 64 bytes so the baremetal and host
         # interfaces are binary compatible.
-        self.assertEqual(ctypes.sizeof(amdsmi_wrapper.amdsmi_link_topology_t), 64)
+        self.assertEqual(ctypes.sizeof(amdsmi.amdsmi_wrapper.amdsmi_link_topology_t), 64)
 
     def test_struct_fields(self):
-        struct_type = amdsmi_wrapper.amdsmi_link_topology_t
+        struct_type = amdsmi.amdsmi_wrapper.amdsmi_link_topology_t
         field_names = [name for name, *_ in struct_type._fields_]
         for expected in (
             "weight",
@@ -78,15 +63,15 @@ class TestLinkTopology(unittest.TestCase):
     def test_rejects_non_handle_arguments(self):
         # Argument validation happens before any library call, so this raises
         # without needing a GPU present.
-        with self.assertRaises(amdsmi_interface.AmdSmiParameterException):
-            amdsmi_interface.amdsmi_get_link_topology("not-a-handle", "also-bad")
+        with self.assertRaises(amdsmi.amdsmi_interface.AmdSmiParameterException):
+            amdsmi.amdsmi_interface.amdsmi_get_link_topology("not-a-handle", "also-bad")
 
     def test_success_path_returns_mapped_dict(self):
         # Mock the ctypes entry point so the success path can be exercised
         # without a GPU: it fills the out struct and reports success. This locks
         # the interface mapping from struct fields to the returned dict.
-        src = amdsmi_wrapper.amdsmi_processor_handle()
-        dst = amdsmi_wrapper.amdsmi_processor_handle()
+        src = amdsmi.amdsmi_wrapper.amdsmi_processor_handle()
+        dst = amdsmi.amdsmi_wrapper.amdsmi_processor_handle()
 
         def _fill(_src, _dst, topology_ref):
             topology = topology_ref._obj
@@ -97,8 +82,10 @@ class TestLinkTopology(unittest.TestCase):
             topology.fb_sharing = 1
             return 0
 
-        with mock.patch.object(amdsmi_wrapper, "amdsmi_get_link_topology", side_effect=_fill):
-            result = amdsmi_interface.amdsmi_get_link_topology(src, dst)
+        with mock.patch.object(
+            amdsmi.amdsmi_wrapper, "amdsmi_get_link_topology", side_effect=_fill
+        ):
+            result = amdsmi.amdsmi_interface.amdsmi_get_link_topology(src, dst)
 
         self.assertEqual(
             set(result), {"weight", "link_status", "link_type", "num_hops", "fb_sharing"}
@@ -108,7 +95,3 @@ class TestLinkTopology(unittest.TestCase):
         self.assertEqual(result["link_type"], 2)
         self.assertEqual(result["num_hops"], 3)
         self.assertEqual(result["fb_sharing"], 1)
-
-
-if __name__ == "__main__":
-    unittest.main()
