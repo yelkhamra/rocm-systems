@@ -211,6 +211,9 @@ resolve_schema_config(const nlohmann::json& config)
         if(domains.contains("gpu"))
         {
             const auto& gpu = domains["gpu"];
+            // hipFile telemetry is independent of AMD SMI being enabled.
+            if(gpu.contains("hipfile"))
+                resolve_enabled(result, gpu["hipfile"], "enabled", env_vars::USE_HIPFILE);
             if(gpu.contains("enabled") && gpu["enabled"].get<bool>())
             {
                 result[std::string{ env_vars::USE_AMD_SMI }]          = "true";
@@ -759,6 +762,10 @@ export_domain_gpu(nlohmann::json&                           config,
 
     if(auto v = lookup(env_map, env_vars::USE_PROCESS_SAMPLING))
         gpu["process_sampling"]["enabled"] = is_truthy(*v);
+
+    // hipFile GPU-direct storage I/O telemetry is independent of AMD SMI.
+    if(auto v = lookup(env_map, env_vars::USE_HIPFILE))
+        gpu["hipfile"]["enabled"] = is_truthy(*v);
 
     auto use_amd_smi = lookup(env_map, env_vars::USE_AMD_SMI);
     if(!use_amd_smi) return;
