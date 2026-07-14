@@ -156,8 +156,16 @@ def test_build_kernel_traces_one_trace_per_kernel_color_and_peak_shape() -> None
     assert all(p["status"] in valid for k in model for p in k["points"])
 
     assert model[0]["hoverName"] == "kA"
-    assert list(traces[0].customdata[0]) == ["kA", "L2", model[0]["points"][0]["status"]]
-    assert list(traces[0].customdata[1]) == ["kA", "HBM", model[0]["points"][1]["status"]]
+    assert list(traces[0].customdata[0]) == [
+        "kA",
+        "L2",
+        model[0]["points"][0]["status"],
+    ]
+    assert list(traces[0].customdata[1]) == [
+        "kA",
+        "HBM",
+        model[0]["points"][1]["status"],
+    ]
 
 
 def test_build_kernel_traces_skips_kernels_without_points() -> None:

@@ -1632,9 +1632,7 @@ def test_roofline_bound_status_calculation():
             cache_level="ai_lds",
             ceiling_data=ceiling_data,
         )
-        assert status_lds == "Memory", (
-            f"Expected LDS Memory, got {status_lds}"
-        )
+        assert status_lds == "Memory", f"Expected LDS Memory, got {status_lds}"
 
         status3 = roofline_instance._determine_kernel_bound_status(
             ai_value=1.0,
