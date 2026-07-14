@@ -19,11 +19,13 @@ from roofline.roofline_html import (
     build_interactive_document,
 )
 from roofline.roofline_main import (
+    _HOVER_NAME_LIMIT,
     _KERNEL_PALETTE,
     Roofline,
     build_kernel_colors,
     peak_symbol,
     roofline_axis_bounds,
+    truncate_kernel_name,
 )
 
 
@@ -86,6 +88,16 @@ def test_build_kernel_colors_empty() -> None:
     assert build_kernel_colors(0) == []
 
 
+def test_truncate_kernel_name_leaves_short_names_untouched() -> None:
+    assert truncate_kernel_name("short_kernel(int)") == "short_kernel(int)"
+
+
+def test_truncate_kernel_name_clips_long_names_with_ellipsis() -> None:
+    truncated = truncate_kernel_name("Cijk_" + "x" * 500)
+    assert truncated.endswith("\u2026")
+    assert len(truncated) <= _HOVER_NAME_LIMIT
+
+
 # =============================================================================
 # Axis bounds
 # =============================================================================
@@ -140,8 +152,12 @@ def test_build_kernel_traces_one_trace_per_kernel_color_and_peak_shape() -> None
 
     assert [p["peak"] for p in model[0]["points"]] == ["L2", "HBM"]
     assert [p["peak"] for p in model[1]["points"]] == ["L2"]
-    valid = {"Memory Bound", "Compute Bound", "Unknown"}
+    valid = {"Memory", "Compute", "Unknown"}
     assert all(p["status"] in valid for k in model for p in k["points"])
+
+    assert model[0]["hoverName"] == "kA"
+    assert list(traces[0].customdata[0]) == ["kA", "L2", model[0]["points"][0]["status"]]
+    assert list(traces[0].customdata[1]) == ["kA", "HBM", model[0]["points"][1]["status"]]
 
 
 def test_build_kernel_traces_skips_kernels_without_points() -> None:
@@ -192,6 +208,9 @@ def test_view_model_to_json_round_trips() -> None:
     assert payload["peaks"] == ["L2", "HBM"]
     assert payload["kernelTraceIndices"] == [0]
     assert payload["kernels"][0]["name"] == "kA"
+    # Roof/ceiling filtering and roof extrapolation are driven by these fields.
+    for key in ("rooflineTraces", "computeTraces", "roofMaxAi"):
+        assert key in payload
 
 
 def test_view_model_to_json_escapes_script_close() -> None:

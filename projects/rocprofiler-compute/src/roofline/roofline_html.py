@@ -128,6 +128,7 @@ __CSS__
     <div class="roofline-plot-col">
 __PLOT_FRAGMENT__
     </div>
+    <div class="roofline-panel-wrap">
     <aside class="roofline-panel">
       <div class="roofline-panel-title">
         Kernels
@@ -139,8 +140,11 @@ __PLOT_FRAGMENT__
       <div id="roofline-shape-legend" class="roofline-shape-legend"
            aria-label="Marker shape for each memory level"></div>
       <ul id="roofline-kernel-list" class="roofline-kernel-list"></ul>
+      <p id="roofline-longname-hint" class="roofline-longname-hint" hidden>
+        Tip: hover on a kernel name to see it in full.</p>
       <div id="roofline-kernel-details" class="roofline-kernel-details"></div>
     </aside>
+    </div>
   </div>
 </div>
 <script id="roofline-model" type="application/json">__MODEL_JSON__</script>

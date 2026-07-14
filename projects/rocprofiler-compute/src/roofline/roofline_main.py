@@ -67,6 +67,12 @@ _KERNEL_PALETTE: list[str] = pcolors.qualitative.Dark24 + pcolors.qualitative.Li
 # kernel against that single roof.
 _DEFAULT_PEAK = "all"
 
+# Kernel names can be hundreds of characters, so the hover
+# tooltip shows a truncated form. The full name stays available in the
+# legend panel while the client uses the same threshold to
+# decide whether to surface the "hover for full name" tip.
+_HOVER_NAME_LIMIT = 48
+
 # Roofs represent mathematically infinite lines - a bandwidth diagonal is
 # y = BW * AI (a line through the origin), and a compute ceiling is a horizontal
 # line. We draw the segments so far past the data on both ends that no amount of
@@ -111,6 +117,14 @@ def to_int(value: Union[float, None]) -> Union[int, float]:
 def peak_symbol(level_name: str) -> str:
     """Return the Plotly marker shape used for a memory peak."""
     return _PEAK_SYMBOLS.get(level_name.upper(), "circle")
+
+
+def truncate_kernel_name(name: str, limit: int = _HOVER_NAME_LIMIT) -> str:
+    """Shorten a kernel name for the hover tooltip, keeping the identifying
+    prefix and appending an ellipsis when it is clipped."""
+    if len(name) <= limit:
+        return name
+    return name[: limit - 1].rstrip() + "\u2026"
 
 
 def build_kernel_colors(num_kernels: int) -> list[str]:
@@ -254,9 +268,9 @@ class Roofline:
         x_intersect = min_peak / bandwidth
 
         if ai_value < x_intersect:
-            return "Memory Bound"
+            return "Memory"
         else:
-            return "Compute Bound"
+            return "Compute"
 
     def _build_kernel_traces(
         self,
@@ -274,18 +288,23 @@ class Roofline:
         the traces one-for-one and is the source of truth the client-side
         controller restyles from.
         """
+        # The name is carried in customdata (truncated) rather than via
+        # %{fullData.name} so a several-hundred-character kernel name can't blow
+        # out the tooltip. customdata is [name, peak, status] per point and is
+        # kept in sync by the client when it filters points.
         hovertemplate = (
-            "<b>%{fullData.name}</b><br>"
-            "%{customdata[0]} peak<br>"
+            "<b>%{customdata[0]}</b><br>"
+            "%{customdata[1]} peak<br>"
             f"AI %{{x:.2f}} {ops_flops}s/Byte<br>"
             f"Perf %{{y:.2f}} G{ops_flops}/s<br>"
-            "%{customdata[1]}<extra></extra>"
+            "%{customdata[2]}<extra></extra>"
         )
 
         traces: list[go.Scatter] = []
         kernels_model: list[dict[str, Any]] = []
 
         for kernel_index, kernel_name in enumerate(kernel_names):
+            hover_name = truncate_kernel_name(kernel_name)
             xs: list[float] = []
             ys: list[float] = []
             symbols: list[str] = []
@@ -313,7 +332,7 @@ class Roofline:
                 xs.append(ai_value)
                 ys.append(performance)
                 symbols.append(peak_symbol(level_name))
-                customdata.append([level_name, status])
+                customdata.append([hover_name, level_name, status])
                 points.append({
                     "peak": level_name,
                     "ai": ai_value,
@@ -349,6 +368,7 @@ class Roofline:
             )
             kernels_model.append({
                 "name": kernel_name,
+                "hoverName": hover_name,
                 "color": color,
                 "points": points,
             })

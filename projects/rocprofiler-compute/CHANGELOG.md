@@ -14,7 +14,11 @@ Full documentation for ROCm Compute Profiler is available at [https://rocm.docs.
 * Improved GPU Benchmarking and Roofline profiling/analysis support for gfx1150/gfx1151/gfx1152 architectures.
   * gfx11 supports Wave Matrix Multiply Accumulate (WMMA), replacing MFMA operations.
 
-* The standalone roofline HTML (``empirRoof_*.html``) interactability has been improved. A memory-peak dropdown shows kernel performance against one roof at a time, and clicking a kernel isolates it. Moreover, the plot pans on drag and zooms on scroll, and the bandwidth/compute roofs are drawn as extrapolated lines.
+* The standalone roofline HTML (``empirRoof_*.html``) is now fully interactive:
+  * A *Memory peak* dropdown shows kernel points against one roof at a time (L1/L2/HBM/LDS) or all at once, with a persistent shape-equals-memory-level legend.
+  * A right-side *Kernels* panel lists every kernel; click a row (or a plot dot) to isolate it, Ctrl/Cmd-click to multi-select, and *Show all kernels* to reset. Selecting one or more kernels shows their per-peak detail tables (peak, arithmetic intensity, performance, memory-/compute-bound) together for comparison.
+  * Long kernel names are truncated in the hover tooltip and detail headings (full name on hover); the plot pans on drag, and zooms on scroll.
+  * Bandwidth diagonals and compute ceilings are drawn as extrapolated lines; the roofs legend toggles each on/off, and compute ceilings snap to the steepest visible diagonal as the peak filter changes.
 
 * Added experimental Triton support to ML API tracing. Profile with `--experimental --triton-trace` to emit a ROCTX marker per Triton/Inductor kernel launch attributed to the user call site, and analyze with `--experimental --list-triton-operators` or `--experimental --triton-operator <pattern>` to list or filter Triton operators independently of Torch.
 

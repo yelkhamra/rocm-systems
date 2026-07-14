@@ -1563,7 +1563,7 @@ def test_roofline_plot_points_data_generation():
 
             assert point["cache_level"] in ["L1", "L2", "HBM", "LDS"]
 
-            assert point["status"] in ["Memory Bound", "Compute Bound", "Unknown"]
+            assert point["status"] in ["Memory", "Compute", "Unknown"]
 
             assert isinstance(point["ai"], str)
             assert isinstance(point["performance"], str)
@@ -1616,7 +1616,7 @@ def test_roofline_bound_status_calculation():
             cache_level="ai_hbm",
             ceiling_data=ceiling_data,
         )
-        assert status1 == "Memory Bound", f"Expected Memory Bound, got {status1}"
+        assert status1 == "Memory", f"Expected Memory, got {status1}"
 
         status2 = roofline_instance._determine_kernel_bound_status(
             ai_value=5.0,
@@ -1624,7 +1624,7 @@ def test_roofline_bound_status_calculation():
             cache_level="ai_hbm",
             ceiling_data=ceiling_data,
         )
-        assert status2 == "Compute Bound", f"Expected Compute Bound, got {status2}"
+        assert status2 == "Compute", f"Expected Compute, got {status2}"
 
         status_lds = roofline_instance._determine_kernel_bound_status(
             ai_value=1.0,
@@ -1632,8 +1632,8 @@ def test_roofline_bound_status_calculation():
             cache_level="ai_lds",
             ceiling_data=ceiling_data,
         )
-        assert status_lds == "Memory Bound", (
-            f"Expected LDS Memory Bound, got {status_lds}"
+        assert status_lds == "Memory", (
+            f"Expected LDS Memory, got {status_lds}"
         )
 
         status3 = roofline_instance._determine_kernel_bound_status(

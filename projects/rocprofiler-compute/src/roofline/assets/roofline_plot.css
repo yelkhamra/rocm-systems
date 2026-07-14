@@ -78,7 +78,7 @@ body {
 
 .roofline-body {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 16px;
 }
 
@@ -92,13 +92,18 @@ body {
   width: 100%;
 }
 
-.roofline-panel {
+.roofline-panel-wrap {
   flex: 0 0 400px;
   max-width: 460px;
+  position: relative;
+}
+
+.roofline-panel {
+  position: absolute;
+  inset: 0;
   border: 1px solid var(--roofline-border);
   border-radius: 8px;
   overflow: hidden;
-  align-self: stretch;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -140,6 +145,21 @@ body {
   border-bottom: 1px solid var(--roofline-border);
 }
 
+.roofline-longname-hint {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 6px 12px;
+  font-size: 11px;
+  font-style: italic;
+  color: var(--roofline-muted);
+  background: var(--roofline-bg-soft);
+  border-top: 1px solid var(--roofline-border);
+}
+
+.roofline-longname-hint[hidden] {
+  display: none;
+}
+
 .roofline-legend-caption {
   font-weight: 600;
 }
@@ -162,7 +182,7 @@ body {
   padding: 4px;
   overflow-y: auto;
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 96px;
 }
 
 .roofline-kernel-item {
@@ -198,24 +218,16 @@ body {
   border: 1px solid rgba(0, 0, 0, 0.25);
 }
 
-/* Long kernel names are clamped to a few lines;
-   the full name is available on hover (title) and in the
-   details table. */
 .roofline-kernel-name {
   flex: 1 1 auto;
   min-width: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
   overflow-wrap: anywhere;
 }
 
 .roofline-kernel-details {
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
-  max-height: 45vh;
+  max-height: 50%;
   overflow-y: auto;
   border-top: 1px solid var(--roofline-border);
   padding: 10px 12px 12px;
@@ -253,11 +265,6 @@ body {
 .roofline-details-name-text {
   flex: 1 1 auto;
   min-width: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
   overflow-wrap: anywhere;
 }
 
@@ -325,10 +332,10 @@ body {
   .roofline-body {
     flex-direction: column;
   }
-  .roofline-panel {
-    flex-basis: auto;
-    max-width: none;
+  .roofline-panel-wrap {
+    flex: 0 0 auto;
     width: 100%;
-    max-height: 320px;
+    max-width: none;
+    height: 360px;
   }
 }

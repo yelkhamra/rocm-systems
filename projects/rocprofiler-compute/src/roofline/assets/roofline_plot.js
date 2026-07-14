@@ -36,6 +36,10 @@
   var roofMaxAi = model.roofMaxAi || 1e150;
   var peakSymbols = model.peakSymbols || {};
 
+  var hasTruncatedNames = kernels.some(function (kernel) {
+    return kernel.hoverName && kernel.hoverName !== kernel.name;
+  });
+
   // Unicode glyphs approximating the Plotly marker shapes, used in the details
   // table's symbol column so each row shows the same marker as its plot dot.
   var SYMBOL_GLYPHS = {
@@ -131,11 +135,13 @@
     var xs = [];
     var ys = [];
     var symbols = [];
+    var customdata = [];
     var visibility = [];
 
     kernels.forEach(function (kernel) {
       var visible = kernelIsVisible(kernel);
       var points = visible ? pointsForCurrentPeak(kernel) : [];
+      var hoverName = kernel.hoverName || kernel.name;
       xs.push(
         points.map(function (point) {
           return point.ai;
@@ -151,12 +157,23 @@
           return peakSymbols[point.peak] || "circle";
         })
       );
+      customdata.push(
+        points.map(function (point) {
+          return [hoverName, point.peak, point.status];
+        })
+      );
       visibility.push(visible && points.length > 0);
     });
 
     Plotly.restyle(
       gd,
-      { x: xs, y: ys, "marker.symbol": symbols, visible: visibility },
+      {
+        x: xs,
+        y: ys,
+        "marker.symbol": symbols,
+        customdata: customdata,
+        visible: visibility,
+      },
       kernelTraceIndices
     );
     updatePanel();
@@ -278,7 +295,8 @@
 
     var nameText = document.createElement("span");
     nameText.className = "roofline-details-name-text";
-    nameText.textContent = kernel.name;
+    // Truncated heading
+    nameText.textContent = kernel.hoverName || kernel.name;
     heading.appendChild(nameText);
     block.appendChild(heading);
 
@@ -330,6 +348,7 @@
   }
 
   function updateDetails() {
+    updateLongNameHint();
     if (!detailsEl) {
       return;
     }
@@ -342,6 +361,17 @@
         detailsEl.appendChild(buildKernelDetailBlock(kernel));
       }
     });
+  }
+
+  function updateLongNameHint() {
+    var hintEl = document.getElementById("roofline-longname-hint");
+    if (!hintEl) {
+      return;
+    }
+    // The tip sits directly above the selected-kernel subtables, whose headings
+    // are truncated, so only surface it when a subtable is shown and a name is
+    // actually clipped.
+    hintEl.hidden = !(hasTruncatedNames && state.selected.size > 0);
   }
 
   function buildShapeLegend() {
