@@ -314,6 +314,41 @@ endif()
 
 # ----------------------------------------------------------------------------------------#
 #
+# hipFile (GPU-direct storage I/O stats)
+#
+# ----------------------------------------------------------------------------------------#
+
+# hipFile telemetry is optional. We only need the public headers (struct layout +
+# declarations); libhipfile itself is resolved at runtime via dlopen, never linked,
+# so the profiler stays usable on systems without hipFile installed.
+set(ROCPROFSYS_BUILD_HIPFILE OFF CACHE INTERNAL "Build hipFile stats support" FORCE)
+if(ROCPROFSYS_USE_HIPFILE)
+    find_package(
+        hipfile
+        ${rocprofiler_systems_FIND_QUIETLY}
+        HINTS ${ROCMVersion_DIR} ${ROCM_PATH}
+        PATHS ${ROCMVersion_DIR} ${ROCM_PATH}
+    )
+    if(hipfile_FOUND)
+        set(ROCPROFSYS_BUILD_HIPFILE
+            ON
+            CACHE INTERNAL
+            "Build hipFile stats support"
+            FORCE
+        )
+        message(STATUS "hipFile stats support enabled (headers: ${hipfile_INCLUDE_DIRS})")
+    else()
+        message(
+            STATUS
+            "hipFile stats support disabled: hipfile package not found. Set "
+            "-Dhipfile_DIR=<prefix>/lib/cmake/hipfile or add the install prefix to "
+            "CMAKE_PREFIX_PATH."
+        )
+    endif()
+endif()
+
+# ----------------------------------------------------------------------------------------#
+#
 # ROCpd
 #
 # ----------------------------------------------------------------------------------------#

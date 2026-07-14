@@ -5,6 +5,10 @@ add_subdirectory(concepts)
 add_subdirectory(amd_smi)
 add_subdirectory(procfs)
 
+if(ROCPROFSYS_BUILD_HIPFILE)
+    add_subdirectory(hipfile)
+endif()
+
 if(
     (ROCPROFSYS_ROCM_VERSION_MAJOR GREATER 6)
     OR (

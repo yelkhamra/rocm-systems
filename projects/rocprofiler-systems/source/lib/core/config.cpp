@@ -633,6 +633,13 @@ configure_settings(bool _init)
                               "vcn_activity, jpeg_activity and memory usage",
                               true, "backend", "amd_smi", "rocm", "process_sampling");
 
+    ROCPROFSYS_CONFIG_SETTING(
+        bool, env_vars::USE_HIPFILE,
+        "Enable periodic sampling of hipFile GPU-direct storage I/O statistics "
+        "(bytes, bandwidth, op counts, errors). Requires the target application to "
+        "use hipFile; sets HIPFILE_STATS_LEVEL=1 automatically.",
+        false, "backend", "hipfile", "rocm", "process_sampling");
+
     ROCPROFSYS_CONFIG_SETTING(bool, env_vars::USE_SAMPLING,
                               "Enable statistical sampling of call-stack", false,
                               "backend", "sampling");
@@ -2265,6 +2272,13 @@ bool
 get_use_amd_smi()
 {
     static auto _v = get_config()->find(std::string{ env_vars::USE_AMD_SMI });
+    return static_cast<tim::tsettings<bool>&>(*_v->second).get();
+}
+
+bool
+get_use_hipfile()
+{
+    static auto _v = get_config()->find(std::string{ env_vars::USE_HIPFILE });
     return static_cast<tim::tsettings<bool>&>(*_v->second).get();
 }
 

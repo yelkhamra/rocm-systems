@@ -24,6 +24,10 @@
 #    include "library/pmc/collectors/nic/perfetto_policy.hpp"
 #endif
 
+#if defined(ROCPROFSYS_BUILD_HIPFILE)
+#    include "library/pmc/collectors/hipfile/collector.hpp"
+#endif
+
 #include "library/pmc/collectors/cpu/cache_policy.hpp"
 #include "library/pmc/collectors/cpu/collector.hpp"
 #include "library/pmc/collectors/cpu/perfetto_policy.hpp"
@@ -132,6 +136,10 @@ using cpu_provider_factory_t =
 using cpu_provider_t  = cpu_provider_factory_t::provider_t;
 using cpu_collector_t = collectors::cpu::collector<cpu_provider_t, cpu_production_config>;
 
+#if defined(ROCPROFSYS_BUILD_HIPFILE)
+using hipfile_collector_t = collectors::hipfile::collector;
+#endif
+
 std::shared_ptr<provider_t> g_device_provider;
 
 std::unique_ptr<gpu_collector_t> g_gpu_collector;
@@ -145,6 +153,10 @@ std::unique_ptr<nic_collector_t> g_nic_collector;
 
 std::shared_ptr<cpu_provider_t>  g_cpu_provider;
 std::unique_ptr<cpu_collector_t> g_cpu_collector;
+
+#if defined(ROCPROFSYS_BUILD_HIPFILE)
+std::unique_ptr<hipfile_collector_t> g_hipfile_collector;
+#endif
 
 std::vector<collectors::collector_slice> g_collector_slices;
 
@@ -290,6 +302,14 @@ setup()
 #endif
         }
 
+#if defined(ROCPROFSYS_BUILD_HIPFILE)
+        if(config::get_use_hipfile())
+        {
+            g_hipfile_collector = std::make_unique<hipfile_collector_t>();
+            g_collector_slices.emplace_back(*g_hipfile_collector);
+        }
+#endif
+
         for(auto& slice : g_collector_slices)
         {
             slice.setup();
@@ -368,6 +388,9 @@ postfork_child_cleanup()
     g_gpu_collector.reset();
 #if defined(ROCPROFSYS_BUILD_AINIC)
     g_nic_collector.reset();
+#endif
+#if defined(ROCPROFSYS_BUILD_HIPFILE)
+    g_hipfile_collector.reset();
 #endif
     g_cpu_collector.reset();
     g_device_provider.reset();

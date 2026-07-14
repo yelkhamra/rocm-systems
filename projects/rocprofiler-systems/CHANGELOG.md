@@ -6,6 +6,18 @@ Full documentation for ROCm Systems Profiler is available at [https://rocm.docs.
 
 ## ROCm Systems Profiler 1.8.0 for ROCm 7.15.0 (unreleased)
 
+### Added
+
+- hipFile GPU-direct storage I/O telemetry. A background sampler queries
+  hipFile's in-process statistics API and reports per-GPU I/O counters (read/write
+  bytes, bandwidth, total/fastpath/fallback/unaligned operation counts, and
+  errors) plus process-global file and buffer registration counts in both
+  Perfetto and RocPD outputs. Values are reported as per-interval deltas. Build
+  with `-DROCPROFSYS_USE_HIPFILE=ON` (optional; disabled automatically when
+  hipFile is not found) and enable at run time with `ROCPROFSYS_USE_HIPFILE=ON`
+  (requires a target application that uses hipFile). See
+  [hipFile GPU-direct storage I/O telemetry](./docs/how-to/hipfile-telemetry.rst).
+
 ### Changed
 
 - `ROCPROFSYS_BUILD_TESTING` no longer implies `ROCPROFSYS_BUILD_EXAMPLES`.
