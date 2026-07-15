@@ -90,7 +90,6 @@
     return state.peak === "all" || roof.level === state.peak;
   }
 
-  
   function applyPeakFilterToRoofs() {
     if (!gd || typeof Plotly === "undefined" || !rooflineTraces.length) {
       return;
