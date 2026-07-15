@@ -127,6 +127,11 @@ __CSS__
     <button type="button" id="roofline-show-all" class="roofline-btn">
       Show all kernels
     </button>
+    <label class="roofline-control roofline-toggle"
+           title="Automatically fit the view (recenter and zoom) to the visible points and the roofs they are measured against whenever you change the memory peak or kernel selection. Turn off to keep your own pan/zoom.">
+      <input type="checkbox" id="roofline-auto-zoom" checked>
+      Auto-fit
+    </label>
   </div>
   <div class="roofline-body">
     <div class="roofline-plot-col">
@@ -165,8 +170,7 @@ def build_interactive_document(
     view_model: RooflineViewModel,
     title: str = "Empirical Roofline Analysis",
 ) -> str:
-    """Build a fully self-contained interactive roofline HTML document.
-    """
+    """Build a fully self-contained interactive roofline HTML document."""
     fragment = figure.to_html(
         full_html=False,
         include_plotlyjs=True,

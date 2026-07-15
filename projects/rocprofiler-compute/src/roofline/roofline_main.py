@@ -61,7 +61,7 @@ _KERNEL_PALETTE: list[str] = pcolors.qualitative.Dark24 + pcolors.qualitative.Li
 _DEFAULT_PEAK = "all"
 
 # Kernel names can be hundreds of characters, so the hover
-# tooltip shows a truncated form. Store the max length of a 
+# tooltip shows a truncated form. Store the max length of a
 # kernel name here before it is truncated.
 _HOVER_NAME_LIMIT = 48
 

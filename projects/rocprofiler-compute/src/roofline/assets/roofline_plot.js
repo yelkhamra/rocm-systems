@@ -27,6 +27,7 @@
   var detailsEl = document.getElementById("roofline-kernel-details");
   var showAllBtn = document.getElementById("roofline-show-all");
   var kernelCountEl = document.getElementById("roofline-kernel-count");
+  var autoZoomToggle = document.getElementById("roofline-auto-zoom");
 
   var kernels = model.kernels || [];
   var kernelTraceIndices = model.kernelTraceIndices || [];
@@ -54,7 +55,12 @@
   var state = {
     peak: model.defaultPeak || "all",
     selected: new Set(),
+    // Whether the view auto-recenters on filter changes; synced to the toggle.
+    autoZoom: !autoZoomToggle || autoZoomToggle.checked,
   };
+
+  // The first fit (page open) snaps instantly; later re-fits animate.
+  var hasFitted = false;
 
   function peakGlyph(peak) {
     return SYMBOL_GLYPHS[peakSymbols[peak]] || SYMBOL_GLYPHS.circle;
@@ -97,19 +103,30 @@
     });
     Plotly.restyle(gd, { visible: visibility }, indices);
 
-    // Snap each compute ceiling's left endpoint to the steepest
-    // diagonal that is currently visible
-    if (!computeTraces.length) {
+    // Compute ceilings meet the steepest *visible* diagonal; recompute from the
+    // roofs actually shown.
+    snapCeilings();
+  }
+
+  function roofTraceShown(roof) {
+    var trace = gd.data && gd.data[roof.traceIndex];
+    return !!trace && trace.visible !== false && trace.visible !== "legendonly";
+  }
+
+  function snapCeilings() {
+    if (!gd || typeof Plotly === "undefined" || !computeTraces.length) {
       return;
     }
     var visibleBw = rooflineTraces
-      .filter(roofIsVisible)
+      .filter(roofTraceShown)
       .map(function (roof) {
         return roof.bandwidth;
       })
       .filter(function (bw) {
         return bw > 0;
       });
+    // Every diagonal hidden: fall back to the steepest overall so the ceilings
+    // still get a sensible left endpoint.
     if (!visibleBw.length) {
       visibleBw = rooflineTraces
         .map(function (roof) {
@@ -184,6 +201,66 @@
       kernelTraceIndices
     );
     updatePanel();
+    fitView();
+  }
+
+  // Recenter the log axes on whatever is currently drawn
+  function fitView() {
+    // Off means the user is driving pan/zoom; don't fight them.
+    if (!state.autoZoom || !gd || typeof Plotly === "undefined") {
+      return;
+    }
+    var ais = [];
+    var perfs = [];
+    kernels.forEach(function (kernel) {
+      if (!kernelIsVisible(kernel)) {
+        return;
+      }
+      pointsForCurrentPeak(kernel).forEach(function (point) {
+        if (point.ai > 0) {
+          ais.push(point.ai);
+        }
+        if (point.perf > 0) {
+          perfs.push(point.perf);
+        }
+      });
+    });
+    // Nothing drawn under the current filters: leave the view untouched.
+    if (!ais.length || !perfs.length) {
+      return;
+    }
+    computeTraces.forEach(function (ceiling) {
+      if (ceiling.peakPerf > 0) {
+        perfs.push(ceiling.peakPerf);
+      }
+    });
+
+    var pad = 5; // symmetric padding in log space
+    var ranges = {
+      "xaxis.range": [
+        Math.log10(Math.min.apply(null, ais) / pad),
+        Math.log10(Math.max.apply(null, ais) * pad),
+      ],
+      "yaxis.range": [
+        Math.log10(Math.min.apply(null, perfs) / pad),
+        Math.log10(Math.max.apply(null, perfs) * pad),
+      ],
+    };
+
+    // Snap on the first framing; animate every re-fit after that.
+    if (!hasFitted) {
+      hasFitted = true;
+      Plotly.relayout(gd, ranges);
+      return;
+    }
+    Plotly.animate(
+      gd,
+      { layout: ranges },
+      {
+        transition: { duration: 350, easing: "cubic-in-out" },
+        frame: { duration: 350, redraw: false },
+      }
+    );
   }
 
   function toggleKernel(name, event) {
@@ -431,6 +508,13 @@
         render();
       });
     }
+    if (autoZoomToggle) {
+      autoZoomToggle.addEventListener("change", function () {
+        state.autoZoom = autoZoomToggle.checked;
+        // Turning it on snaps the view to the current selection immediately.
+        fitView();
+      });
+    }
     if (gd && typeof gd.on === "function") {
       gd.on("plotly_click", function (data) {
         if (!data || !data.points || !data.points.length) {
@@ -442,6 +526,12 @@
           return;
         }
         toggleKernel(kernels[position].name, data.event);
+      });
+      // Toggling a roof in the legend hides/shows a diagonal; re-snap the
+      // ceilings once Plotly has applied the toggle
+      gd.on("plotly_legendclick", function () {
+        setTimeout(snapCeilings, 0);
+        return true;
       });
     }
   }
