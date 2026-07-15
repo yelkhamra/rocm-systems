@@ -280,7 +280,7 @@ These variables only take effect when the CAST QP scheduler is active.
         | Minimum interval between scheduler weight updates. Value is in
           microseconds.
       - | Integer microseconds. Default: ``50``.
-        | Clamped to the range 1 µs to 60 s; out-of-range values are ignored.
+        | Applied only for values in the range 1 µs to 60 s; out-of-range values are ignored.
 
     * - | ``RCCL_IB_QP_SCHED_WEIGHT``
         | Exponential moving average (EMA) weight applied to new RTT samples.
@@ -306,7 +306,7 @@ These variables only take effect when the CAST QP scheduler is active.
           Value is in microseconds. Only used when
           ``RCCL_IB_QP_SCHED_LOG_PATH`` is set.
       - | Integer microseconds. Default: ``1000000`` (1 second).
-        | Clamped to the range 1 µs to 60 s; out-of-range values are ignored.
+        | Applied only for values in the range 1 µs to 60 s; out-of-range values are ignored.
 
     * - | ``NCCL_IB_SPLIT_DATA_ON_QPS``
         | Selects how the scheduler distributes a message across QPs. When
