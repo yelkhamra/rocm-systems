@@ -25,7 +25,7 @@
 #include "rocjitsu/kmd/linux/sysfs.h"
 #include "rocjitsu/vm/plugins/execution_plugin_group.h"
 #include "rocjitsu/vm/plugins/plugin_sink.h"
-#include "rocjitsu/vm/plugins/profiled_execution_plugin_group.h"
+#include "rocjitsu/vm/plugins/profiled_execution_plugin.h"
 #include "rocjitsu/vm/rj_vm.h"
 #include "rocjitsu/vm/rj_vm_impl.h"
 
@@ -859,37 +859,46 @@ public:
     }
 
     if (rj_vm_->soc) {
-      std::shared_ptr<rocjitsu::ExecutionPluginGroup> pg;
-      if (std::getenv("RJ_USE_PROFILED_EXECUTION_PLUGIN_GROUP"))
-        pg = std::make_shared<rocjitsu::ProfiledExecutionPluginGroup>();
-      else
-        pg = std::make_shared<rocjitsu::ExecutionPluginGroup>();
-
       std::string sinks_str = "stderr";
       if (const char *s = std::getenv("RJ_SINKS"))
         sinks_str = s;
-      std::istringstream ss(sinks_str);
-      std::string token;
-      while (std::getline(ss, token, ',')) {
-        if (token == "stderr")
-          pg->add_sink(&rocjitsu::StderrSink::instance());
-        else if (token == "stdout")
-          pg->add_sink(&rocjitsu::StdoutSink::instance());
-        else if (token == "file") {
-          const char *dir = std::getenv("RJ_SINK_DIR");
-          if (dir)
-            pg->set_sink_dir(dir);
+
+      auto configure_sinks = [&](rocjitsu::ExecutionPluginGroup &group) {
+        std::istringstream ss(sinks_str);
+        std::string token;
+        while (std::getline(ss, token, ',')) {
+          if (token == "stderr")
+            group.add_sink(&rocjitsu::StderrSink::instance());
+          else if (token == "stdout")
+            group.add_sink(&rocjitsu::StdoutSink::instance());
+          else if (token == "file") {
+            const char *dir = std::getenv("RJ_SINK_DIR");
+            if (dir)
+              group.set_sink_dir(dir);
+          }
         }
-      }
+      };
+
+      auto plugins = std::make_unique<rocjitsu::ExecutionPluginGroup>();
+      configure_sinks(*plugins);
 
       if (const char *rj_log = std::getenv("RJ_LOG"); rj_log && std::string(rj_log) == "1") {
-        pg->add(std::unique_ptr<rocjitsu::ExecutionPlugin>(createKernelLoggingPlugin()));
+        plugins->add(std::unique_ptr<rocjitsu::ExecutionPlugin>(createKernelLoggingPlugin()));
         fprintf(stderr, "[rocjitsu] Logging enabled (RJ_LOG)\n");
       }
 
       if (const char *race = std::getenv("RJ_RACE"); race && std::string(race) == "1") {
-        pg->add(std::unique_ptr<rocjitsu::ExecutionPlugin>(createRaceDetectorPlugin()));
+        plugins->add(std::unique_ptr<rocjitsu::ExecutionPlugin>(createRaceDetectorPlugin()));
         fprintf(stderr, "[rocjitsu] Race detection enabled (RJ_RACE)\n");
+      }
+
+      std::shared_ptr<rocjitsu::ExecutionPluginGroup> pg;
+      if (std::getenv("RJ_USE_PROFILED_EXECUTION_PLUGIN_GROUP")) {
+        pg = std::make_shared<rocjitsu::ExecutionPluginGroup>();
+        configure_sinks(*pg);
+        pg->add(std::make_unique<rocjitsu::ProfiledExecutionPlugin>(std::move(plugins)));
+      } else {
+        pg = std::shared_ptr<rocjitsu::ExecutionPluginGroup>(std::move(plugins));
       }
       rj_vm_->soc->set_plugin_group(pg);
     }

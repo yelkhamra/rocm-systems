@@ -87,6 +87,22 @@ The `ExecutionPlugin` interface (`execution_plugin.h`) defines hooks
 that the compute unit and command processor call during execution.
 Multiple plugins can be active simultaneously via `ExecutionPluginGroup`.
 
+### Dispatch threading
+
+Hook presence and callback policy are derived from the plugins contained by an
+`ExecutionPluginGroup`. An empty group has no hooks. A group requires serial
+command-processor callbacks when any contained plugin requires them.
+
+Plugins conservatively require serial callbacks by default because concurrent
+hook ordering is undefined and plugins may contain unsynchronized mutable
+state. A plugin may override `requires_serial_execution()` to return `false`
+only after its complete callback path has been audited and tested for
+concurrent command-processor callbacks.
+
+Hook profiling is implemented as `ProfiledExecutionPlugin`, a serial decorator
+around another plugin group. It therefore participates in the same
+capability aggregation instead of adding hidden hook behavior to the group.
+
 
 ## Adding a new plugin
 
