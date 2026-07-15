@@ -129,7 +129,7 @@ __CSS__
     </button>
     <label class="roofline-control roofline-toggle"
            title="Automatically fit the view (recenter and zoom) to the visible points and the roofs they are measured against whenever you change the memory peak or kernel selection. Turn off to keep your own pan/zoom.">
-      <input type="checkbox" id="roofline-auto-zoom" checked>
+      <input type="checkbox" id="roofline-auto-zoom">
       Auto-fit
     </label>
   </div>

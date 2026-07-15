@@ -90,8 +90,8 @@
     return state.peak === "all" || roof.level === state.peak;
   }
 
-  function renderRooflines() {
-    // Filter the memory-level bandwidth roofs to the selected peak
+  
+  function applyPeakFilterToRoofs() {
     if (!gd || typeof Plotly === "undefined" || !rooflineTraces.length) {
       return;
     }
@@ -102,10 +102,6 @@
       visibility.push(roofIsVisible(roof) ? true : "legendonly");
     });
     Plotly.restyle(gd, { visible: visibility }, indices);
-
-    // Compute ceilings meet the steepest *visible* diagonal; recompute from the
-    // roofs actually shown.
-    snapCeilings();
   }
 
   function roofTraceShown(roof) {
@@ -113,12 +109,18 @@
     return !!trace && trace.visible !== false && trace.visible !== "legendonly";
   }
 
-  function snapCeilings() {
+  function snapCeilings(pendingToggleIndex) {
     if (!gd || typeof Plotly === "undefined" || !computeTraces.length) {
       return;
     }
     var visibleBw = rooflineTraces
-      .filter(roofTraceShown)
+      .filter(function (roof) {
+        var shown = roofTraceShown(roof);
+        if (roof.traceIndex === pendingToggleIndex) {
+          return !shown;
+        }
+        return shown;
+      })
       .map(function (roof) {
         return roof.bandwidth;
       })
@@ -150,7 +152,9 @@
   }
 
   function render() {
-    renderRooflines();
+    // Re-snap ceilings to whatever roofs are currently shown, but do NOT reset
+    // roof visibility here (that would undo the user's legend toggles).
+    snapCeilings();
     if (!gd || typeof Plotly === "undefined" || !kernelTraceIndices.length) {
       updatePanel();
       return;
@@ -206,8 +210,10 @@
 
   // Recenter the log axes on whatever is currently drawn
   function fitView() {
-    // Off means the user is driving pan/zoom; don't fight them.
-    if (!state.autoZoom || !gd || typeof Plotly === "undefined") {
+    if (!gd || typeof Plotly === "undefined") {
+      return;
+    }
+    if (hasFitted && !state.autoZoom) {
       return;
     }
     var ais = [];
@@ -499,6 +505,8 @@
     if (peakSelect) {
       peakSelect.addEventListener("change", function () {
         state.peak = peakSelect.value;
+        // Changing the peak deliberately resets which roofs are shown.
+        applyPeakFilterToRoofs();
         render();
       });
     }
@@ -527,10 +535,15 @@
         }
         toggleKernel(kernels[position].name, data.event);
       });
-      // Toggling a roof in the legend hides/shows a diagonal; re-snap the
-      // ceilings once Plotly has applied the toggle
-      gd.on("plotly_legendclick", function () {
-        setTimeout(snapCeilings, 0);
+      // Toggling a roof in the legend hides/shows a diagonal. The event fires
+      // before Plotly flips the trace, so snap against the pending post-click
+      // state (via curveNumber) instead of the stale live visibility.
+      gd.on("plotly_legendclick", function (ev) {
+        if (ev && typeof ev.curveNumber === "number") {
+          snapCeilings(ev.curveNumber);
+        } else {
+          snapCeilings();
+        }
         return true;
       });
     }
@@ -563,6 +576,7 @@
     whenPlotReady(function () {
       wireEvents();
       resizePlot();
+      applyPeakFilterToRoofs();
       render();
     }, 40);
   }
