@@ -302,6 +302,66 @@ TEST(InstructionExecutionHarness, Rdna3_5) {
   RUN_HARNESS(rdna3_5, ROCJITSU_CODE_ARCH_RDNA3_5, "rdna3_5");
 }
 TEST(InstructionExecutionHarness, Rdna4) { RUN_HARNESS(rdna4, ROCJITSU_CODE_ARCH_RDNA4, "rdna4"); }
+
+TEST(Rdna4ExecMaskTest, Wave32ExecHiRemainsAvailableAsScalarScratch) {
+  amdgpu::GpuMemory gpu_mem("rdna4_exec_hi_mem");
+  amdgpu::L2Cache l2("rdna4_exec_hi_l2");
+
+  amdgpu::ComputeUnitCore::Config cfg{};
+  cfg.arch = ROCJITSU_CODE_ARCH_RDNA4;
+  cfg.num_wf_slots = 1;
+  cfg.sgprs_per_wf = 128;
+  cfg.vgprs_per_wf = 256;
+  cfg.lds_size_kb = 64;
+
+  auto cu = amdgpu::ComputeUnitCore::create("rdna4_exec_hi", cfg, &gpu_mem, &l2);
+  ASSERT_NE(cu, nullptr);
+  auto *wf = cu->dispatch_wf(0, 0, cfg.sgprs_per_wf, cfg.vgprs_per_wf);
+  ASSERT_NE(wf, nullptr);
+  ASSERT_EQ(wf->wf_size(), 32u);
+
+  auto decoder = Decoder::create(ROCJITSU_CODE_ARCH_RDNA4);
+  ASSERT_NE(decoder, nullptr);
+  cu->write_sgpr(wf->sgpr_alloc().base, 0xffffffffu);
+  wf->set_exec(0xffffffffu);
+
+  constexpr uint32_t kInline16 = 128u + 16u;
+  const std::array<std::pair<uint32_t, std::string_view>, 3> sequence{{
+      {encode_sop2(/*s_lshr_b32=*/10, /*exec_lo=*/126, /*s0=*/0, kInline16)[0], "s_lshr_b32"},
+      {encode_sop2(/*s_lshl_b32=*/8, /*exec_hi=*/127, /*s0=*/0, kInline16)[0], "s_lshl_b32"},
+      {encode_sop2(/*s_or_b32=*/24, /*exec_lo=*/126, /*exec_lo=*/126, /*exec_hi=*/127)[0],
+       "s_or_b32"},
+  }};
+
+  for (size_t i = 0; i < sequence.size(); ++i) {
+    const uint32_t words[] = {sequence[i].first, 0};
+    std::unique_ptr<Instruction> inst(decoder->decode(words));
+    ASSERT_NE(inst, nullptr);
+    ASSERT_EQ(std::string_view(inst->mnemonic()), sequence[i].second);
+    cu->execute_instruction(inst.get(), *wf);
+    if (i == 1) {
+      EXPECT_EQ(wf->exec(), 0x0000ffffu);
+      EXPECT_EQ(wf->exec_raw(), 0xffff0000'0000ffffULL);
+    }
+  }
+
+  EXPECT_EQ(wf->exec(), 0xffffffffu);
+  EXPECT_EQ(wf->exec_raw(), 0xffff0000'ffffffffULL);
+
+  constexpr uint64_t kRawExec = 0x2468ace0'13579bdfULL;
+  cu->write_sgpr(wf->sgpr_alloc().base, static_cast<uint32_t>(kRawExec));
+  cu->write_sgpr(wf->sgpr_alloc().base + 1, static_cast<uint32_t>(kRawExec >> 32));
+  wf->set_exec_raw(0xdeadbeef'ffffffffULL);
+
+  const auto mov_b64 = encode_sop1(/*s_mov_b64=*/1, /*exec=*/126, /*s0=*/0);
+  std::unique_ptr<Instruction> inst(decoder->decode(mov_b64.data()));
+  ASSERT_NE(inst, nullptr);
+  ASSERT_EQ(std::string_view(inst->mnemonic()), "s_mov_b64");
+  cu->execute_instruction(inst.get(), *wf);
+
+  EXPECT_EQ(wf->exec_raw(), kRawExec);
+  EXPECT_EQ(wf->exec(), static_cast<uint32_t>(kRawExec));
+}
 TEST(InstructionExecutionHarness, Gfx1250) {
   RUN_HARNESS(gfx1250, ROCJITSU_CODE_ARCH_GFX1250, "gfx1250");
 }
@@ -2613,8 +2673,44 @@ TEST(Rdna4True16Vop3Test, B16BitwiseLiteralPreservesInputSignBit) {
     std::unique_ptr<Instruction> and_inst(decoder->decode(and_words));
     ASSERT_NE(and_inst, nullptr);
     ASSERT_EQ(std::string_view(and_inst->mnemonic()), "v_and_b16");
+    ASSERT_NE(and_inst->src_operand(0), nullptr);
+    EXPECT_EQ(static_cast<uint32_t>(and_inst->src_operand(0)->encoding_value()), 0xFFFF8000u);
+    EXPECT_EQ(and_inst->src_operand(0)->name(), "0x8000");
+    EXPECT_NE(and_inst->disassemble().find("0x8000"), std::string::npos);
+    EXPECT_EQ(and_inst->disassemble().find("0x-"), std::string::npos);
     cu->execute_instruction(and_inst.get(), *wf);
     EXPECT_EQ(cu->read_vgpr(vb + 1, 0), 0x11118000u);
+
+    cu->write_vgpr(vb + 1, 0, 0x22220000u);
+
+    // v_and_b16 v1.l, 0x8000, v3.l op_sel:[1,0,0]
+    const uint32_t and_high_words[] = {0xD7620801U, 0x020206FFU, 0x80000000U};
+    std::unique_ptr<Instruction> and_high_inst(decoder->decode(and_high_words));
+    ASSERT_NE(and_high_inst, nullptr);
+    ASSERT_EQ(std::string_view(and_high_inst->mnemonic()), "v_and_b16");
+    ASSERT_NE(and_high_inst->src_operand(0), nullptr);
+    EXPECT_EQ(static_cast<uint32_t>(and_high_inst->src_operand(0)->encoding_value()), 0x80000000u);
+    EXPECT_EQ(and_high_inst->src_operand(0)->name(), "0x8000");
+    EXPECT_NE(and_high_inst->disassemble().find("0x8000"), std::string::npos);
+    EXPECT_EQ(and_high_inst->disassemble().find("0x-"), std::string::npos);
+    cu->execute_instruction(and_high_inst.get(), *wf);
+    EXPECT_EQ(cu->read_vgpr(vb + 1, 0), 0x22228000u);
+
+    cu->write_vgpr(vb + 1, 0, 0x33330000u);
+
+    // v_and_b16 v1.l, v3.l, 0x8000 op_sel:[0,1,0]
+    const uint32_t and_src1_high_words[] = {0xD7621001U, 0x0201FF03U, 0x80000000U};
+    std::unique_ptr<Instruction> and_src1_high_inst(decoder->decode(and_src1_high_words));
+    ASSERT_NE(and_src1_high_inst, nullptr);
+    ASSERT_EQ(std::string_view(and_src1_high_inst->mnemonic()), "v_and_b16");
+    ASSERT_NE(and_src1_high_inst->src_operand(1), nullptr);
+    EXPECT_EQ(static_cast<uint32_t>(and_src1_high_inst->src_operand(1)->encoding_value()),
+              0x80000000u);
+    EXPECT_EQ(and_src1_high_inst->src_operand(1)->name(), "0x8000");
+    EXPECT_NE(and_src1_high_inst->disassemble().find("0x8000"), std::string::npos);
+    EXPECT_EQ(and_src1_high_inst->disassemble().find("0x-"), std::string::npos);
+    cu->execute_instruction(and_src1_high_inst.get(), *wf);
+    EXPECT_EQ(cu->read_vgpr(vb + 1, 0), 0x33338000u);
 
     // v_xor_b16 v0.l, v1.l, v0.l
     const uint32_t xor_words[] = {0xD7640000U, 0x02020101U};
