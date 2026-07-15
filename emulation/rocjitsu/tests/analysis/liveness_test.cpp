@@ -258,7 +258,8 @@ public:
     case TestOpcode::PartialDefSgpr4:
       // 16-bit write to s4: defines only part of the lane, so it also reads s4.
       return new TestInstruction("test_partial_def_s4", {{RegClass::SGPR, 4, 1}}, {}, 0,
-                                 std::nullopt, {}, std::nullopt, std::nullopt, /*def_size_bits=*/16);
+                                 std::nullopt, {}, std::nullopt, std::nullopt,
+                                 /*def_size_bits=*/16);
     }
     return new TestInstruction("test_end", {}, {}, PROGRAM_TERMINATOR);
   }
