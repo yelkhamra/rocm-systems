@@ -42,5 +42,4 @@ rocprofiler_add_integration_validate_test(
     CONFIG pytest.ini
     ARGS --rocprofv3-path $<TARGET_FILE:rocprofiler-sdk::rocprofv3>
     TARGET_DEPENDS rocprofiler-sdk::rocprofv3
-    TIMEOUT 45
-    LABELS "integration-tests")
+    TIMEOUT 45)

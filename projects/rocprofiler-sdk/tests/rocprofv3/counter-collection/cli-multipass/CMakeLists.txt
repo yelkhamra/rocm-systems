@@ -1,6 +1,6 @@
 # MIT License
 #
-# Copyright (c) 2024-2025 Advanced Micro Devices, Inc. All rights reserved.
+# Copyright (c) 2024-2026 Advanced Micro Devices, Inc. All rights reserved.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -48,19 +48,16 @@ rocprofiler_add_integration_execute_test(
         $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
-    LABELS "integration-tests"
     PRELOAD "${PRELOAD_ENV}"
     FIXTURES_SETUP rocprofv3-test-counter-collection-cli-multipass)
 
 rocprofiler_add_integration_validate_test(
     rocprofv3-test-counter-collection-cli-multipass
     TEST_PATHS validate.py
-    COPY conftest.py
     CONFIG pytest.ini
     ARGS --output-dir ${CMAKE_CURRENT_BINARY_DIR}/simple-transpose-cc --expected-counters
          SQ_WAVES GRBM_COUNT GRBM_GUI_ACTIVE
     TIMEOUT 45
-    LABELS "integration-tests"
     FIXTURES_REQUIRED rocprofv3-test-counter-collection-cli-multipass)
 
 # multi-pass test defining the pmc groups in a JSON input file
@@ -73,19 +70,16 @@ rocprofiler_add_integration_execute_test(
         $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
-    LABELS "integration-tests"
     PRELOAD "${PRELOAD_ENV}"
     FIXTURES_SETUP rocprofv3-test-counter-collection-cli-multipass-json)
 
 rocprofiler_add_integration_validate_test(
     rocprofv3-test-counter-collection-cli-multipass-json
     TEST_PATHS validate.py
-    COPY conftest.py input.json input.yml
     CONFIG pytest.ini
     ARGS --output-dir ${CMAKE_CURRENT_BINARY_DIR}/simple-transpose-cc-json
          --expected-counters SQ_WAVES GRBM_COUNT GRBM_GUI_ACTIVE
     TIMEOUT 45
-    LABELS "integration-tests"
     FIXTURES_REQUIRED rocprofv3-test-counter-collection-cli-multipass-json)
 
 # multi-pass test defining the pmc groups in a YAML input file
@@ -97,19 +91,16 @@ rocprofiler_add_integration_execute_test(
         $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
-    LABELS "integration-tests"
     PRELOAD "${PRELOAD_ENV}"
     FIXTURES_SETUP rocprofv3-test-counter-collection-cli-multipass-yaml)
 
 rocprofiler_add_integration_validate_test(
     rocprofv3-test-counter-collection-cli-multipass-yaml
     TEST_PATHS validate.py
-    COPY conftest.py input.json input.yml
     CONFIG pytest.ini
     ARGS --output-dir ${CMAKE_CURRENT_BINARY_DIR}/simple-transpose-cc-yaml
          --expected-counters SQ_WAVES GRBM_COUNT GRBM_GUI_ACTIVE
     TIMEOUT 45
-    LABELS "integration-tests"
     FIXTURES_REQUIRED rocprofv3-test-counter-collection-cli-multipass-yaml)
 
 # combined multi-pass: two CLI --pmc passes (first) plus one input-file pass (last)
@@ -122,19 +113,16 @@ rocprofiler_add_integration_execute_test(
         $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
-    LABELS "integration-tests"
     PRELOAD "${PRELOAD_ENV}"
     FIXTURES_SETUP rocprofv3-test-counter-collection-cli-multipass-combined)
 
 rocprofiler_add_integration_validate_test(
     rocprofv3-test-counter-collection-cli-multipass-combined
     TEST_PATHS validate.py
-    COPY conftest.py
     CONFIG pytest.ini
     ARGS --output-dir ${CMAKE_CURRENT_BINARY_DIR}/simple-transpose-cc-combined
          --expected-counters SQ_WAVES GRBM_COUNT GRBM_GUI_ACTIVE
     TIMEOUT 45
-    LABELS "integration-tests"
     FIXTURES_REQUIRED rocprofv3-test-counter-collection-cli-multipass-combined)
 
 # Negative tests: illegal combinations must fail before launch. PASS_REGULAR_EXPRESSION
@@ -149,9 +137,8 @@ rocprofiler_add_integration_execute_test(
         $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
-    LABELS "integration-tests"
     PRELOAD "${PRELOAD_ENV}"
-    PASS_REGULAR_EXPRESSION "multiple --pmc flags. is not compatible with attach mode")
+    PASS_REGULAR_EXPRESSION "multiple --pmc flags\\) is not compatible with attach mode")
 
 # multiple --pmc with --collection-period
 rocprofiler_add_integration_execute_test(
@@ -162,10 +149,9 @@ rocprofiler_add_integration_execute_test(
         -f csv -- $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
-    LABELS "integration-tests"
     PRELOAD "${PRELOAD_ENV}"
     PASS_REGULAR_EXPRESSION
-        "multiple --pmc flags. is not compatible with --collection-period")
+        "multiple --pmc flags\\) is not compatible with --collection-period")
 
 # CLI --pmc plus input-file pmc_groups
 rocprofiler_add_integration_execute_test(
@@ -177,9 +163,8 @@ rocprofiler_add_integration_execute_test(
         $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
-    LABELS "integration-tests"
     PRELOAD "${PRELOAD_ENV}"
-    PASS_REGULAR_EXPRESSION "Cannot specify both --pmc and .input file. pmc_groups")
+    PASS_REGULAR_EXPRESSION "Cannot specify both --pmc and \\(input file\\) pmc_groups")
 
 # input-file multi-pass (>1 job) with --pid
 rocprofiler_add_integration_execute_test(
@@ -191,10 +176,9 @@ rocprofiler_add_integration_execute_test(
         $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
-    LABELS "integration-tests"
     PRELOAD "${PRELOAD_ENV}"
-    PASS_REGULAR_EXPRESSION "multiple input-file jobs. is not compatible with attach mode"
-    )
+    PASS_REGULAR_EXPRESSION
+        "multiple input-file jobs\\) is not compatible with attach mode")
 
 # input-file multi-pass (>1 job) with --collection-period
 rocprofiler_add_integration_execute_test(
@@ -206,7 +190,6 @@ rocprofiler_add_integration_execute_test(
         $<TARGET_FILE:simple-transpose>
     DEPENDS simple-transpose
     TIMEOUT 45
-    LABELS "integration-tests"
     PRELOAD "${PRELOAD_ENV}"
     PASS_REGULAR_EXPRESSION
-        "multiple input-file jobs. is not compatible with --collection-period")
+        "multiple input-file jobs\\) is not compatible with --collection-period")
