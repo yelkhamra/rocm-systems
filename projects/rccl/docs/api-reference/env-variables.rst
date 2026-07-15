@@ -238,6 +238,84 @@ in the following table.
       - | Remapping specification string
         | Used with Rome 4P2H topology
 
+QP scheduling (CAST)
+==============================
+
+CAST (Congestion aware sprayed traffic) adds a dynamic QP (Queue Pair) scheduler that
+balances RDMA traffic across multiple QPs per connection based on measured
+round-trip time (RTT). The following variables tune the scheduler. CAST-specific
+variables are accessible with either the ``RCCL_`` or ``NCCL_`` prefix; the table
+uses the ``RCCL_`` form where available (``NCCL_IB_SPLIT_DATA_ON_QPS`` has no
+``RCCL_`` alias).
+
+These variables only take effect when the CAST QP scheduler is active.
+
+.. list-table::
+    :header-rows: 1
+    :widths: 40,60
+
+    * - **Environment variable**
+      - **Values**
+
+    * - | ``RCCL_IB_QP_SCHED_ENABLE``
+        | Enables the CAST QP scheduler.
+      - | ``-1``: Auto (default). Enabled on most hardware, but disabled on
+          AMD AINIC hardware unless overridden. Setting ``NCCL_NET=ib-cast`` also forces it on.
+        | ``0``: Force off.
+        | ``1``: Force on.
+
+    * - | ``RCCL_IB_QP_SCHED_WRR_ENABLE``
+        | Enables Weighted Round-Robin (WRR) scheduling within the QP scheduler.
+      - | ``0``: Disabled.
+        | ``1``: Enabled (default).
+
+    * - | ``RCCL_IB_QP_SCHED_RESET_INTERVAL``
+        | Interval at which accumulated RTT statistics are reset, to prevent
+          stale samples from permanently biasing the scheduler. Value is in
+          milliseconds.
+      - | Integer milliseconds. Default: ``60000`` (60 seconds).
+        | ``0``: Never reset.
+
+    * - | ``RCCL_IB_QP_SCHED_UPDATE_INTERVAL``
+        | Minimum interval between scheduler weight updates. Value is in
+          microseconds.
+      - | Integer microseconds. Default: ``50``.
+        | Clamped to the range 1 µs to 60 s; out-of-range values are ignored.
+
+    * - | ``RCCL_IB_QP_SCHED_WEIGHT``
+        | Exponential moving average (EMA) weight applied to new RTT samples.
+      - | Floating-point value in the range ``0`` to ``1.0``. Default: ``0``.
+        | ``0``: Simple average.
+        | Values closer to ``1.0`` react faster to recent samples.
+
+    * - | ``RCCL_IB_QP_SCHED_SPLIT_DATA_MIN``
+        | Minimum chunk size when splitting a message across QPs (split-data
+          mode, enabled via ``NCCL_IB_SPLIT_DATA_ON_QPS``). Value is in bytes.
+      - | Integer bytes. Default: ``65536``.
+        | Only positive values are applied.
+
+    * - | ``RCCL_IB_QP_SCHED_LOG_PATH``
+        | Directory for per-QP scheduler log files (RTT samples, computed
+          weights, token allocations). Log files are named
+          ``cast_log_<hostname>_<pid>``.
+      - | String directory path.
+        | Default: unset (logging disabled).
+
+    * - | ``RCCL_IB_QP_SCHED_LOG_INTERVAL``
+        | Interval at which scheduler statistics are written to the log file.
+          Value is in microseconds. Only used when
+          ``RCCL_IB_QP_SCHED_LOG_PATH`` is set.
+      - | Integer microseconds. Default: ``1000000`` (1 second).
+        | Clamped to the range 1 µs to 60 s; out-of-range values are ignored.
+
+    * - | ``NCCL_IB_SPLIT_DATA_ON_QPS``
+        | Selects how the scheduler distributes a message across QPs. When
+          enabled, each message is split across QPs proportionally to their
+          weights; when disabled, whole messages are assigned to QPs in a
+          weighted round-robin pattern.
+      - | ``0``: Round-robin whole messages (default).
+        | ``1``: Split each message across QPs.
+
 Development and testing (advanced)
 ==================================
 
