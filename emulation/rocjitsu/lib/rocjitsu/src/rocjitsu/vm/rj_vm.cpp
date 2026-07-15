@@ -24,11 +24,18 @@ RJ_DIAGNOSTIC_POP
 #include <stdexcept>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <thread>
 #include <vector>
 
 using namespace rocjitsu;
 
 namespace {
+
+void set_cpu_dispatch_threads(SoC *soc, uint32_t threads) {
+  if (!soc)
+    return;
+  soc->for_each_cp([threads](auto *cp) { cp->set_dispatch_threads(threads); });
+}
 
 rj_status_t create_from_loaded(config::LoadedConfig &loaded, rj_vm_mode_t mode, rj_vm_t **handle) {
   if (!loaded.soc())
@@ -43,6 +50,17 @@ rj_status_t create_from_loaded(config::LoadedConfig &loaded, rj_vm_mode_t mode, 
       if (auto *extra_soc = dynamic_cast<SoC *>(eb.root.get()))
         partition_xcds += extra_soc->num_xcds();
     }
+  }
+  // Per-CP CU dispatch-pool thread count (functional mode), from config
+  // cpu_dispatch_threads. 0 = auto: all hardware threads, capped at
+  // kDispatchThreadCap (parallel out of the box without oversubscribing small
+  // hosts or paying SMT/turbo costs). Results are thread-count-invariant, so
+  // this only affects speed, not output.
+  constexpr uint32_t kDispatchThreadCap = 32;
+  uint32_t cpu_dispatch_threads = loaded.cpu_dispatch_threads;
+  if (cpu_dispatch_threads == 0) {
+    unsigned hw = std::thread::hardware_concurrency();
+    cpu_dispatch_threads = std::min<uint32_t>(hw ? hw : 1u, kDispatchThreadCap);
   }
   // XCD partitions (config num_threads): run each XCD on its own engine
   // partition/thread so the XCDs execute concurrently across their separate L2s.
@@ -63,12 +81,14 @@ rj_status_t create_from_loaded(config::LoadedConfig &loaded, rj_vm_mode_t mode, 
 
   if (loaded.num_gpus > 1 && !loaded.extra_gpu_builds.empty()) {
     std::vector<std::unique_ptr<SoC>> socs;
+    std::vector<SoC *> dispatch_socs;
     std::vector<uint32_t> gpu_ids;
     partition_socs.reserve(loaded.extra_gpu_builds.size() + 1);
 
     auto root0 = loaded.take_root();
     root0.release();
     socs.push_back(std::unique_ptr<SoC>(s->soc));
+    dispatch_socs.push_back(s->soc);
     partition_socs.push_back(s->soc);
     gpu_ids.push_back(loaded.devices.empty() ? 0 : loaded.devices[0].gpu_id);
 
@@ -79,6 +99,7 @@ rj_status_t create_from_loaded(config::LoadedConfig &loaded, rj_vm_mode_t mode, 
         continue;
       eb.root.release();
       socs.push_back(std::unique_ptr<SoC>(extra_soc));
+      dispatch_socs.push_back(extra_soc);
       partition_socs.push_back(extra_soc);
       gpu_ids.push_back(i + 1 < loaded.devices.size() ? loaded.devices[i + 1].gpu_id : 0);
     }
@@ -103,7 +124,8 @@ rj_status_t create_from_loaded(config::LoadedConfig &loaded, rj_vm_mode_t mode, 
       if (i + 1 < partition_socs.size())
         partition_socs[i + 1]->wire_backing(s->engine->topology());
     }
-    for (auto *soc : partition_socs) {
+    for (auto *soc : dispatch_socs) {
+      set_cpu_dispatch_threads(soc, cpu_dispatch_threads);
       if (loaded.soc_dispatch)
         soc->set_soc_dispatch(true);
     }
@@ -116,6 +138,7 @@ rj_status_t create_from_loaded(config::LoadedConfig &loaded, rj_vm_mode_t mode, 
     loaded.wire_links(s->engine->topology());
     s->soc->wire_backing(s->engine->topology());
     partition_socs.push_back(s->soc);
+    set_cpu_dispatch_threads(s->soc, cpu_dispatch_threads);
     if (loaded.soc_dispatch)
       s->soc->set_soc_dispatch(true);
   }

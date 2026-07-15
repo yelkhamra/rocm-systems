@@ -975,6 +975,41 @@ TEST(ExecutionPluginTest, DispatchPacketNameResolvesForVmidMappedCodeObject) {
   EXPECT_EQ(kernel_symbol, "vmid_dispatch_kernel");
 }
 
+TEST(ExecutionPluginTest, PluginCapabilitiesSetCpuDispatchPolicy) {
+  {
+    PluginFixture f;
+    f.cp()->set_dispatch_threads(8);
+    auto pg = std::make_shared<ExecutionPluginGroup>();
+    pg->add(std::make_unique<OrderingPlugin>());
+    f.soc->set_plugin_group(pg);
+    EXPECT_EQ(f.cp()->dispatch_threads(), 1u);
+    EXPECT_TRUE(f.cu()->plugin_hooks_enabled());
+    f.cp()->set_dispatch_threads(8);
+    EXPECT_EQ(f.cp()->dispatch_threads(), 1u);
+  }
+
+  {
+    PluginFixture f;
+    auto nested = std::make_unique<ExecutionPluginGroup>();
+    auto pg = std::make_shared<ExecutionPluginGroup>();
+    pg->add(std::make_unique<ProfiledExecutionPlugin>(std::move(nested)));
+    f.soc->set_plugin_group(pg);
+    f.cp()->set_dispatch_threads(8);
+    EXPECT_EQ(f.cp()->dispatch_threads(), 1u);
+    EXPECT_TRUE(f.cu()->plugin_hooks_enabled());
+  }
+
+  {
+    PluginFixture f;
+    auto pg = std::make_shared<ExecutionPluginGroup>();
+    pg->add(std::make_unique<ParallelSafePlugin>());
+    f.soc->set_plugin_group(pg);
+    f.cp()->set_dispatch_threads(8);
+    EXPECT_EQ(f.cp()->dispatch_threads(), 8u);
+    EXPECT_TRUE(f.cu()->plugin_hooks_enabled());
+  }
+}
+
 // -- Ordering tests ----------------------------------------------------------
 //
 // These tests use functional mode (the PluginFixture default). Tests that

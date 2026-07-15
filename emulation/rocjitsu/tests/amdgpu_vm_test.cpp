@@ -15,6 +15,7 @@
 #include "rocjitsu/vm/amdgpu/gpu_memory.h"
 #include "rocjitsu/vm/amdgpu/l1_scalar_cache.h"
 #include "rocjitsu/vm/amdgpu/l2_cache.h"
+#include "rocjitsu/vm/plugins/execution_plugin_group.h"
 #include "rocjitsu/vm/rj_vm.h"
 #include "rocjitsu/vm/soc.h"
 
@@ -39,6 +40,7 @@ RJ_DIAGNOSTIC_POP
 #include <limits>
 #include <memory>
 #include <new>
+#include <set>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -55,6 +57,24 @@ constexpr uint32_t SOPP_S_NOP = 0xBF800000;
 constexpr uint32_t SOPP_S_ENDPGM = 0xBF810000;
 
 using namespace rocjitsu;
+
+uint64_t write_kernel_image(amdgpu::GpuMemory *mem, uint64_t addr, const void *code,
+                            size_t code_size, uint32_t sgprs = 104, uint32_t vgprs = 256,
+                            uint32_t user_sgprs = 2) {
+  using namespace rocr::llvm::amdhsa;
+  kernel_descriptor_t kd{};
+  kd.kernel_code_entry_byte_offset = sizeof(kernel_descriptor_t);
+  AMDHSA_BITS_SET(kd.compute_pgm_rsrc1, COMPUTE_PGM_RSRC1_GRANULATED_WORKITEM_VGPR_COUNT,
+                  ((vgprs / 8) - 1));
+  AMDHSA_BITS_SET(kd.compute_pgm_rsrc1, COMPUTE_PGM_RSRC1_GRANULATED_WAVEFRONT_SGPR_COUNT,
+                  ((sgprs / 8) - 1));
+  AMDHSA_BITS_SET(kd.compute_pgm_rsrc2, COMPUTE_PGM_RSRC2_USER_SGPR_COUNT, user_sgprs);
+
+  mem->load_image(reinterpret_cast<const uint8_t *>(&kd), sizeof(kd), addr);
+  mem->load_image(static_cast<const uint8_t *>(code), code_size,
+                  addr + sizeof(kernel_descriptor_t));
+  return addr;
+}
 
 struct VmFixture {
   std::unique_ptr<simdojo::SimulationEngine> engine;
@@ -156,6 +176,96 @@ struct VmFixture {
     return addr;
   }
 };
+
+class WorkgroupPlacementPlugin final : public ExecutionPlugin {
+public:
+  WorkgroupPlacementPlugin() : ExecutionPlugin("workgroup_placement") {}
+
+  void onAmdgpuWorkgroupDispatched(uint32_t /*dispatch_id*/, uint32_t /*wg_id*/,
+                                   uint32_t /*physical_vgpr_count*/, uint32_t /*sgpr_count*/,
+                                   std::span<amdgpu::Wavefront *> wavefronts) override {
+    if (!wavefronts.empty())
+      cu_paths.insert(wavefronts.front()->cu().full_path());
+  }
+
+  void onAmdgpuWorkgroupCompleted(uint32_t /*dispatch_id*/, uint32_t /*wg_id*/) override {
+    ++completed_workgroups;
+  }
+
+  bool saw_xcd(std::string_view xcd_name) const {
+    return std::any_of(cu_paths.begin(), cu_paths.end(),
+                       [&](const auto &path) { return path.find(xcd_name) != std::string::npos; });
+  }
+
+  std::set<std::string> cu_paths;
+  uint32_t completed_workgroups = 0;
+};
+
+enum class SubmitTrigger { DispatchBegin, AfterInstruction };
+
+class SubmitDispatchDuringWorkerPlugin final : public ExecutionPlugin {
+public:
+  SubmitDispatchDuringWorkerPlugin(test::AqlQueue &queue,
+                                   const hsa_kernel_dispatch_packet_t &packet,
+                                   SubmitTrigger trigger)
+      : ExecutionPlugin("submit_dispatch_during_worker"), queue_(queue), packet_(packet),
+        trigger_(trigger) {}
+
+  void onAmdgpuDispatchExecutionBegin(uint32_t /*dispatch_id*/) override {
+    if (trigger_ == SubmitTrigger::DispatchBegin)
+      submit_once();
+  }
+
+  void onAmdgpuAfterExecuteInstruction(uint64_t /*pc*/, const Instruction & /*inst*/,
+                                       amdgpu::Wavefront & /*wf*/) override {
+    if (trigger_ == SubmitTrigger::AfterInstruction)
+      submit_once();
+  }
+
+  bool submitted() const { return submitted_.load(); }
+
+  bool requires_serial_execution() const override { return false; }
+
+private:
+  void submit_once() {
+    bool expected = false;
+    if (submitted_.compare_exchange_strong(expected, true))
+      queue_.submit(packet_);
+  }
+
+  test::AqlQueue &queue_;
+  hsa_kernel_dispatch_packet_t packet_{};
+  SubmitTrigger trigger_;
+  std::atomic_bool submitted_{false};
+};
+
+void init_completion_signal(amdgpu::GpuMemory *mem, uint64_t signal_addr) {
+  mem->write64(signal_addr, 0);
+  mem->write64(signal_addr + 8, 1);
+  mem->write64(signal_addr + 16, 0);
+  mem->write32(signal_addr + 24, 0);
+}
+
+int64_t completion_signal_value(amdgpu::GpuMemory *mem, uint64_t signal_addr) {
+  return static_cast<int64_t>(mem->read64(signal_addr + 8));
+}
+
+hsa_kernel_dispatch_packet_t make_dispatch_packet(uint64_t kernel_object, uint64_t signal_addr,
+                                                  uint32_t grid_size_x = 64,
+                                                  uint16_t workgroup_size_x = 64) {
+  hsa_kernel_dispatch_packet_t pkt{};
+  pkt.header = HSA_PACKET_TYPE_KERNEL_DISPATCH;
+  pkt.setup = 1;
+  pkt.workgroup_size_x = workgroup_size_x;
+  pkt.workgroup_size_y = 1;
+  pkt.workgroup_size_z = 1;
+  pkt.grid_size_x = grid_size_x;
+  pkt.grid_size_y = 1;
+  pkt.grid_size_z = 1;
+  pkt.kernel_object = kernel_object;
+  pkt.completion_signal.handle = signal_addr;
+  return pkt;
+}
 
 // Drive the engine until the listed CUs have no resident wavefronts. A wavefront
 // frees itself at s_endpgm (num_wfs()/has_active_wfs() drop as it halts), so the
@@ -1872,6 +1982,144 @@ TEST_P(IsaTest, RoundRobinScheduling) {
   queue.dispatch(ko_b, 64);
   step_until_halted(*f.engine, {f.cu()});
   EXPECT_EQ(f.cp()->dispatched_count(), 2u);
+}
+
+void run_deferred_rescan_late_completion_test(uint32_t dispatch_threads, SubmitTrigger trigger) {
+  VmFixture f("cdna3", /*num_cus=*/2);
+  f.cp()->set_dispatch_threads(dispatch_threads);
+
+  auto prog_a = ExecFixture::cat({{SOPP_S_NOP}, {SOPP_S_NOP}, {SOPP_S_ENDPGM}});
+  auto prog_b = ExecFixture::cat({{SOPP_S_NOP}, {SOPP_S_ENDPGM}});
+  uint64_t ko_a = f.write_kernel(0x1000, prog_a.data(), prog_a.size() * sizeof(uint32_t));
+  uint64_t ko_b = f.write_kernel(0x2000, prog_b.data(), prog_b.size() * sizeof(uint32_t));
+
+  constexpr uint64_t sig_a = 0xF0020000;
+  constexpr uint64_t sig_b = 0xF0020100;
+  init_completion_signal(f.mem(), sig_a);
+  init_completion_signal(f.mem(), sig_b);
+
+  test::AqlQueue queue(f.mem(), f.cp());
+  auto packet_b = make_dispatch_packet(ko_b, sig_b, /*grid_size_x=*/128);
+
+  auto pg = std::make_shared<ExecutionPluginGroup>();
+  auto plugin = std::make_unique<SubmitDispatchDuringWorkerPlugin>(queue, packet_b, trigger);
+  auto *submitter = plugin.get();
+  ASSERT_TRUE(pg->add(std::move(plugin)));
+  f.soc_ptr->set_plugin_group(pg);
+  f.cp()->set_dispatch_threads(dispatch_threads);
+
+  ASSERT_EQ(f.cp()->dispatch_threads(), dispatch_threads);
+  EXPECT_TRUE(f.cu(0)->plugin_hooks_enabled());
+  EXPECT_TRUE(f.cu(1)->plugin_hooks_enabled());
+
+  auto packet_a = make_dispatch_packet(ko_a, sig_a, /*grid_size_x=*/128);
+  queue.submit(packet_a);
+
+  ASSERT_TRUE(f.engine->step());
+  EXPECT_TRUE(submitter->submitted());
+  EXPECT_EQ(f.cp()->dispatched_count(), 2u);
+
+  for (uint32_t i = 0; i < 10000 && (completion_signal_value(f.mem(), sig_a) != 0 ||
+                                     completion_signal_value(f.mem(), sig_b) != 0);
+       ++i) {
+    ASSERT_TRUE(f.engine->step());
+  }
+
+  EXPECT_EQ(completion_signal_value(f.mem(), sig_a), 0);
+  EXPECT_EQ(completion_signal_value(f.mem(), sig_b), 0);
+  EXPECT_FALSE(f.cu(0)->has_active_wfs());
+  EXPECT_FALSE(f.cu(1)->has_active_wfs());
+}
+
+TEST(AqlDispatchTest, DeferredRescanFiresLateCompletionSignalSerialWorker) {
+  run_deferred_rescan_late_completion_test(1, SubmitTrigger::DispatchBegin);
+}
+
+TEST(AqlDispatchTest, DeferredRescanFiresLateCompletionSignalParallelWorkers) {
+  run_deferred_rescan_late_completion_test(3, SubmitTrigger::AfterInstruction);
+}
+
+TEST(AqlDispatchTest, SocDispatchPrimaryCpCompletesWorkgroupsAcrossXcds) {
+  const char *json = R"({
+    "max_ticks":10000,
+    "num_threads":1,
+    "vm":{"arch":"cdna3"},
+    "topology":{
+      "root":{
+        "name":"soc","type":"soc",
+        "children":[
+          {"name":"vram","type":"gpu_memory"},
+          {"name":"xcd0","type":"xcd","children":[
+            {"name":"l2","type":"l2_cache"},
+            {"name":"cp","type":"command_processor"},
+            {"name":"se0","type":"shader_engine","children":[
+              {"name":"cu0","type":"compute_unit","config":[
+                {"key":"num_wf_slots","value":"1"},
+                {"key":"sgprs_per_wf","value":"104"},
+                {"key":"vgprs_per_wf","value":"256"},
+                {"key":"lds_size_kb","value":"64"}
+              ]}
+            ]}
+          ]},
+          {"name":"xcd1","type":"xcd","children":[
+            {"name":"l2","type":"l2_cache"},
+            {"name":"cp","type":"command_processor"},
+            {"name":"se0","type":"shader_engine","children":[
+              {"name":"cu0","type":"compute_unit","config":[
+                {"key":"num_wf_slots","value":"1"},
+                {"key":"sgprs_per_wf","value":"104"},
+                {"key":"vgprs_per_wf","value":"256"},
+                {"key":"lds_size_kb","value":"64"}
+              ]}
+            ]}
+          ]}
+        ]
+      }
+    }
+  })";
+
+  auto loaded = config::load_config_from_string(json, rocjitsu::kEmbeddedSchema);
+  auto *soc = loaded.soc();
+  auto *mem = loaded.memory();
+  ASSERT_NE(soc, nullptr);
+  ASSERT_NE(mem, nullptr);
+  soc->set_soc_dispatch(true);
+
+  auto engine = std::make_unique<simdojo::SimulationEngine>(loaded.engine_config);
+  engine->topology().set_root(loaded.take_root());
+  loaded.wire_links(engine->topology());
+  engine->create();
+
+  auto *primary_cp = soc->xcd(0)->command_processor();
+  ASSERT_NE(primary_cp, nullptr);
+  EXPECT_EQ(soc->assign_queue_cp(), primary_cp);
+  EXPECT_EQ(soc->assign_queue_cp(), primary_cp);
+  ASSERT_EQ(primary_cp->compute_units().size(), 2u);
+  EXPECT_EQ(primary_cp->compute_units()[0], soc->xcd(0)->shader_engine(0)->compute_unit(0));
+  EXPECT_EQ(primary_cp->compute_units()[1], soc->xcd(1)->shader_engine(0)->compute_unit(0));
+
+  auto pg = std::make_shared<ExecutionPluginGroup>();
+  auto plugin = std::make_unique<WorkgroupPlacementPlugin>();
+  auto *placement = plugin.get();
+  ASSERT_TRUE(pg->add(std::move(plugin)));
+  soc->set_plugin_group(pg);
+
+  const uint32_t code[] = {SOPP_S_ENDPGM};
+  const uint64_t ko = write_kernel_image(mem, 0x1000, code, sizeof(code));
+  constexpr uint64_t kSignal = 0xF0030000;
+  init_completion_signal(mem, kSignal);
+
+  test::AqlQueue queue(mem, primary_cp);
+  queue.submit(make_dispatch_packet(ko, kSignal, /*grid_size_x=*/128));
+
+  for (uint32_t i = 0; i < 10000 && completion_signal_value(mem, kSignal) != 0; ++i)
+    ASSERT_TRUE(engine->step());
+
+  EXPECT_EQ(completion_signal_value(mem, kSignal), 0);
+  EXPECT_EQ(placement->completed_workgroups, 2u);
+  EXPECT_EQ(placement->cu_paths.size(), 2u);
+  EXPECT_TRUE(placement->saw_xcd("xcd0"));
+  EXPECT_TRUE(placement->saw_xcd("xcd1"));
 }
 
 TEST_P(IsaTest, EngineRunsToCompletion) {

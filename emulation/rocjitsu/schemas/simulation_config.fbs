@@ -12,6 +12,7 @@ table ComputeUnitConfig {
   sgprs_per_wf: uint32;   // Scalar GPRs per wavefront.
   vgprs_per_wf: uint32;   // Vector GPRs per wavefront.
   lds_size_kb: uint32;    // Local Data Share size in kilobytes.
+  functional_quantum: uint32;  // Max instructions per advance() in FUNCTIONAL mode (0 = unbounded).
 }
 
 /// Configuration for a command processor.
@@ -226,6 +227,9 @@ table SimulationConfig {
   vm: VirtualMachineConfig;      // Virtual machine hardware model. Omit for dbt_guest-only configs.
   topology: TopologyDef;         // Declarative topology. Omit for dbt_guest-only configs.
   dbt_guest: DbtGuestConfig;     // Optional guest-GPU DBT interposition mode.
+  // CPU CU-dispatch worker-pool size per command processor (functional mode).
+  // 0 = auto: all hardware threads, capped at 32. Affects speed, not results.
+  cpu_dispatch_threads: uint32 = 0;
   // Consolidate cross-XCD dispatch onto each SoC's primary CP (single-stream
   // multi-XCD work distribution).
   soc_dispatch: bool = false;

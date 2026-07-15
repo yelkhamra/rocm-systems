@@ -464,6 +464,7 @@ std::unordered_map<std::string, FactoryFn> &factories() {
       cc.sgprs_per_wf = config_u32(cfg, "sgprs_per_wf", default_sgprs_per_wf(arch));
       cc.vgprs_per_wf = config_u32(cfg, "vgprs_per_wf", default_vgprs_per_wf(arch));
       cc.lds_size_kb = config_u32(cfg, "lds_size_kb", 160);
+      cc.functional_quantum = amdgpu::ComputeUnitCore::kFunctionalQuantum;
       return amdgpu::ComputeUnitCore::create(n, cc, mem, nullptr, mode);
     };
   }
@@ -681,6 +682,7 @@ LoadedConfig build_from_fb(const rocjitsu::fb::SimulationConfig *fb_config) {
   LoadedConfig result;
   result.engine_config = engine_config_from_fb(fb_config);
   result.exec_mode = parse_exec_mode(fb_config);
+  result.cpu_dispatch_threads = fb_config->cpu_dispatch_threads();
   result.soc_dispatch = fb_config->soc_dispatch();
 
   rj_code_arch_t arch = ROCJITSU_CODE_ARCH_INVALID;

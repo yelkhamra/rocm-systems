@@ -92,16 +92,8 @@ enum class SdmaPacketDialect {
 /// not on global CU idle. Signals fire in per-queue submission order.
 class CommandProcessor : public simdojo::Component {
 public:
-  explicit CommandProcessor(std::string name) : simdojo::Component(std::move(name)) {
-    // Bind the doorbell handler at construction, not in startup(): register_queue()
-    // may start the doorbell poll thread (which fires doorbell_event_ via
-    // schedule_event_now) as soon as a host-accessible queue is registered, which can
-    // happen before startup() runs. Binding here removes that ordering hazard — a
-    // handlerless doorbell_event_ would be silently dropped by the engine.
-    doorbell_event_.set_handler(
-        [this](simdojo::Tick ts, simdojo::Message *) { handle_doorbell(ts); });
-  }
-  ~CommandProcessor() override { stop_doorbell_monitor(); }
+  explicit CommandProcessor(std::string name);
+  ~CommandProcessor() override;
 
   void set_memory(GpuMemory *mem) { memory_ = mem; }
   void add_l2_cache(L2Cache *l2) {
@@ -117,6 +109,8 @@ public:
   bool packed_tid() const { return packed_tid_; }
   void set_sdma_packet_dialect(SdmaPacketDialect dialect) { sdma_packet_dialect_ = dialect; }
   SdmaPacketDialect sdma_packet_dialect() const { return sdma_packet_dialect_; }
+  void set_dispatch_threads(uint32_t threads);
+  uint32_t dispatch_threads() const { return dispatch_threads_; }
   /// @brief Update doorbell_base for all queues belonging to a process.
   /// @details Called when the doorbell page is mmap'd after queue creation.
   void set_doorbell_base(uint32_t process_id, void *base);
@@ -145,6 +139,7 @@ public:
     if (completion_) {
       completion_->set_plugin_group(plugin_group_);
     }
+    set_dispatch_threads(dispatch_threads_);
   }
 
   void add_spi(ShaderProcessorInput *spi) { spis_.push_back(spi); }
@@ -262,12 +257,16 @@ private:
   /// @brief Process all queues: dispatch undispatched entries, handle non-kernel entries.
   void process_queues();
 
+  bool has_active_cus() const;
+
   /// @brief Called from CU on_idle callback. In functional mode with quantum>0,
   /// checks for stalled dispatches that can resume.
   void on_cu_idle();
 
   /// @brief Queue scheduling: select next queue with undispatched entries.
   HwQueueState *schedule_next_queue();
+
+  void handle_doorbell_sync(simdojo::Tick timestamp);
 
   /// @brief Check if barrier is satisfied for an entry.
   bool barrier_satisfied(const HwQueueState &qs, size_t idx) const;
@@ -322,6 +321,7 @@ private:
   SdmaPacketDialect sdma_packet_dialect_ = SdmaPacketDialect::Legacy;
   uint32_t next_dispatch_id_ = 1;
   size_t total_dispatched_ = 0;
+  uint32_t dispatch_threads_ = 1;
 
   struct ClusterWorkgroupPlacement {
     ComputeUnitCore *cu = nullptr;

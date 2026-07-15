@@ -56,6 +56,7 @@ The example above is intentionally minimal and single-threaded.
 |---|---|---|
 | `max_ticks` | int | Maximum simulation ticks (0 = unlimited) |
 | `num_threads` | int | Simdojo engine partitions (one per XCD when partitioned) |
+| `cpu_dispatch_threads` | int | CPU CU-dispatch worker-pool size per command processor in functional mode (0 = auto: hardware threads, capped at 32; 1 = serial) |
 | `soc_dispatch` | bool | Consolidate cross-XCD dispatch onto each SoC's primary CP for single-stream multi-XCD work distribution |
 | `exec_mode` | string | `"functional"` or `"cycle"` |
 | `vm.arch` | string | Architecture: `cdna3`, `cdna4`, etc. |
@@ -69,6 +70,10 @@ VM. With `num_threads: 1`, all XCDs stay in one engine partition. With
 assigned round-robin to four partitions; with `num_threads: 8`, each
 XCD gets its own partition. A single XCD is never split across
 partitions.
+
+`cpu_dispatch_threads` controls how much accepted CU work can execute in
+parallel on host threads; it does not change which SPI or CU accepts the
+next workgroup.
 
 `soc_dispatch` controls which command processor (CP) accepts queues for
 a SoC. With `false`, queues are assigned round-robin across XCD CPs, so
