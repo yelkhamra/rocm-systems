@@ -1057,11 +1057,11 @@ hipError_t GraphExecBase::CreateStreams(uint32_t num_streams, int devId) {
     return hipSuccess;
   }
 
-  // num_streams is already capped by Init() but guard here defensively.
-  // For the instantiation device one slot is occupied by the launch stream,
-  // so create one fewer extra stream. Other devices use all slots as parallel streams.
-  uint32_t capped = std::min(num_streams, DEBUG_HIP_FORCE_GRAPH_QUEUES);
-  uint32_t max_streams = (devId == captureDeviceId_ && capped > 0) ? capped - 1 : capped;
+  // num_streams is already capped by Init() but guard here defensively. Create
+  // the full requested internal pool: cross-device launches do not have a
+  // launch stream on captureDeviceId_, so streams_[0] must be an internal
+  // capture-device stream.
+  uint32_t max_streams = std::min(num_streams, DEBUG_HIP_FORCE_GRAPH_QUEUES);
   if (max_streams == 0) {
     return hipSuccess;
   }
@@ -2698,20 +2698,54 @@ hipError_t GraphExecSegmented::EnqueueSegment(const Segment& segment, hip::Strea
 
 // ================================================================================================
 void GraphExecBase::UpdateStreams(hip::Stream* launch_stream) {
-  int devId = launch_stream->vdev()->device().index();
+  int devId = (launch_stream != nullptr) ? launch_stream->vdev()->device().index()
+                                         : captureDeviceId_;
   streams_.clear();
-  streams_.push_back(launch_stream);
+  if (launch_stream != nullptr) {
+    streams_.push_back(launch_stream);
+  }
   if (parallel_streams_.find(devId) == parallel_streams_.end()) {
-    // No parallel streams were created for this device
+    if (launch_stream == nullptr) {
+      LogPrintfError("UpdateStreams failed for capture device id:%d", devId);
+    }
     return;
   }
   auto& parallel_streams = parallel_streams_[devId];
 
-  // Collect queue IDs already in use, starting with the launch stream
+  // Collect queue IDs already in use, starting with the launch stream if present.
   std::unordered_set<uint64_t> used_qids;
-  used_qids.insert(launch_stream->getQueueID());
+  if (launch_stream != nullptr) {
+    used_qids.insert(launch_stream->getQueueID());
+  }
 
-  for (auto stream : parallel_streams) {
+  // Same-device launches use the user launch stream as stream slot 0, so expose
+  // one fewer internal stream. Prefer dropping an internal stream that already
+  // shares the launch stream's queue; otherwise drop the last internal slot.
+  const bool same_device_launch = (launch_stream != nullptr && devId == captureDeviceId_);
+  size_t num_streams = parallel_streams.size();
+  hip::Stream* skipped_stream = nullptr;
+  if (same_device_launch && num_streams > 0) {
+    --num_streams;
+    const uint64_t launch_qid = launch_stream->getQueueID();
+    for (auto* stream : parallel_streams) {
+      if (stream != nullptr && stream->getQueueID() == launch_qid) {
+        skipped_stream = stream;
+        break;
+      }
+    }
+    if (skipped_stream == nullptr) {
+      skipped_stream = parallel_streams.back();
+    }
+  }
+
+  size_t exposed_streams = 0;
+  for (auto* stream : parallel_streams) {
+    if (exposed_streams >= num_streams) {
+      break;
+    }
+    if (stream == skipped_stream) {
+      continue;
+    }
     uint64_t qid = stream->getQueueID();
     if (used_qids.count(qid) > 0) {
       // Collision: this stream shares a HW queue with the launch stream or another
@@ -2727,6 +2761,7 @@ void GraphExecBase::UpdateStreams(hip::Stream* launch_stream) {
     }
     used_qids.insert(qid);
     streams_.push_back(stream);
+    ++exposed_streams;
   }
 }
 
@@ -2989,9 +3024,10 @@ hipError_t GraphExecSegmented::Run(hip::Stream* launch_stream) {
   // try to re-acquire the same one it used last time.
   // Then run collision detection to ensure graph-internal streams don't share
   // a HW queue with the launch stream.
+  const bool cross_device_launch = (captureDeviceId_ != launch_stream->DeviceId());
   launch_stream->vdev()->SetPreferredQueue();
   launch_stream->vdev()->AcquireQueueWithPreference();
-  UpdateStreams(launch_stream);
+  UpdateStreams(cross_device_launch ? nullptr : launch_stream);
 
   // Signals borrowed from the per-graph pool for this launch (segmented path
   // only); handed to the completion callback to re-arm and return to the pool.
@@ -3001,39 +3037,80 @@ hipError_t GraphExecSegmented::Run(hip::Stream* launch_stream) {
   // reuse the graph's own accumulate command instead of enqueuing a dedicated marker
   amd::Command* completion_cmd = nullptr;
 
-  if (captureDeviceId_ == launch_stream->DeviceId()) {
-    // If the graph has kernels that does device side allocation,  during packet capture, heap is
-    // allocated because heap pointer has to be added to the AQL packet, and initialized during
-    // graph launch.
-    // Todo: Hidden heap initialization is done only for single device graph
-    if (HasHiddenHeap() && hiddenHeapInitializedDevices_.insert(launch_stream->DeviceId()).second) {
-      launch_stream->vdev()->HiddenHeapInit();
-    }
-    amd::Command* last_cmd = nullptr;
-    if (max_streams_dev_.size() == 1) {
-      // Single-device: pass collision-handled streams_ to EnqueueSegmentedGraph
-      last_cmd = EnqueueSegmentedGraph(launch_stream, streams_, &status, &launch_signal_set);
-    } else {
-      // Multi-device: pass empty vector, will use parallel_streams_ internally
-      last_cmd = EnqueueSegmentedGraph(launch_stream, {}, &status, &launch_signal_set);
-    }
-
-    // Drive OnLaunchComplete off this command's completion (its leaf-sync deps
-    // already imply all parallel work is done). Our reference is released after
-    // the callback is registered below; the queue keeps it alive until done.
-    completion_cmd = last_cmd;
-  } else if (max_streams_ == 1 && captureDeviceId_ != launch_stream->DeviceId()) {
-    for (int i = 0; i < topoOrder_.size(); i++) {
-      topoOrder_[i]->SetStream(launch_stream);
-      status = topoOrder_[i]->CreateCommand(topoOrder_[i]->GetQueue());
-      topoOrder_[i]->EnqueueCommands(launch_stream);
-    }
-  } else if (captureDeviceId_ != launch_stream->DeviceId()) {
+  if (cross_device_launch && streams_.empty()) {
     ClPrint(amd::LOG_ERROR, amd::LOG_CODE,
-      "[hipGraph] GraphExecSegmented::Run: launch stream device %d does not match capture device %d",
-      launch_stream->DeviceId(), captureDeviceId_);
-    status = hipErrorInvalidValue;
+            "[hipGraph] GraphExecSegmented::Run: no capture-device stream for device %d",
+            captureDeviceId_);
+    status = hipErrorInvalidDevice;
   }
+
+  // If the graph has kernels that do device-side allocation, packet capture
+  // needs the hidden heap on the graph/capture device, not necessarily the
+  // user-visible launch stream device.
+  hip::Stream* graph_launch_stream = cross_device_launch && status == hipSuccess
+                                         ? streams_[0]
+                                         : launch_stream;
+  if (status == hipSuccess && HasHiddenHeap() &&
+      hiddenHeapInitializedDevices_.insert(captureDeviceId_).second) {
+    graph_launch_stream->vdev()->HiddenHeapInit();
+  }
+
+  amd::Command* last_cmd = nullptr;
+  if (status == hipSuccess) {
+    if (!cross_device_launch) {
+      if (max_streams_dev_.size() == 1) {
+        // Single-device: pass collision-handled streams_ to EnqueueSegmentedGraph
+        last_cmd = EnqueueSegmentedGraph(launch_stream, streams_, &status, &launch_signal_set);
+      } else {
+        // Multi-device: pass empty vector, will use parallel_streams_ internally
+        last_cmd = EnqueueSegmentedGraph(launch_stream, {}, &status, &launch_signal_set);
+      }
+    } else {
+      // Cross-device launch: replay segmented AQL on a capture-device stream.
+      // The marker pair before replay preserves prior launch-stream ordering;
+      // the marker pair after replay makes completion visible on the user's
+      // foreign launch stream without falling back to per-node execution.
+      hip::Stream* graph_stream = streams_[0];
+      auto* launch_start = new amd::Marker(*launch_stream, kMarkerDisableFlush, {});
+      launch_start->enqueue();
+
+      amd::Command::EventWaitList launch_wait_list;
+      launch_wait_list.push_back(launch_start);
+      auto* graph_start = new amd::Marker(*graph_stream, true, launch_wait_list);
+      graph_start->enqueue();
+      graph_start->release();
+      launch_start->release();
+
+      last_cmd = EnqueueSegmentedGraph(graph_stream, streams_, &status, &launch_signal_set);
+      if (status == hipSuccess && last_cmd != nullptr) {
+        auto* graph_done = new amd::Marker(*graph_stream, kMarkerDisableFlush, {});
+        graph_done->enqueue();
+
+        amd::Command::EventWaitList completion_wait_list;
+        completion_wait_list.push_back(graph_done);
+
+        auto* launch_done = new amd::Marker(*launch_stream, kMarkerDisableFlush, completion_wait_list);
+        launch_done->enqueue();
+        graph_done->release();
+        last_cmd->release();
+        last_cmd = launch_done;
+      } else if (status != hipSuccess) {
+        // Error path only: EnqueueSegmentedGraph may have queued partial work
+        // before failing. Drain the capture-device streams before the common
+        // cleanup path can recycle launch signals or drop this exec reference.
+        for (auto* stream : streams_) {
+          if (stream != nullptr) {
+            stream->finish();
+          }
+        }
+      }
+    }
+  }
+
+  // Drive OnLaunchComplete off this command's completion (its leaf-sync deps
+  // already imply all parallel work is done). Our reference is released after
+  // the callback is registered below; the queue keeps it alive until done.
+  completion_cmd = last_cmd;
   if (DEBUG_HIP_GRAPH_DOT_PRINT == 2 && !graph_dumped_) {
     graph_dumped_ = true;
     std::string filename =
@@ -3057,7 +3134,7 @@ hipError_t GraphExecSegmented::Run(hip::Stream* launch_stream) {
   constexpr bool kBlocking = false;
   auto* cleanup = new GraphLaunchCleanup();
   cleanup->exec = this;
-  cleanup->device = g_devices[launch_stream->DeviceId()]->devices()[0];
+  cleanup->device = g_devices[captureDeviceId_]->devices()[0];
   cleanup->signal_set = std::move(launch_signal_set);
   if (!event.setCallback(CL_COMPLETE, GraphExecBase::OnLaunchComplete, cleanup, kBlocking)) {
     // setCallback essentially never fails, but if it does the launch's GPU work
