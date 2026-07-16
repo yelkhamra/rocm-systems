@@ -195,6 +195,7 @@ if(BUILD_TESTS)
     SendRecvTests.cpp
     StandaloneTests.cpp
     DdaIpcTests.cpp
+    CpuAffinityTests.cpp
     TeardownStressTests.cpp
     _RecorderTests.cpp
     common/main.cpp
