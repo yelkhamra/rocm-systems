@@ -8,15 +8,24 @@ Full documentation for ROCm Systems Profiler is available at [https://rocm.docs.
 
 ### Added
 
-- hipFile GPU-direct storage I/O telemetry. A background sampler queries
-  hipFile's in-process statistics API and reports per-GPU I/O counters (read/write
-  bytes, bandwidth, total/fastpath/fallback/unaligned operation counts, and
-  errors) plus process-global file and buffer registration counts in both
-  Perfetto and RocPD outputs. Values are reported as per-interval deltas. Build
+- hipFile GPU-direct storage I/O telemetry. Build
   with `-DROCPROFSYS_USE_HIPFILE=ON` (optional; disabled automatically when
   hipFile is not found) and enable at run time with `ROCPROFSYS_USE_HIPFILE=ON`
   (requires a target application that uses hipFile). See
   [hipFile GPU-direct storage I/O telemetry](./docs/how-to/hipfile-telemetry.rst).
+- `--exe-only` flag for `rocprof-sys-instrument`: shorthand for excluding every shared
+  library from instrumentation, leaving only the main executable.
+
+- `--exclude-internal-lib-paths` flag for `rocprof-sys-instrument`: by default, each
+  internal library is excluded only at the path linked at startup; when enabled, every
+  on-disk path matching an internal library's filename is excluded.
+
+- `--max-library-functions` option for `rocprof-sys-instrument`: skips shared libraries
+  whose procedure count exceeds the given threshold, keeping instrumentation overhead
+  manageable. The target executable is never gated by this, and the check is bypassed by
+  the module include/restrict (`--module-include`/`-MI`, `--module-restrict`/`-MR`) and
+  function include/restrict (`--function-include`/`-I`, `--function-restrict`/`-R`)
+  regexes.
 
 ### Changed
 
@@ -27,6 +36,8 @@ Full documentation for ROCm Systems Profiler is available at [https://rocm.docs.
 - Removed the `-p` / `--pid` option from `rocprof-sys-instrument` for attaching to
   an already running process. Use the `rocprof-sys-attach` executable instead, which
   attaches to and profiles running processes via the rocprofiler-sdk rocattach API.
+
+- Removed `--parse-all-modules` from `rocprof-sys-instrument`. The tool iterates through objects and modules to extract the functions by default.
 
 ## ROCm Systems Profiler 1.7.0 for ROCm 7.14.0
 
