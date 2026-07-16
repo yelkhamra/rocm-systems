@@ -68,7 +68,7 @@ inline uint32_t resolve_src_scalar(const Wavefront &wf, int ev, int m0_ev) {
   if (ev == 126)
     return static_cast<uint32_t>(wf.exec());
   if (ev == 127)
-    return static_cast<uint32_t>(wf.exec() >> 32);
+    return static_cast<uint32_t>(wf.exec_raw() >> 32);
   if (ev >= 128 && ev <= 192)
     return static_cast<uint32_t>(ev - 128);
   if (ev >= 193 && ev <= 208)
@@ -181,7 +181,7 @@ inline uint64_t resolve_src_scalar64(const Wavefront &wf, int ev, int m0_ev) {
   if (ev == m0_ev)
     return wf.m0();
   if (ev == 126)
-    return wf.exec();
+    return wf.exec_raw();
   if (ev >= 128 && ev <= 192)
     return static_cast<uint64_t>(ev - 128);
   if (ev >= 193 && ev <= 208)
@@ -255,7 +255,7 @@ inline void resolve_dst_write(Wavefront &wf, int ev, uint32_t val, int m0_ev) {
     return;
   }
   if (ev == 127) {
-    wf.set_exec((wf.exec() & 0x00000000FFFFFFFFULL) | (static_cast<uint64_t>(val) << 32));
+    wf.set_exec_raw((wf.exec_raw() & 0x00000000FFFFFFFFULL) | (static_cast<uint64_t>(val) << 32));
     return;
   }
   throw std::logic_error("Unsupported encoding value for scalar write: " + std::to_string(ev));
@@ -287,7 +287,7 @@ inline void resolve_dst_write64(Wavefront &wf, int ev, uint64_t val) {
   if (ev == 124)
     return;
   if (ev == 126) {
-    wf.set_exec(val);
+    wf.set_exec_raw(val);
     return;
   }
   throw std::logic_error("Unsupported encoding value for scalar64 write: " + std::to_string(ev));
