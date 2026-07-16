@@ -292,9 +292,8 @@ def run_prof(
                     f"skipping rocpd update for {db_name}."
                 )
                 continue
-            counter_rows, _ = csv_ops.read_csv_as_dicts(str(counter_csv))
             rocpd_data.update_rocpd_pmc_events(
-                counter_rows,
+                str(counter_csv),
                 str(db_name),
             )
             console_debug(f"Updated rocpd db {db_name} with native tool counters.")

@@ -112,6 +112,26 @@ def test_write_csv_empty_rows(temp_csv_file):
     assert not Path(temp_csv_file).exists() or Path(temp_csv_file).stat().st_size == 0
 
 
+def test_iter_csv_dicts_matches_read_csv_as_dicts(temp_csv_file, sample_csv_data):
+    """iter_csv_dicts streams the same rows read_csv_as_dicts returns."""
+    csv_ops.write_csv_from_dicts(temp_csv_file, sample_csv_data)
+    expected, _ = csv_ops.read_csv_as_dicts(temp_csv_file)
+    assert list(csv_ops.iter_csv_dicts(temp_csv_file)) == expected
+
+
+def test_iter_csv_dicts_empty_body(temp_csv_file):
+    """A CSV with only a header yields zero rows."""
+    Path(temp_csv_file).write_text("a,b,c\n", encoding="utf-8")
+    assert list(csv_ops.iter_csv_dicts(temp_csv_file)) == []
+
+
+def test_iter_csv_dicts_no_header_raises(temp_csv_file):
+    """An empty file (no header) raises ValueError."""
+    Path(temp_csv_file).write_text("", encoding="utf-8")
+    with pytest.raises(ValueError, match="no header row"):
+        list(csv_ops.iter_csv_dicts(temp_csv_file))
+
+
 # =============================================================================
 # Column Manipulation Tests
 # =============================================================================

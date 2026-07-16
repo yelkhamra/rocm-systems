@@ -15,6 +15,7 @@ This module is ONLY used in profile mode. Analyze mode can use pandas freely.
 """
 
 import csv
+from collections.abc import Iterator
 from typing import Optional
 
 
@@ -36,6 +37,18 @@ def read_csv_as_dicts(csv_file: str) -> tuple[list[dict], list[str]]:
         raise FileNotFoundError(f"CSV file not found: {csv_file}")
     except (csv.Error, UnicodeDecodeError) as e:
         raise ValueError(f"Error reading CSV file {csv_file}: {e}") from e
+
+
+def iter_csv_dicts(csv_file: str) -> Iterator[dict]:
+    """Yield rows from a CSV file without loading it into memory.
+
+    Raises ValueError if the file has no header row.
+    """
+    with open(csv_file, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        if reader.fieldnames is None:
+            raise ValueError(f"CSV file {csv_file} has no header row")
+        yield from reader
 
 
 def write_csv_from_dicts(
