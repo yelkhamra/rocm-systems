@@ -10,7 +10,7 @@ set(tool_dir ${CMAKE_CURRENT_SOURCE_DIR}/../../rocprofiler-sdk-tool)
 # compile the GPU-independent tool logic directly into the test so it can be exercised
 # without loading the tool runtime (which requires a GPU)
 set(tool_sources
-    kernel_filter_range_test.cpp kernel_iteration_filter_test.cpp
+    kernel_filter_range.cpp kernel_iteration_filter.cpp
     ${tool_dir}/kernel_filter_range.cpp ${tool_dir}/kernel_iteration_filter.cpp)
 
 add_executable(tool-tests)
