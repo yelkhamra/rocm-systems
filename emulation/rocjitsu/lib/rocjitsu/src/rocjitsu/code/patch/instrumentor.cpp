@@ -3,6 +3,7 @@
 
 #include "rocjitsu/code/patch/instrumentor.h"
 
+#include "rocjitsu/analysis/exec_state.h"
 #include "rocjitsu/analysis/liveness.h"
 #include "rocjitsu/code/amdgpu_code_object.h"
 #include "rocjitsu/code/basic_block.h"
@@ -488,7 +489,8 @@ InstrumentedCodeObjectDebug Instrumentor::patch_with_debug_summaries() {
   liveness_scope.reserve(blocks_.size());
   for (const auto &block : blocks_)
     liveness_scope.push_back(block.get());
-  const LivenessAnalysis liveness{KernelBlockScope(liveness_scope)};
+  const ExecMaskAnalysis exec{KernelBlockScope(liveness_scope), /*wave_size=*/64};
+  const LivenessAnalysis liveness{KernelBlockScope(liveness_scope), exec};
 
   // Lay out the appended region as [probe bodies][trampolines]. Each distinct
   // probe body is copied once, ahead of the trampolines that call into it, so a
