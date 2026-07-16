@@ -742,7 +742,7 @@ public:
         int rank = ncclShmem.comm.rank;
         uint32_t delta = 1 << tid;
         // Load recv peer
-        int recvPeer = mode == primsModePatRs ? (rank - delta + nranks) % nranks : (rank + delta) % nranks;
+        int recvPeer = (rank - delta + nranks) % nranks; // AICOMRCCL-1538: RS and AG share direction (recv from rank-delta)
         struct ncclPatPeer* peer = ((struct ncclPatPeer*)recvPeers)+tid;
         struct ncclConnInfo* conn = peer->conn = channel->peers[recvPeer]->recv+connIndexRecv;
         peer->step = conn->step;
@@ -752,7 +752,7 @@ public:
         peer->accSize = 0;
         peer->connStepSize = conn->stepSize/sizeof(T);
         // Load send peer
-        int sendPeer = mode == primsModePatAg ? (rank - delta + nranks) % nranks : (rank + delta) % nranks;
+        int sendPeer = (rank + delta) % nranks; // AICOMRCCL-1538: RS and AG share direction (send to rank+delta)
         peer = ((struct ncclPatPeer*)sendPeers)+tid;
         conn = peer->conn = channel->peers[sendPeer]->send+connIndexSend;
         peer->step = conn->step;

@@ -729,12 +729,12 @@ ncclResult_t ncclProxySaveOp(struct ncclComm* comm, struct ncclProxyOp* op, bool
       } while (ps.last != 2);
       for (int i=0; i<log2Up(nranks); i++) {
         if (nstepsSend[i]) {
-          int sendPeer = (rank - (1<<i) + nranks) % nranks;
+          int sendPeer = (rank + (1<<i)) % nranks; // AICOMRCCL-1538: AG shares RS direction (send to rank+delta)
           op->nsteps = nstepsSend[i];
           NCCLCHECKGOTO(SaveProxy(comm, channel, proxySend, sendPeer, op, 0, justInquire), result, exit_pat_down);
         }
         if (nstepsRecv[i]) {
-          int recvPeer = (rank + (1<<i)) % nranks;
+          int recvPeer = (rank - (1<<i) + nranks) % nranks; // AICOMRCCL-1538: AG shares RS direction (recv from rank-delta)
           op->nsteps = nstepsRecv[i];
           NCCLCHECKGOTO(SaveProxy(comm, channel, proxyRecv, recvPeer, op, 0, justInquire), result, exit_pat_down);
         }

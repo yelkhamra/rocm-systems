@@ -824,7 +824,7 @@ public:
     } else if (phase == 0) {
       int s = a*aggDelta + as;
       if (s >= nranks) skip = 1;
-      int recvDataRank = (rank + s) % nranks;
+      int recvDataRank = (rank - s + nranks) % nranks; // AICOMRCCL-1538: flipped AG direction (data block rank-s)
       ps->outIx = recvDataRank * count + offset;
       ps->sendDim = -1;
       ps->recvDim = 0;
@@ -839,7 +839,7 @@ public:
       if (s >= nranks) skip = 1;
       ps->sendDim = firstBitSet(s, nrPow2);
       s -= (1<<ps->sendDim);
-      int sendDataRank = (rank + nranks + s) % nranks;
+      int sendDataRank = (rank - s + nranks) % nranks; // AICOMRCCL-1538: flipped AG direction (data block rank-s)
       ps->outIx = sendDataRank * count + offset;
       ps->recvDim = s ? firstBitSet(s, nrPow2) : -1;
       ps->sendOffset = ps->recvOffset = (a % postFreq) * nelem;
@@ -871,7 +871,7 @@ public:
       s -= (1<<ps->sendDim);
       ps->sendOffset = (a%postFreq) * nelem;
       ps->stepOffset = a / postFreq;
-      int sendDataRank = (rank + nranks + s) % nranks;
+      int sendDataRank = (rank - s + nranks) % nranks; // AICOMRCCL-1538: flipped AG direction (data block rank-s)
       ps->outIx = sendDataRank * count + offset;
       ps->recvDim = s ? firstBitSet(s, nrPow2) : -1;
       if (ps->recvDim == -1) {

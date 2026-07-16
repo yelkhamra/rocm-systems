@@ -70,12 +70,12 @@ ncclResult_t ncclTransportPatConnect(struct ncclComm* comm) {
     for (int mask=1; mask<comm->nRanks; mask<<=1) {
       int prevPeer = (comm->rank + mask) % comm->nRanks;
       int nextPeer = (comm->rank + comm->nRanks - mask) % comm->nRanks;
+      // AICOMRCCL-1538: AllGather now uses the same peer directions as ReduceScatter
+      // (recv from nextPeer, send to prevPeer), so RS and AG share a single set of
+      // connections. Only one connect pass is needed (was two), halving the PAT QP
+      // and ring-buffer count per mask/channel.
       for (int c = 0; c < comm->nChannels; c++) {
-        NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &prevPeer, 1, &nextPeer, 0), ret, fail); // ReduceScatter
-      }
-      NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &comm->graphs[NCCL_ALGO_TREE], 0), ret, fail);
-      for (int c = 0; c < comm->nChannels; c++) {
-        NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &nextPeer, 1, &prevPeer, 0), ret, fail); // AllGather
+        NCCLCHECKGOTO(ncclTransportP2pConnect(comm, c, 1, &nextPeer, 1, &prevPeer, 0), ret, fail); // ReduceScatter + AllGather (shared)
       }
       NCCLCHECKGOTO(ncclTransportP2pSetup(comm, &comm->graphs[NCCL_ALGO_TREE], 0), ret, fail);
     }
