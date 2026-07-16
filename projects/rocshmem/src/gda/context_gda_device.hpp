@@ -48,7 +48,7 @@ class GDAContext : public Context {
   __device__ void putmem_nbi(void *dest, const void *source, size_t nelems,
                              int pe);
 
-  __device__ void getmem_nbi(void *dest, const void *source, size_t size,
+  __device__ void getmem_nbi(void *dest, const void *source, size_t nelems,
                              int pe);
 
   __device__ void fence();
@@ -212,7 +212,7 @@ class GDAContext : public Context {
   __device__ void putmem_nbi_wg(void *dest, const void *source, size_t nelems,
                                 int pe);
 
-  __device__ void getmem_nbi_wg(void *dest, const void *source, size_t size,
+  __device__ void getmem_nbi_wg(void *dest, const void *source, size_t nelems,
                                 int pe);
 
   __device__ void putmem_wave(void *dest, const void *source, size_t nelems,
@@ -224,7 +224,7 @@ class GDAContext : public Context {
   __device__ void putmem_nbi_wave(void *dest, const void *source, size_t nelems,
                                   int pe);
 
-  __device__ void getmem_nbi_wave(void *dest, const void *source, size_t size,
+  __device__ void getmem_nbi_wave(void *dest, const void *source, size_t nelems,
                                   int pe);
 
   template <typename T>

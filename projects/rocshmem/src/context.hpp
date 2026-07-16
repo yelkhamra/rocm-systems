@@ -122,7 +122,7 @@ class Context {
   __device__ void putmem_nbi(void* dest, const void* source, size_t nelems,
                              int pe);
 
-  __device__ void getmem_nbi(void* dest, const void* source, size_t size,
+  __device__ void getmem_nbi(void* dest, const void* source, size_t nelems,
                              int pe);
 
   __device__ void fence();
@@ -280,7 +280,7 @@ class Context {
   __device__ void putmem_nbi_wg(void* dest, const void* source, size_t nelems,
                                 int pe);
 
-  __device__ void getmem_nbi_wg(void* dest, const void* source, size_t size,
+  __device__ void getmem_nbi_wg(void* dest, const void* source, size_t nelems,
                                 int pe);
 
   __device__ void putmem_wave(void* dest, const void* source, size_t nelems,
@@ -292,7 +292,7 @@ class Context {
   __device__ void putmem_nbi_wave(void* dest, const void* source, size_t nelems,
                                   int pe);
 
-  __device__ void getmem_nbi_wave(void* dest, const void* source, size_t size,
+  __device__ void getmem_nbi_wave(void* dest, const void* source, size_t nelems,
                                   int pe);
 
   template <typename T>
@@ -494,7 +494,7 @@ class Context {
   __host__ void putmem_nbi(void* dest, const void* source, size_t nelems,
                            int pe);
 
-  __host__ void getmem_nbi(void* dest, const void* source, size_t size, int pe);
+  __host__ void getmem_nbi(void* dest, const void* source, size_t nelems, int pe);
 
   template <typename T>
   __host__ void amo_add(void* dst, T value, int pe);
@@ -553,7 +553,7 @@ class Context {
   __host__ void sync_on_stream(rocshmem_team_t team, hipStream_t stream);
 
   __host__ void alltoallmem_on_stream(rocshmem_team_t team, void *dest,
-                                      const void *source, size_t size,
+                                      const void *source, size_t nelems,
                                       hipStream_t stream);
 
   __host__ void broadcastmem_on_stream(rocshmem_team_t team, void *dest,
