@@ -6,7 +6,7 @@
 //   * peak         -- memory region for the aggregate view (default HBM); a
 //                     single isolated kernel instead shows every level
 //   * selected     -- a Set of isolated kernel names
-//   * isolatedRoof -- trace index of the roof isolated in the legend, or null
+//   * isolatedRoofs -- Set of memory-roof trace indices isolated in the legend
 
 (function () {
   "use strict";
@@ -28,7 +28,6 @@
   var kernelList = document.getElementById("roofline-kernel-list");
   var showAllBtn = document.getElementById("roofline-show-all");
   var kernelCountEl = document.getElementById("roofline-kernel-count");
-  var autoZoomToggle = document.getElementById("roofline-auto-zoom");
   var runtimeSlider = document.getElementById("roofline-runtime-threshold");
   var runtimeValueEl = document.getElementById("roofline-runtime-value");
   var runtimeFilterEl = document.getElementById("roofline-runtime-filter");
@@ -37,8 +36,10 @@
   var kernelTraceIndices = model.kernelTraceIndices || [];
   var rooflineTraces = model.rooflineTraces || [];
   var computeTraces = model.computeTraces || [];
-  var roofMaxAi = model.roofMaxAi || 1e150;
   var peakColors = model.peakColors || {};
+  var ceilingDenseHi = model.ceilingDenseHi || 0;
+  var roofSamples = model.roofSamples || 200;
+  var ROOF_EXTREME_MAX_AI = 1e150;
 
   // Whether any kernel carries a percent-of-runtime, which gates the filter.
   var hasRuntimeData = kernels.some(function (kernel) {
@@ -47,32 +48,25 @@
   // Names of the kernels within the current cumulative runtime threshold
   var thresholdSet = null;
 
-  // Every non-kernel legend trace (memory roofs + compute ceilings). Clicking
-  // one in the legend isolates it (dims the rest) rather than hiding it.
-  var roofTraceIndices = rooflineTraces
-    .map(function (roof) {
-      return roof.traceIndex;
-    })
-    .concat(
-      computeTraces.map(function (ceiling) {
-        return ceiling.traceIndex;
-      })
-    );
+  var memoryRoofIndices = rooflineTraces.map(function (roof) {
+    return roof.traceIndex;
+  });
+  var computeCeilingIndices = computeTraces.map(function (ceiling) {
+    return ceiling.traceIndex;
+  });
 
   var state = {
     // The memory region shown in the aggregate (multi-kernel) view; defaults to
     // HBM. A single isolated kernel ignores this and shows every level.
     peak: model.defaultPeak || "HBM",
     selected: new Set(),
-    // Trace index of the roof currently isolated in the legend, or null.
-    isolatedRoof: null,
-    // Cumulative percent of GPU resident time to display (100 = every kernel).
+    // Trace indices of the memory roofs currently isolated in the legend.
+    isolatedRoofs: new Set(),
+    // Cumulative percent of GPU resident time to display.
     runtimeThreshold: runtimeSlider ? Number(runtimeSlider.value) : 100,
-    // Whether the view auto-recenters on filter changes; synced to the toggle.
-    autoZoom: !autoZoomToggle || autoZoomToggle.checked,
   };
 
-  // The first fit (page open) snaps instantly; later re-fits animate.
+  // The plot is framed once on open; after that the user drives pan/zoom.
   var hasFitted = false;
 
   // The runtime filter keeps only the heaviest kernels whose cumulative percent
@@ -127,48 +121,35 @@
     });
   }
 
-  // Isolate the clicked roof by dimming every other roof/ceiling; when nothing
-  // is isolated all roofs render at full opacity.
-  function applyRoofIsolation() {
-    if (!gd || typeof Plotly === "undefined" || !roofTraceIndices.length) {
-      return;
+  function logspace(lo, hi, n) {
+    var a = Math.log10(lo);
+    var b = Math.log10(hi);
+    var steps = Math.max(n - 1, 1);
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      out.push(Math.pow(10, a + ((b - a) * i) / steps));
     }
-    var opacities = roofTraceIndices.map(function (idx) {
-      if (state.isolatedRoof === null) {
-        return 1;
-      }
-      return idx === state.isolatedRoof ? 1 : 0.15;
-    });
-    Plotly.restyle(gd, { opacity: opacities }, roofTraceIndices);
+    return out;
   }
 
-  function roofTraceShown(roof) {
-    var trace = gd.data && gd.data[roof.traceIndex];
-    return !!trace && trace.visible !== false && trace.visible !== "legendonly";
-  }
-
-  function snapCeilings(pendingToggleIndex) {
-    if (!gd || typeof Plotly === "undefined" || !computeTraces.length) {
-      return;
+  // Steepest bandwidth among the isolated roofs (or all roofs when none are
+  // isolated); the compute ceilings meet the diagonal at peak / this bandwidth.
+  function referenceBandwidth() {
+    var pool = rooflineTraces;
+    if (state.isolatedRoofs.size) {
+      pool = rooflineTraces.filter(function (roof) {
+        return state.isolatedRoofs.has(roof.traceIndex);
+      });
     }
-    var visibleBw = rooflineTraces
-      .filter(function (roof) {
-        var shown = roofTraceShown(roof);
-        if (roof.traceIndex === pendingToggleIndex) {
-          return !shown;
-        }
-        return shown;
-      })
+    var bws = pool
       .map(function (roof) {
         return roof.bandwidth;
       })
       .filter(function (bw) {
         return bw > 0;
       });
-    // Every diagonal hidden: fall back to the steepest overall so the ceilings
-    // still get a sensible left endpoint.
-    if (!visibleBw.length) {
-      visibleBw = rooflineTraces
+    if (!bws.length) {
+      bws = rooflineTraces
         .map(function (roof) {
           return roof.bandwidth;
         })
@@ -176,21 +157,80 @@
           return bw > 0;
         });
     }
-    if (!visibleBw.length) {
+    return bws.length ? Math.max.apply(null, bws) : 0;
+  }
+
+  // Snap each compute ceiling's left endpoint to the ridge of the isolated
+  // slope(s) so the flat cap meets the diagonal, and re-sample densely so the
+  // whole line stays hoverable.
+  function updateCeilings() {
+    if (!gd || typeof Plotly === "undefined" || !computeTraces.length) {
       return;
     }
-    var maxBw = Math.max.apply(null, visibleBw);
-    var ceilingIndices = [];
-    var ceilingX = [];
+    var refBw = referenceBandwidth();
+    if (!refBw || !(ceilingDenseHi > 0)) {
+      return;
+    }
+    var indices = [];
+    var xs = [];
+    var ys = [];
     computeTraces.forEach(function (ceiling) {
-      ceilingIndices.push(ceiling.traceIndex);
-      ceilingX.push([ceiling.peakPerf / maxBw, roofMaxAi]);
+      var left = ceiling.peakPerf / refBw;
+      var pts = logspace(left, Math.max(ceilingDenseHi, left), roofSamples);
+      pts.push(ROOF_EXTREME_MAX_AI);
+      indices.push(ceiling.traceIndex);
+      xs.push(pts);
+      ys.push(
+        pts.map(function () {
+          return ceiling.peakPerf;
+        })
+      );
     });
-    Plotly.restyle(gd, { x: ceilingX }, ceilingIndices);
+    Plotly.restyle(gd, { x: xs, y: ys }, indices);
+  }
+
+  // Isolate the clicked memory roof(s) by dimming the others. The horizontal
+  // compute peaks cap every roofline, so they always stay fully opaque -- an
+  // isolated memory roof keeps its horizontal peak visible too.
+  function applyRoofIsolation() {
+    if (!gd || typeof Plotly === "undefined") {
+      return;
+    }
+    var isolating = state.isolatedRoofs.size > 0;
+    var indices = [];
+    var opacities = [];
+    memoryRoofIndices.forEach(function (idx) {
+      indices.push(idx);
+      opacities.push(!isolating || state.isolatedRoofs.has(idx) ? 1 : 0.15);
+    });
+    computeCeilingIndices.forEach(function (idx) {
+      indices.push(idx);
+      opacities.push(1);
+    });
+    if (indices.length) {
+      Plotly.restyle(gd, { opacity: opacities }, indices);
+    }
+    // The flat cap should meet the isolated slope's ridge, not stay put.
+    updateCeilings();
+  }
+
+  // Mark the active memory region's roof in the legend with an "(AI axis)"
+  // suffix (the dropdown drives which level's AI is on the x-axis).
+  function updateRoofLegendLabels() {
+    if (!gd || typeof Plotly === "undefined" || !rooflineTraces.length) {
+      return;
+    }
+    var indices = [];
+    var names = [];
+    rooflineTraces.forEach(function (roof) {
+      indices.push(roof.traceIndex);
+      names.push(roof.level + (roof.level === state.peak ? " (AI axis)" : ""));
+    });
+    Plotly.restyle(gd, { name: names }, indices);
   }
 
   function render() {
-    snapCeilings();
+    updateRoofLegendLabels();
     // Keep the region dropdown in sync with the selection (single vs aggregate).
     syncPeakControl();
     if (!gd || typeof Plotly === "undefined" || !kernelTraceIndices.length) {
@@ -251,12 +291,9 @@
     fitView();
   }
 
-  // Recenter the log axes on whatever is currently drawn
+  // Frame the log axes on the initial draw only
   function fitView() {
-    if (!gd || typeof Plotly === "undefined") {
-      return;
-    }
-    if (hasFitted && !state.autoZoom) {
+    if (!gd || typeof Plotly === "undefined" || hasFitted) {
       return;
     }
     var ais = [];
@@ -296,20 +333,8 @@
       ],
     };
 
-    // Snap on the first framing; animate every re-fit after that.
-    if (!hasFitted) {
-      hasFitted = true;
-      Plotly.relayout(gd, ranges);
-      return;
-    }
-    Plotly.animate(
-      gd,
-      { layout: ranges },
-      {
-        transition: { duration: 350, easing: "cubic-in-out" },
-        frame: { duration: 350, redraw: false },
-      }
-    );
+    hasFitted = true;
+    Plotly.relayout(gd, ranges);
   }
 
   function toggleKernel(name, event) {
@@ -485,13 +510,6 @@
         render();
       });
     }
-    if (autoZoomToggle) {
-      autoZoomToggle.addEventListener("change", function () {
-        state.autoZoom = autoZoomToggle.checked;
-        // Turning it on snaps the view to the current selection immediately.
-        fitView();
-      });
-    }
     if (gd && typeof gd.on === "function") {
       gd.on("plotly_click", function (data) {
         if (!data || !data.points || !data.points.length) {
@@ -504,23 +522,45 @@
         }
         toggleKernel(kernels[position].name, data.event);
       });
-      // Clicking a roof in the legend isolates it (dims the others) instead of
-      // hiding it; clicking the isolated roof again clears the isolation.
+      // Clicking a memory roof in the legend isolates it 
+      // Ctrl/Cmd-click adds or removes a roof from the isolation set. 
+      // The compute peaks are not individually isolatable; clicking one clears the isolation.
       gd.on("plotly_legendclick", function (ev) {
         if (!ev || typeof ev.curveNumber !== "number") {
           return false;
         }
-        if (roofTraceIndices.indexOf(ev.curveNumber) < 0) {
+        var idx = ev.curveNumber;
+        if (computeCeilingIndices.indexOf(idx) >= 0) {
+          state.isolatedRoofs.clear();
+          applyRoofIsolation();
           return false;
         }
-        state.isolatedRoof =
-          state.isolatedRoof === ev.curveNumber ? null : ev.curveNumber;
+        if (memoryRoofIndices.indexOf(idx) < 0) {
+          return false;
+        }
+        var multi = ev.event && (ev.event.ctrlKey || ev.event.metaKey);
+        if (multi) {
+          if (state.isolatedRoofs.has(idx)) {
+            state.isolatedRoofs.delete(idx);
+          } else {
+            state.isolatedRoofs.add(idx);
+          }
+        } else if (
+          state.isolatedRoofs.size === 1 &&
+          state.isolatedRoofs.has(idx)
+        ) {
+          // Clicking the sole isolated roof clears the isolation.
+          state.isolatedRoofs.clear();
+        } else {
+          state.isolatedRoofs.clear();
+          state.isolatedRoofs.add(idx);
+        }
         applyRoofIsolation();
         return false;
       });
       // Double-click is the "show everything" gesture: clear any isolation.
       gd.on("plotly_legenddoubleclick", function () {
-        state.isolatedRoof = null;
+        state.isolatedRoofs.clear();
         applyRoofIsolation();
         return false;
       });

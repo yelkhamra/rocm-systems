@@ -54,6 +54,12 @@ body {
   background: #ffffff;
 }
 
+.roofline-hint {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--roofline-muted);
+}
+
 .roofline-btn {
   font-size: 13px;
   font-weight: 600;

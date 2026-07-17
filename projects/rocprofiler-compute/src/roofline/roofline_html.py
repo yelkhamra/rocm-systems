@@ -27,7 +27,8 @@ _PLOT_CONFIG: dict[str, Any] = {
     "displaylogo": False,
     "responsive": True,
     "scrollZoom": True,
-    "doubleClick": False,
+    # Double-clicking the chart resets the axes to the initial view.
+    "doubleClick": "reset",
     "modeBarButtonsToRemove": ["autoScale2d"],
 }
 
@@ -55,9 +56,8 @@ class RooflineViewModel:
         roofline_traces: Bandwidth-roof (memory-level) line traces; clicking one
             in the legend isolates it, each {"level", "traceIndex", "bandwidth"}.
         compute_traces: Horizontal compute-ceiling traces (VALU/matrix), each
-            {"traceIndex", "peakPerf"}. These always stay shown, but their
-            left endpoint tracks the steepest *visible* diagonal.
-        roof_max_ai: Right-edge AI the roofs extrapolate to.
+            {"traceIndex", "peakPerf"}. Kept off the legend; always shown and
+            never dimmed by roof isolation (they cap every roofline).
         div_id: Id of the Plotly graph div.
     """
 
@@ -68,7 +68,8 @@ class RooflineViewModel:
     kernel_trace_indices: list[int] = field(default_factory=list)
     roofline_traces: list[dict[str, Any]] = field(default_factory=list)
     compute_traces: list[dict[str, Any]] = field(default_factory=list)
-    roof_max_ai: float = 0.0
+    ceiling_dense_hi: float = 0.0
+    roof_samples: int = 200
     div_id: str = PLOT_DIV_ID
 
     def to_json(self) -> str:
@@ -86,7 +87,8 @@ class RooflineViewModel:
             "kernelTraceIndices": self.kernel_trace_indices,
             "rooflineTraces": self.roofline_traces,
             "computeTraces": self.compute_traces,
-            "roofMaxAi": self.roof_max_ai,
+            "ceilingDenseHi": self.ceiling_dense_hi,
+            "roofSamples": self.roof_samples,
         }
         return json.dumps(payload, allow_nan=True).replace("</", "<\\/")
 
@@ -123,11 +125,8 @@ __CSS__
       <select id="roofline-peak-select"
               aria-label="Memory peak for kernel points"></select>
     </label>
-    <label class="roofline-control roofline-toggle"
-           title="Automatically fit the view (recenter and zoom) to the visible points and the roofs they are measured against whenever you change the memory peak or kernel selection. Turn off to keep your own pan/zoom.">
-      <input type="checkbox" id="roofline-auto-zoom">
-      Auto-fit
-    </label>
+    <span class="roofline-hint">Scroll to zoom &middot; drag to pan &middot;
+      double-click to reset</span>
   </div>
   <div class="roofline-body">
     <div class="roofline-plot-col">

@@ -57,6 +57,10 @@ _DEFAULT_PEAK = "HBM"
 _ROOF_EXTRAP_MIN_AI = 1e-150
 _ROOF_EXTRAP_MAX_AI = 1e150
 
+# Plotly only shows a hover near a data point,
+# so a 2-point line only responds near its endpoints.
+_ROOF_SAMPLES = 700
+
 # Per cache-level / compute-roof trace colors.
 _TRACE_COLORS: dict[str, dict[str, str]] = {
     "l0": {"html": "#F0E442", "cli": "brown+"},
@@ -80,12 +84,6 @@ def get_color(category: str, backend: str = "html") -> str:
     return _TRACE_COLORS[key][backend]
 
 
-def to_int(value: Union[float, None]) -> Union[int, float]:
-    if value is None:
-        return np.nan
-    return int(value)
-
-
 def wrap_hover_name(name: str, width: int = 44) -> str:
     """Wrap a full kernel name so long names stay readable in the tooltip."""
     if not name:
@@ -98,12 +96,12 @@ def wrap_hover_name(name: str, width: int = 44) -> str:
     return "<br>".join(escaped)
 
 
-def _fmt_hover_num(value: Any, digits: int = 2) -> str:
-    """Thousands-separated float for the tooltip, or N/A when missing."""
+def _num(value: Any, spec: str) -> str:
+    """Format a numeric tooltip value with the given format spec, or N/A."""
     if value is None:
         return "N/A"
     try:
-        return f"{float(value):,.{digits}f}"
+        return format(float(value), spec)
     except (TypeError, ValueError):
         return "N/A"
 
@@ -118,6 +116,23 @@ def _fmt_hover_int(value: Any) -> str:
         return "N/A"
 
 
+def _hover(header: str, rows: list[str]) -> str:
+    """Assemble a Plotly hover body shared by every roofline hover."""
+    return "<br>".join([f"<b>{header}</b>", "", *rows]) + "<extra></extra>"
+
+
+def _format_bandwidth(gb_per_s: float) -> str:
+    """Bandwidth as GB/s, switching to TB/s at >= 1000 GB/s
+    so the roof hover stays readable."""
+    try:
+        value = float(gb_per_s)
+    except (TypeError, ValueError):
+        return "N/A"
+    if abs(value) >= 1000.0:
+        return f"{value / 1000.0:,.3f} TB/s"
+    return f"{value:,.3f} GB/s"
+
+
 def build_point_hover(
     name_html: str,
     point: dict[str, Any],
@@ -128,25 +143,54 @@ def build_point_hover(
     pct_runtime: Optional[float],
     ops_flops: str,
 ) -> str:
-    """Assemble the full HTML hover body for one kernel point."""
-    pct_roof = point.get("pctRoof")
-    pct_roof_txt = f"{float(pct_roof):.1f}%" if pct_roof is not None else "N/A"
+    """Kernel-point hover: bold name header, then the achieved/peak throughput,
+    percent of roofline, limiter, dispatches, and runtime."""
+    unit = f"G{ops_flops}s/s"
     time_txt = (
-        f"{_fmt_hover_num(total_time)} {time_unit}".strip()
+        f"{_num(total_time, ',.2f')} {time_unit}".strip()
         if total_time is not None
         else "N/A"
     )
-    pct_run_txt = f"{float(pct_runtime):.2f}%" if pct_runtime is not None else "N/A"
-    lines = [
-        f"<b>{name_html}</b>",
-        f"{point['peak']} peak \u00b7 Limiter: {limiter}",
-        f"AI {_fmt_hover_num(point['ai'])} {ops_flops}s/Byte",
-        f"Perf {_fmt_hover_num(point['perf'])} G{ops_flops}/s "
-        f"({pct_roof_txt} of roof)",
-        f"Dispatches: {_fmt_hover_int(count)}",
-        f"Time: {time_txt} ({pct_run_txt} of runtime)",
+    return _hover(name_html, [
+        f"AI: {_num(point.get('ai'), '.6g')}",
+        f"Achieved throughput: {_num(point.get('perf'), '.3f')} {unit}",
+        f"Peak throughput: {_num(point.get('peakPerf'), '.3f')} {unit}",
+        f"Percent of roofline achieved: {_num(point.get('pctRoof'), '.4f')} %",
+        f"Performance limiter: {limiter}",
+        f"Total dispatches: {_fmt_hover_int(count)}",
+        f"Aggregate time in kernel: {time_txt}",
+        f"Aggregate percent runtime: {_num(pct_runtime, '.5f')} %",
+    ])
+
+
+def build_roof_hover(
+    level_label: str,
+    bandwidth: float,
+    compute_peaks: list[tuple[str, float]],
+    ops_flops: str,
+) -> str:
+    """Memory-bandwidth-roof hover: name, model, slope, and the flat
+    compute-peak it caps at. The peak value lives here rather than in the legend
+    so the legend stays short."""
+    rows = [
+        "Model: throughput = min(bandwidth \u00d7 AI, compute peak).",
+        f"Bandwidth (slope): {_format_bandwidth(bandwidth)}",
     ]
-    return "<br>".join(lines)
+    if compute_peaks:
+        cap = max(value for _, value in compute_peaks)
+        rows.append(f"Compute peak (flat roof): {_num(cap, ',.2f')} G{ops_flops}s/s")
+    return _hover(f"{level_label} bandwidth roofline", rows)
+
+
+def build_compute_peak_hover(label: str, value: float, ops_flops: str) -> str:
+    """Flat compute-peak-line hover, in the same shape as the memory-roof hover."""
+    return _hover(
+        f"{label} compute peak",
+        [
+            "Model: throughput \u2264 compute peak (flat roof).",
+            f"Peak throughput: {_num(value, ',.2f')} G{ops_flops}s/s",
+        ],
+    )
 
 
 def build_kernel_colors(num_kernels: int) -> list[str]:
@@ -163,7 +207,7 @@ def roofline_axis_bounds(
     sanitized_cache_hierarchy: list[str],
     pad: float = 1.6,
 ) -> tuple[float, float, float, float]:
-    """Compute explicit (x_lo, x_hi, y_lo, y_hi) log-axis bounds."""
+    """Compute explicit log-axis bounds."""
     roof_keys = [level.lower() for level in sanitized_cache_hierarchy]
     roof_keys += ["valu", "matrix_ops"]
 
@@ -297,6 +341,19 @@ class Roofline:
             return float(data[2])
         return None
 
+    @staticmethod
+    def _sample_ceiling(
+        left_x: float, peak_perf: float, dense_hi: float
+    ) -> tuple[list[float], list[float]]:
+        """Dense points for a flat compute ceiling from its left endpoint across
+        the visible window, plus one extreme-right anchor, so the whole line is
+        hoverable yet still extends far past any zoom."""
+        hi = max(dense_hi, left_x)
+        xs = np.logspace(np.log10(left_x), np.log10(hi), _ROOF_SAMPLES).tolist()
+        xs.append(_ROOF_EXTRAP_MAX_AI)
+        ys = [peak_perf] * len(xs)
+        return xs, ys
+
     def _roof_min_peak(self, ceiling_data: dict[str, Any]) -> float:
         """Lowest compute ceiling, or inf when none is present."""
         peaks = [
@@ -309,24 +366,22 @@ class Roofline:
         ]
         return min(peaks) if peaks else float("inf")
 
-    def _pct_of_roofline(
+    def _roof_value_at(
         self,
         ai_value: float,
-        performance: float,
         cache_key: str,
         ceiling_data: dict[str, Any],
         min_peak: float,
     ) -> Optional[float]:
-        """Percent of the roofline achieved at this point."""
+        """Roofline throughput (peak) at this AI for the point's memory level:
+        min(bandwidth * AI, compute peak); None when unavailable."""
         bandwidth = self._peak_value(ceiling_data, cache_key)
-        if not bandwidth or ai_value <= 0 or performance <= 0:
+        if not bandwidth or ai_value <= 0:
             return None
         roof = bandwidth * ai_value
         if min_peak != float("inf"):
             roof = min(roof, min_peak)
-        if roof <= 0:
-            return None
-        return 100.0 * performance / roof
+        return roof if roof > 0 else None
 
     def _determine_kernel_limiter(
         self,
@@ -402,12 +457,16 @@ class Roofline:
                     cache_level=cache_level,
                     ceiling_data=ceiling_data,
                 )
-                pct_roof = self._pct_of_roofline(
+                roof_val = self._roof_value_at(
                     ai_value=ai_value,
-                    performance=performance,
                     cache_key=cache_level.removeprefix("ai_"),
                     ceiling_data=ceiling_data,
                     min_peak=min_peak,
+                )
+                pct_roof = (
+                    100.0 * performance / roof_val
+                    if roof_val and performance > 0
+                    else None
                 )
                 xs.append(ai_value)
                 ys.append(performance)
@@ -417,6 +476,7 @@ class Roofline:
                     "perf": performance,
                     "status": status,
                     "pctRoof": pct_roof,
+                    "peakPerf": roof_val,
                 })
                 level_ai[level_name] = ai_value
 
@@ -730,6 +790,11 @@ class Roofline:
             self.__ceiling_data, self.__ai_data or {}, sanitized_cache_hierarchy
         )
 
+        # AI window the roofs are densely sampled across so they are hoverable
+        # throughout the visible range (a few decades beyond the data each way).
+        roof_dense_lo = x_lo / 1e3
+        roof_dense_hi = x_hi * 1e3
+
         #######################
         # Plot Application AI
         #######################
@@ -776,6 +841,8 @@ class Roofline:
                 default_peak=default_peak,
                 kernels=kernels_model,
                 kernel_trace_indices=trace_indices,
+                ceiling_dense_hi=roof_dense_hi,
+                roof_samples=_ROOF_SAMPLES,
             )
 
         #######################
@@ -803,81 +870,60 @@ class Roofline:
         # can show/hide the matching bandwidth line
         roofline_trace_indices: dict[str, int] = {}
 
+        compute_peaks_for_hover: list[tuple[str, float]] = []
+        if OpsSupport.VALU in SUPPORTED_DATATYPES[self.__mspec.gpu_arch][dtype]:
+            valu_peak = self._peak_value(self.__ceiling_data, "valu")
+            if valu_peak and valu_peak > 0:
+                compute_peaks_for_hover.append(("VALU", valu_peak))
+        if OpsSupport.MATRIX in SUPPORTED_DATATYPES[self.__mspec.gpu_arch][dtype]:
+            matrix_peak = self._peak_value(self.__ceiling_data, "matrix_ops")
+            if matrix_peak and matrix_peak > 0:
+                matrix_label = get_matrix_ops_type(
+                    getattr(self.__mspec, "gpu_series", "unknown_series")
+                )
+                compute_peaks_for_hover.append((matrix_label, matrix_peak))
+
         for bw_line in bandwidth_lines:
-            value = to_int(bw_line["value"])
             level = bw_line["level"]
+            level_key = level.upper()
 
-            trace_to_update = None
-            for trace in fig.data:
-                is_correct_level = trace.name and trace.name.startswith(
-                    f"{level.upper()}-"
-                )
-                has_correct_value = False
-                if trace.name and "<br>" in trace.name:
-                    try:
-                        # Extract value from legend name
-                        value_part = trace.name.split("<br>")[1]
-                        existing_val = int(value_part.split()[0])
-                        if existing_val == value:
-                            has_correct_value = True
-                    except (ValueError, IndexError):
-                        pass
+            # Bandwidth is datatype-independent, so a roof for this memory level
+            # may already be drawn from a prior datatype's pass. Keep a single
+            # clean legend entry rather than one per datatype.
+            if any(trace.name == level_key for trace in fig.data):
+                continue
 
-                if is_correct_level and has_correct_value:
-                    trace_to_update = trace
-                    break
-
-            if trace_to_update:
-                try:
-                    # Extract existing datatypes from name
-                    name_part = trace_to_update.name.split("<br>")[0]
-                    existing_dts_str = name_part.split("-", 1)[1]
-                    existing_dts = [dt.strip() for dt in existing_dts_str.split(",")]
-                except Exception:
-                    continue
-
-                all_dts = sorted(list(set(existing_dts + [dtype])))
-                all_dts_str = ", ".join(all_dts)
-                legend_name = f"{level.upper()}-{all_dts_str}<br>{value} GB/s"
-                fig.update_traces(
-                    patch={
-                        "name": legend_name,
-                        "hovertemplate": f"<b>{legend_name}</b><extra></extra>",
-                    },
-                    selector={"name": trace_to_update.name},
-                )
-            else:
-                # New bandwidth line with value in legend. The diagonal is the
-                # infinite line y = BW * AI up to its ridge; draw it from an
-                # arbitrarily small AI (toward the origin) to the ridge so
-                # panning down-left never reaches an endpoint.
-                legend_name = f"{level.upper()}-{dtype}<br>{value} GB/s"
-                peak_bw_val = bw_line["value"]
-                ridge_x = bw_line["x"][1]
-                ridge_y = bw_line["y"][1]
-                low_x = _ROOF_EXTRAP_MIN_AI
-                low_y = (
-                    peak_bw_val * _ROOF_EXTRAP_MIN_AI if peak_bw_val > 0 else ridge_y
-                )
-                fig.add_trace(
-                    go.Scatter(
-                        x=[low_x, ridge_x],
-                        y=[low_y, ridge_y],
-                        name=legend_name,
-                        mode="lines",
-                        line=dict(color=get_color(level.lower())),
-                        hovertemplate=f"<b>{legend_name}</b><extra></extra>",
+            # The diagonal y = BW * AI up to its ridge. Densely sampled across
+            # the visible window so the whole line is hoverable, plus one
+            # extreme-low anchor so panning down-left stays inside it.
+            peak_bw_val = bw_line["value"]
+            ridge_x = bw_line["x"][1]
+            dense_lo = min(roof_dense_lo, ridge_x)
+            diag_x = [_ROOF_EXTRAP_MIN_AI] + np.logspace(
+                np.log10(dense_lo), np.log10(ridge_x), _ROOF_SAMPLES
+            ).tolist()
+            diag_y = [peak_bw_val * x for x in diag_x]
+            fig.add_trace(
+                go.Scatter(
+                    x=diag_x,
+                    y=diag_y,
+                    name=level_key,
+                    mode="lines",
+                    line=dict(color=get_color(level.lower())),
+                    hovertemplate=build_roof_hover(
+                        level_key, peak_bw_val, compute_peaks_for_hover, ops_flops
                     ),
-                    **subplot_kwargs,
-                )
-                roofline_trace_indices[level.upper()] = (
-                    len(fig.data) - 1,
-                    bw_line["value"],
-                )
+                ),
+                **subplot_kwargs,
+            )
+            roofline_trace_indices[level_key] = (
+                len(fig.data) - 1,
+                bw_line["value"],
+            )
 
-        # Attach the memory-roof trace indices (with bandwidth) to the view model
-        # built this call so the client controller can filter roofs by the
-        # selected peak and snap the compute ceilings to the steepest visible one.
+        # Attach the memory-roof trace indices to the view model
+        # built this call so the client controller can isolate roofs by the
+        # selected peak in the legend.
         if ops_flops == "FLOP" and not skipAI and has_kernel_names:
             view_model = self.__view_models.get(ops_flops)
             if view_model is not None:
@@ -885,7 +931,6 @@ class Roofline:
                     {"level": roof_level, "traceIndex": idx, "bandwidth": bw}
                     for roof_level, (idx, bw) in roofline_trace_indices.items()
                 ]
-                view_model.roof_max_ai = _ROOF_EXTRAP_MAX_AI
 
         max_bw = max((bw_line["value"] for bw_line in bandwidth_lines), default=0.0)
 
@@ -903,18 +948,26 @@ class Roofline:
             else None
         )
 
+        # The horizontal compute peaks cap every roofline. They are kept OFF the
+        # legend (their values live in the roof hover); the flat line itself
+        # still carries a concise hover of its own peak throughput.
         if valu_data:
-            legend_name = f"Peak VALU-{dtype}<br>{to_int(valu_data[2])} G{ops_flops}/s"
             peak_perf = valu_data[1][0]
             left_x = peak_perf / max_bw if max_bw > 0 else valu_data[0][0]
+            valu_x, valu_y = self._sample_ceiling(
+                left_x, peak_perf, roof_dense_hi
+            )
             fig.add_trace(
                 go.Scatter(
-                    x=[left_x, _ROOF_EXTRAP_MAX_AI],
-                    y=[peak_perf, peak_perf],
-                    name=legend_name,
+                    x=valu_x,
+                    y=valu_y,
+                    name="Peak VALU",
                     mode="lines",
+                    showlegend=False,
                     line=dict(color=get_color("valu")),
-                    hovertemplate=f"<b>{legend_name}</b><extra></extra>",
+                    hovertemplate=build_compute_peak_hover(
+                        "VALU", valu_data[2], ops_flops
+                    ),
                 ),
                 **subplot_kwargs,
             )
@@ -929,22 +982,24 @@ class Roofline:
             matrix_ops_type = get_matrix_ops_type(
                 getattr(self.__mspec, "gpu_series", "unknown_series")
             )
-            legend_name = (
-                f"Peak {matrix_ops_type}-{dtype}<br>"
-                f"{to_int(matrix_data[2])} G{ops_flops}/s"
-            )
             # Extend left to the steepest (first) diagonal and right past the
             # data so panning never reaches an end of the compute ceiling.
             peak_perf = matrix_data[1][0]
             left_x = peak_perf / max_bw if max_bw > 0 else matrix_data[0][0]
+            matrix_x, matrix_y = self._sample_ceiling(
+                left_x, peak_perf, roof_dense_hi
+            )
             fig.add_trace(
                 go.Scatter(
-                    x=[left_x, _ROOF_EXTRAP_MAX_AI],
-                    y=[peak_perf, peak_perf],
-                    name=legend_name,
+                    x=matrix_x,
+                    y=matrix_y,
+                    name=f"Peak {matrix_ops_type}",
                     mode="lines",
+                    showlegend=False,
                     line=dict(color=get_color("matrix_ops")),
-                    hovertemplate=f"<b>{legend_name}</b><extra></extra>",
+                    hovertemplate=build_compute_peak_hover(
+                        matrix_ops_type, matrix_data[2], ops_flops
+                    ),
                 ),
                 **subplot_kwargs,
             )
@@ -984,9 +1039,11 @@ class Roofline:
                 height=int(total_figure_height),
                 dragmode="pan",
                 hovermode="closest",
-                margin=dict(l=70, r=40, b=55, t=62, pad=4),
+                margin=dict(l=82, r=40, b=62, t=62, pad=4, autoexpand=False),
                 legend=dict(
-                    title=dict(text="Roofs (click to isolate)", font=dict(size=11)),
+                    title=dict(
+                        text="Achievable peak (click to isolate)", font=dict(size=11)
+                    ),
                     orientation="v",
                     yanchor="bottom",
                     y=0.02,
@@ -998,7 +1055,12 @@ class Roofline:
                     borderwidth=1,
                     itemsizing="constant",
                 ),
-                hoverlabel=dict(bgcolor="white", font_size=11, align="left"),
+                hoverlabel=dict(
+                    bgcolor="white",
+                    bordercolor="rgba(0, 0, 0, 0.15)",
+                    align="left",
+                    font=dict(size=13, color="#1b1f24"),
+                ),
             )
 
         # For additional datatypes stacked onto an existing figure, extend the
