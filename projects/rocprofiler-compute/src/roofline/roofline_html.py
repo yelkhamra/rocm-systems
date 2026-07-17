@@ -39,11 +39,10 @@ class RooflineViewModel:
     Attributes:
         peaks: Ordered memory levels that have at least one point (e.g.
             ["L1", "L2", "HBM", "LDS"]).
-        peak_symbols: Map from memory level to Plotly marker symbol; the shape
-            identifies the peak (kernel identity is carried by color instead).
-        default_peak: Level selected when the page loads. A single default peak
-            means the plot opens with one dot per kernel rather than the full
-            cloud of every level at once. None when there are no points.
+        peak_symbols: Legacy map from memory level to Plotly marker symbol
+        peak_colors: Map from memory level to its roof color, used to color an
+            isolated kernel's dots by memory level
+        default_peak: Memory region shown on load
         kernels: One entry per plotted kernel:
             {"name", "color", "traceIndex", "count", "totalTime",
             "pctRuntime", "limiter", "points": [{"peak", "ai", "perf",
@@ -65,6 +64,7 @@ class RooflineViewModel:
 
     peaks: list[str] = field(default_factory=list)
     peak_symbols: dict[str, str] = field(default_factory=dict)
+    peak_colors: dict[str, str] = field(default_factory=dict)
     default_peak: Optional[str] = None
     kernels: list[dict[str, Any]] = field(default_factory=list)
     kernel_trace_indices: list[int] = field(default_factory=list)
@@ -86,6 +86,7 @@ class RooflineViewModel:
             "divId": self.div_id,
             "peaks": self.peaks,
             "peakSymbols": self.peak_symbols,
+            "peakColors": self.peak_colors,
             "defaultPeak": self.default_peak,
             "kernels": self.kernels,
             "kernelTraceIndices": self.kernel_trace_indices,
@@ -153,8 +154,6 @@ __PLOT_FRAGMENT__
       <p class="roofline-panel-help">Click a row to show only that kernel; click
         again to show all. Ctrl+click (&#8984;+click on Mac) to add or remove
         kernels.</p>
-      <div id="roofline-shape-legend" class="roofline-shape-legend"
-           aria-label="Marker shape for each memory level"></div>
       <ul id="roofline-kernel-list" class="roofline-kernel-list"></ul>
       <p id="roofline-longname-hint" class="roofline-longname-hint" hidden>
         Tip: hover on a kernel name to see it in full.</p>

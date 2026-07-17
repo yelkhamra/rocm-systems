@@ -57,8 +57,8 @@ _PEAK_SYMBOLS: dict[str, str] = {
 # One color per kernel from a high-contrast qualitative palette.
 _KERNEL_PALETTE: list[str] = pcolors.qualitative.Dark24 + pcolors.qualitative.Light24
 
-# Which memory peak the roofline opens on.
-_DEFAULT_PEAK = "all"
+# Which memory region the roofline opens on
+_DEFAULT_PEAK = "HBM"
 
 # Kernel names can be hundreds of characters, so the hover
 # tooltip shows a truncated form. Store the max length of a
@@ -391,14 +391,7 @@ class Roofline:
         ceiling_data: dict[str, Any],
         ops_flops: str,
     ) -> tuple[list[go.Scatter], list[dict[str, Any]]]:
-        """Build one marker trace per kernel plus the matching view-model data.
-
-        Each kernel becomes a single scatter trace carrying all of its points
-        across the memory peaks: marker.color identifies the kernel and
-        marker.symbol identifies the peak. The returned model list mirrors
-        the traces one-for-one and is the source of truth the client-side
-        controller restyles from.
-        """
+        """Build one marker trace per kernel plus the matching view-model data."""
         hovertemplate = "%{customdata[0]}<extra></extra>"
 
         traces: list[go.Scatter] = []
@@ -416,7 +409,6 @@ class Roofline:
             hover_name = truncate_kernel_name(kernel_name)
             xs: list[float] = []
             ys: list[float] = []
-            symbols: list[str] = []
             points: list[dict[str, Any]] = []
             level_ai: dict[str, float] = {}
 
@@ -447,7 +439,6 @@ class Roofline:
                 )
                 xs.append(ai_value)
                 ys.append(performance)
-                symbols.append(peak_symbol(level_name))
                 points.append({
                     "peak": level_name,
                     "ai": ai_value,
@@ -500,7 +491,6 @@ class Roofline:
                     marker=dict(
                         color=color,
                         size=10,
-                        symbol=symbols,
                         line=dict(width=0.5, color="black"),
                     ),
                     customdata=customdata,
@@ -806,12 +796,13 @@ class Roofline:
 
             default_peak = (
                 _DEFAULT_PEAK
-                if (_DEFAULT_PEAK == "all" or _DEFAULT_PEAK in present_peaks)
+                if _DEFAULT_PEAK in present_peaks
                 else (present_peaks[0] if present_peaks else "all")
             )
             self.__view_models[ops_flops] = RooflineViewModel(
                 peaks=present_peaks,
                 peak_symbols={peak: peak_symbol(peak) for peak in present_peaks},
+                peak_colors={peak: get_color(peak.lower()) for peak in present_peaks},
                 default_peak=default_peak,
                 kernels=kernels_model,
                 kernel_trace_indices=trace_indices,
@@ -1028,7 +1019,7 @@ class Roofline:
                 hovermode="closest",
                 margin=dict(l=70, r=40, b=55, t=62, pad=4),
                 legend=dict(
-                    title=dict(text="Roofs (click to toggle)", font=dict(size=11)),
+                    title=dict(text="Roofs (click to isolate)", font=dict(size=11)),
                     orientation="v",
                     yanchor="bottom",
                     y=0.02,

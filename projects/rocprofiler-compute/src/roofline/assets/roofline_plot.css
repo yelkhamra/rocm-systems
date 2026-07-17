@@ -133,18 +133,6 @@ body {
   border-bottom: 1px solid var(--roofline-border);
 }
 
-.roofline-shape-legend {
-  flex: 0 0 auto;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 3px 12px;
-  padding: 6px 12px;
-  font-size: 11px;
-  color: var(--roofline-muted);
-  border-bottom: 1px solid var(--roofline-border);
-}
-
 .roofline-longname-hint {
   flex: 0 0 auto;
   margin: 0;
@@ -158,22 +146,6 @@ body {
 
 .roofline-longname-hint[hidden] {
   display: none;
-}
-
-.roofline-legend-caption {
-  font-weight: 600;
-}
-
-.roofline-legend-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.roofline-legend-glyph {
-  font-size: 13px;
-  line-height: 1;
-  color: var(--roofline-text);
 }
 
 .roofline-kernel-list {

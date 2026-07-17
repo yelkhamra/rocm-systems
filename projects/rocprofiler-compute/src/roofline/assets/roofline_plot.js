@@ -2,9 +2,11 @@
 // SPDX-License-Identifier:  MIT
 //
 // Client-side controller for the interactive roofline. It reads the embedded
-// JSON model (#roofline-model), then keeps two pieces of state:
-//   * peak      -- which memory roof's points are shown
-//   * selected  -- a Set of isolated kernel names
+// JSON model (#roofline-model), then keeps this state:
+//   * peak         -- memory region for the aggregate view (default HBM); a
+//                     single isolated kernel instead shows every level
+//   * selected     -- a Set of isolated kernel names
+//   * isolatedRoof -- trace index of the roof isolated in the legend, or null
 
 (function () {
   "use strict";
@@ -35,8 +37,21 @@
   var computeTraces = model.computeTraces || [];
   var roofMaxAi = model.roofMaxAi || 1e150;
   var peakSymbols = model.peakSymbols || {};
+  var peakColors = model.peakColors || {};
   var aiUnit = model.aiUnit || "FLOPs/Byte";
   var perfUnit = model.perfUnit || "GFLOP/s";
+
+  // Every non-kernel legend trace (memory roofs + compute ceilings). Clicking
+  // one in the legend isolates it (dims the rest) rather than hiding it.
+  var roofTraceIndices = rooflineTraces
+    .map(function (roof) {
+      return roof.traceIndex;
+    })
+    .concat(
+      computeTraces.map(function (ceiling) {
+        return ceiling.traceIndex;
+      })
+    );
 
   var hasTruncatedNames = kernels.some(function (kernel) {
     return kernel.hoverName && kernel.hoverName !== kernel.name;
@@ -53,8 +68,12 @@
   };
 
   var state = {
-    peak: model.defaultPeak || "all",
+    // The memory region shown in the aggregate (multi-kernel) view; defaults to
+    // HBM. A single isolated kernel ignores this and shows every level.
+    peak: model.defaultPeak || "HBM",
     selected: new Set(),
+    // Trace index of the roof currently isolated in the legend, or null.
+    isolatedRoof: null,
     // Whether the view auto-recenters on filter changes; synced to the toggle.
     autoZoom: !autoZoomToggle || autoZoomToggle.checked,
   };
@@ -72,7 +91,9 @@
 
   function pointsForCurrentPeak(kernel) {
     var points = kernel.points || [];
-    if (state.peak === "all") {
+    // A single isolated kernel shows every memory level (colored by level);
+    // otherwise each kernel shows one dot at the selected memory region.
+    if (state.selected.size === 1 && state.selected.has(kernel.name)) {
       return points;
     }
     return points.filter(function (point) {
@@ -80,21 +101,19 @@
     });
   }
 
-  function roofIsVisible(roof) {
-    return state.peak === "all" || roof.level === state.peak;
-  }
-
-  function applyPeakFilterToRoofs() {
-    if (!gd || typeof Plotly === "undefined" || !rooflineTraces.length) {
+  // Isolate the clicked roof by dimming every other roof/ceiling; when nothing
+  // is isolated all roofs render at full opacity.
+  function applyRoofIsolation() {
+    if (!gd || typeof Plotly === "undefined" || !roofTraceIndices.length) {
       return;
     }
-    var indices = [];
-    var visibility = [];
-    rooflineTraces.forEach(function (roof) {
-      indices.push(roof.traceIndex);
-      visibility.push(roofIsVisible(roof) ? true : "legendonly");
+    var opacities = roofTraceIndices.map(function (idx) {
+      if (state.isolatedRoof === null) {
+        return 1;
+      }
+      return idx === state.isolatedRoof ? 1 : 0.15;
     });
-    Plotly.restyle(gd, { visible: visibility }, indices);
+    Plotly.restyle(gd, { opacity: opacities }, roofTraceIndices);
   }
 
   function roofTraceShown(roof) {
@@ -145,9 +164,9 @@
   }
 
   function render() {
-    // Re-snap ceilings to whatever roofs are currently shown, but do NOT reset
-    // roof visibility here (that would undo the user's legend toggles).
     snapCeilings();
+    // Keep the region dropdown in sync with the selection (single vs aggregate).
+    syncPeakControl();
     if (!gd || typeof Plotly === "undefined" || !kernelTraceIndices.length) {
       updatePanel();
       return;
@@ -155,13 +174,16 @@
 
     var xs = [];
     var ys = [];
-    var symbols = [];
+    var markerColors = [];
     var customdata = [];
     var visibility = [];
 
     kernels.forEach(function (kernel) {
       var visible = kernelIsVisible(kernel);
       var points = visible ? pointsForCurrentPeak(kernel) : [];
+      var singleSel =
+        state.selected.size === 1 && state.selected.has(kernel.name);
+      var baseColor = kernel.color || "#888888";
       xs.push(
         points.map(function (point) {
           return point.ai;
@@ -172,9 +194,11 @@
           return point.perf;
         })
       );
-      symbols.push(
+      // Aggregate view colors by kernel; an isolated kernel colors each dot by
+      // its memory level so the levels stay distinguishable without shapes.
+      markerColors.push(
         points.map(function (point) {
-          return peakSymbols[point.peak] || "circle";
+          return singleSel ? peakColors[point.peak] || baseColor : baseColor;
         })
       );
       // The full tooltip body is precomputed server-side; just pass it back.
@@ -191,7 +215,7 @@
       {
         x: xs,
         y: ys,
-        "marker.symbol": symbols,
+        "marker.color": markerColors,
         customdata: customdata,
         visible: visibility,
       },
@@ -291,17 +315,42 @@
     if (!peakSelect) {
       return;
     }
-    var options = [{ value: "all", label: "All peaks" }];
     (model.peaks || []).forEach(function (peak) {
-      options.push({ value: peak, label: peak });
-    });
-    options.forEach(function (option) {
       var el = document.createElement("option");
-      el.value = option.value;
-      el.textContent = option.label;
+      el.value = peak;
+      el.textContent = peak;
       peakSelect.appendChild(el);
     });
+    // "All peaks" only applies to a single isolated kernel; hidden otherwise.
+    var allEl = document.createElement("option");
+    allEl.value = "all";
+    allEl.textContent = "All peaks";
+    allEl.hidden = true;
+    peakSelect.appendChild(allEl);
     peakSelect.value = state.peak;
+  }
+
+  // The region dropdown only applies to the aggregate view. When
+  // exactly one kernel is isolated we show all of its memory levels, so the
+  // control switches to a disabled "All peaks" and restores the region after.
+  function syncPeakControl() {
+    if (!peakSelect) {
+      return;
+    }
+    var single = state.selected.size === 1;
+    var allOpt = peakSelect.querySelector('option[value="all"]');
+    if (allOpt) {
+      allOpt.hidden = !single;
+    }
+    if (single) {
+      peakSelect.value = "all";
+      peakSelect.disabled = true;
+    } else {
+      if (peakSelect.value === "all") {
+        peakSelect.value = state.peak;
+      }
+      peakSelect.disabled = false;
+    }
   }
 
   function buildKernelPanel() {
@@ -478,47 +527,14 @@
     hintEl.hidden = !(hasTruncatedNames && state.selected.size > 0);
   }
 
-  function buildShapeLegend() {
-    var legendEl = document.getElementById("roofline-shape-legend");
-    if (!legendEl) {
-      return;
-    }
-    var peaks = model.peaks || [];
-    if (!peaks.length) {
-      legendEl.style.display = "none";
-      return;
-    }
-    // Shape identifies the memory level and is the same for every kernel, so
-    // this stays a compact, always-visible reference regardless of how many
-    // kernels are selected.
-    var caption = document.createElement("span");
-    caption.className = "roofline-legend-caption";
-    caption.textContent = "Shape = memory level:";
-    legendEl.appendChild(caption);
-
-    peaks.forEach(function (peak) {
-      var item = document.createElement("span");
-      item.className = "roofline-legend-item";
-
-      var glyph = document.createElement("span");
-      glyph.className = "roofline-legend-glyph";
-      glyph.textContent = peakGlyph(peak);
-
-      var label = document.createElement("span");
-      label.textContent = peak;
-
-      item.appendChild(glyph);
-      item.appendChild(label);
-      legendEl.appendChild(item);
-    });
-  }
-
   function wireEvents() {
     if (peakSelect) {
       peakSelect.addEventListener("change", function () {
+        // "All peaks" is a disabled single-kernel display state, never chosen.
+        if (peakSelect.value === "all") {
+          return;
+        }
         state.peak = peakSelect.value;
-        // Changing the peak deliberately resets which roofs are shown.
-        applyPeakFilterToRoofs();
         render();
       });
     }
@@ -547,16 +563,25 @@
         }
         toggleKernel(kernels[position].name, data.event);
       });
-      // Toggling a roof in the legend hides/shows a diagonal. The event fires
-      // before Plotly flips the trace, so snap against the pending post-click
-      // state (via curveNumber) instead of the stale live visibility.
+      // Clicking a roof in the legend isolates it (dims the others) instead of
+      // hiding it; clicking the isolated roof again clears the isolation.
       gd.on("plotly_legendclick", function (ev) {
-        if (ev && typeof ev.curveNumber === "number") {
-          snapCeilings(ev.curveNumber);
-        } else {
-          snapCeilings();
+        if (!ev || typeof ev.curveNumber !== "number") {
+          return false;
         }
-        return true;
+        if (roofTraceIndices.indexOf(ev.curveNumber) < 0) {
+          return false;
+        }
+        state.isolatedRoof =
+          state.isolatedRoof === ev.curveNumber ? null : ev.curveNumber;
+        applyRoofIsolation();
+        return false;
+      });
+      // Double-click is the "show everything" gesture: clear any isolation.
+      gd.on("plotly_legenddoubleclick", function () {
+        state.isolatedRoof = null;
+        applyRoofIsolation();
+        return false;
       });
     }
   }
@@ -583,12 +608,10 @@
 
   function init() {
     buildPeakOptions();
-    buildShapeLegend();
     buildKernelPanel();
     whenPlotReady(function () {
       wireEvents();
       resizePlot();
-      applyPeakFilterToRoofs();
       render();
     }, 40);
   }
