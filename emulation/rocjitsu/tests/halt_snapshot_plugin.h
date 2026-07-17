@@ -15,6 +15,7 @@
 /// still live, before they are freed.
 
 #include "rocjitsu/vm/amdgpu/compute_unit.h"
+#include "rocjitsu/vm/amdgpu/register_access.h"
 #include "rocjitsu/vm/amdgpu/wavefront.h"
 #include "rocjitsu/vm/plugins/execution_plugin.h"
 #include "rocjitsu/vm/plugins/execution_plugin_group.h"
@@ -23,6 +24,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -40,11 +42,11 @@ struct WavefrontSnapshot {
   uint64_t exec = 0;
   uint64_t vcc = 0;
   uint32_t status = 0;
-  uint32_t mode_raw = 0;                       ///< MODE register at halt.
-  uint8_t vgpr_msb_mode = 0;                   ///< Decoded s_set_vgpr_msb layout at halt.
-  uint64_t lds_size_bytes = 0;                 ///< Size of the LDS region visible to this wave.
-  const amdgpu::ComputeUnitCore *cu = nullptr; ///< Originating CU (for per-CU grouping).
-  std::vector<uint32_t> sgprs;                 ///< [num_sgprs]
+  uint32_t mode_raw = 0;       ///< MODE register at halt.
+  uint8_t vgpr_msb_mode = 0;   ///< Decoded s_set_vgpr_msb layout at halt.
+  uint64_t lds_size_bytes = 0; ///< Size of the LDS region visible to this wave.
+  std::string cu_path;         ///< Originating CU (for per-CU grouping).
+  std::vector<uint32_t> sgprs; ///< [num_sgprs]
   std::vector<uint32_t> vgprs; ///< [vgpr_block * wf_size], row-major by physical reg.
 
   /// @brief Read a captured SGPR by architectural index.
@@ -79,7 +81,7 @@ public:
   std::vector<const WavefrontSnapshot *> for_cu(const amdgpu::ComputeUnitCore *cu) const {
     std::vector<const WavefrontSnapshot *> out;
     for (const auto &s : snapshots_)
-      if (s.cu == cu)
+      if (s.cu_path == cu->full_path())
         out.push_back(&s);
     return out;
   }
@@ -114,17 +116,18 @@ public:
     s.mode_raw = wf.mode_raw();
     s.vgpr_msb_mode = wf.vgpr_msb_mode();
     s.lds_size_bytes = wf.lds().size_bytes();
-    s.cu = &wf.cu();
+    auto &cu = wf.cu();
+    s.cu_path = cu.full_path();
+    amdgpu::RegisterAccess registers(wf);
 
     // Capture the full physical SGPR block (sgprs_per_wf), not just the requested
     // count: TTMP registers alias into the high slots of the block and tests read
     // them by physical index (e.g. TTMP7 at 115, TTMP9 at 117).
-    const auto &cu = wf.cu();
     const uint32_t sbase = wf.sgpr_alloc().base;
-    const uint32_t sgpr_block = cu.config().sgprs_per_wf;
+    const uint32_t sgpr_block = cu.sgprs_per_wf();
     s.sgprs.reserve(sgpr_block);
     for (uint32_t i = 0; i < sgpr_block; ++i)
-      s.sgprs.push_back(cu.read_sgpr(sbase + i));
+      s.sgprs.push_back(registers.read_sgpr(sbase + i));
 
     // Capture the full physical VGPR block (normal + AccVGPR bank) so tests can
     // inspect accumulator registers as well as ordinary VGPRs.
@@ -133,7 +136,7 @@ public:
     s.vgprs.reserve(static_cast<size_t>(s.vgpr_block) * s.wf_size);
     for (uint32_t r = 0; r < s.vgpr_block; ++r)
       for (uint32_t lane = 0; lane < s.wf_size; ++lane)
-        s.vgprs.push_back(cu.read_vgpr(vbase + r, lane));
+        s.vgprs.push_back(registers.read_vgpr(vbase + r, lane));
 
     // Serialize the append: concurrent halts from different partition threads
     // would otherwise race the vector.
@@ -170,7 +173,7 @@ public:
     // Serialize: onAmdgpuWavefrontDispatched can fire from multiple partition
     // engine threads in a multi-threaded simulation.
     std::lock_guard<std::mutex> lk(mutex_);
-    counts_[&wf.cu()]++;
+    counts_[wf.cu().full_path()]++;
     total_++;
   }
 
@@ -180,13 +183,13 @@ public:
   }
   uint32_t for_cu(const amdgpu::ComputeUnitCore *cu) const {
     std::lock_guard<std::mutex> lk(mutex_);
-    auto it = counts_.find(cu);
+    auto it = counts_.find(cu->full_path());
     return it == counts_.end() ? 0u : it->second;
   }
 
 private:
   mutable std::mutex mutex_;
-  std::unordered_map<const amdgpu::ComputeUnitCore *, uint32_t> counts_;
+  std::unordered_map<std::string, uint32_t> counts_;
   uint32_t total_ = 0;
 };
 

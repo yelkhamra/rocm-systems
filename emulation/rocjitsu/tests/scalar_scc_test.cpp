@@ -200,8 +200,8 @@ public:
   }
 
   ~ScalarSccFixture() {
-    if (cu)
-      cu->reset_all_wf();
+    if (wf && !wf->is_halted())
+      wf->halt();
   }
 
   bool ready() const { return cu != nullptr && decoder != nullptr && wf != nullptr; }

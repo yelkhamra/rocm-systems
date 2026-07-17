@@ -600,6 +600,9 @@ inline uint32_t InstructionComputeUnitView::wf_size() const { return raw_cu().wf
 inline uint32_t InstructionComputeUnitView::sgprs_per_wf() const {
   return raw_cu().config().sgprs_per_wf;
 }
+inline uint32_t InstructionComputeUnitView::vgpr_allocation_block_size() const {
+  return raw_cu().vgpr_allocation_block_size();
+}
 inline std::string InstructionComputeUnitView::full_path() const { return raw_cu().full_path(); }
 inline simdojo::ComponentID InstructionComputeUnitView::id() const { return raw_cu().id(); }
 inline simdojo::SimulationEngine *InstructionComputeUnitView::engine() const {
