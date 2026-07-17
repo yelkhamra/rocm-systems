@@ -575,7 +575,7 @@ def parse_args(args=None):
     if cdash_args.linter == "clang-tidy":
         cmake_args += [
             "-DROCPROFILER_ENABLE_CLANG_TIDY=ON",
-            "-DROCPROFILER_DISABLE_ATT_QUICK_SCAN=ON",
+            "-DROCPROFILER_DISABLE_TRACE_DECODER=ON",
         ]
 
     if (
