@@ -145,6 +145,16 @@ __PLOT_FRAGMENT__
       <p class="roofline-panel-help">Click a row to show only that kernel; click
         again to show all. Ctrl+click (&#8984;+click on Mac) to add or remove
         kernels.</p>
+      <div id="roofline-runtime-filter" class="roofline-runtime-filter">
+        <label for="roofline-runtime-threshold"
+               title="Show only the heaviest kernels whose combined GPU resident time reaches this percentage. 100% shows every kernel.">
+          Runtime shown
+          <span id="roofline-runtime-value" class="roofline-runtime-value">100%</span>
+        </label>
+        <input type="range" id="roofline-runtime-threshold" min="5" max="100"
+               step="5" value="100"
+               aria-label="Cumulative percent of GPU resident time to display">
+      </div>
       <ul id="roofline-kernel-list" class="roofline-kernel-list"></ul>
     </aside>
     </div>

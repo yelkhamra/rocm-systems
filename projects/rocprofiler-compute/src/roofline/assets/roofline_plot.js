@@ -29,6 +29,9 @@
   var showAllBtn = document.getElementById("roofline-show-all");
   var kernelCountEl = document.getElementById("roofline-kernel-count");
   var autoZoomToggle = document.getElementById("roofline-auto-zoom");
+  var runtimeSlider = document.getElementById("roofline-runtime-threshold");
+  var runtimeValueEl = document.getElementById("roofline-runtime-value");
+  var runtimeFilterEl = document.getElementById("roofline-runtime-filter");
 
   var kernels = model.kernels || [];
   var kernelTraceIndices = model.kernelTraceIndices || [];
@@ -36,6 +39,13 @@
   var computeTraces = model.computeTraces || [];
   var roofMaxAi = model.roofMaxAi || 1e150;
   var peakColors = model.peakColors || {};
+
+  // Whether any kernel carries a percent-of-runtime, which gates the filter.
+  var hasRuntimeData = kernels.some(function (kernel) {
+    return kernel.pctRuntime != null && isFinite(kernel.pctRuntime);
+  });
+  // Names of the kernels within the current cumulative runtime threshold
+  var thresholdSet = null;
 
   // Every non-kernel legend trace (memory roofs + compute ceilings). Clicking
   // one in the legend isolates it (dims the rest) rather than hiding it.
@@ -56,6 +66,8 @@
     selected: new Set(),
     // Trace index of the roof currently isolated in the legend, or null.
     isolatedRoof: null,
+    // Cumulative percent of GPU resident time to display (100 = every kernel).
+    runtimeThreshold: runtimeSlider ? Number(runtimeSlider.value) : 100,
     // Whether the view auto-recenters on filter changes; synced to the toggle.
     autoZoom: !autoZoomToggle || autoZoomToggle.checked,
   };
@@ -63,8 +75,44 @@
   // The first fit (page open) snaps instantly; later re-fits animate.
   var hasFitted = false;
 
+  // The runtime filter keeps only the heaviest kernels whose cumulative percent
+  // of GPU resident time reaches the threshold (100% keeps every kernel).
+  function recomputeThresholdSet() {
+    thresholdSet = new Set();
+    if (state.runtimeThreshold >= 100) {
+      kernels.forEach(function (kernel) {
+        thresholdSet.add(kernel.name);
+      });
+      return;
+    }
+    var order = kernels.map(function (_, index) {
+      return index;
+    });
+    order.sort(function (a, b) {
+      return (kernels[b].pctRuntime || 0) - (kernels[a].pctRuntime || 0);
+    });
+    var cumulative = 0;
+    for (var i = 0; i < order.length; i++) {
+      var kernel = kernels[order[i]];
+      thresholdSet.add(kernel.name);
+      cumulative += kernel.pctRuntime || 0;
+      if (cumulative >= state.runtimeThreshold) {
+        break;
+      }
+    }
+  }
+
+  function withinThreshold(kernel) {
+    return !thresholdSet || thresholdSet.has(kernel.name);
+  }
+
   function kernelIsVisible(kernel) {
-    return state.selected.size === 0 || state.selected.has(kernel.name);
+    // An explicit selection overrides the runtime filter; otherwise the filter
+    // governs which kernels are drawn.
+    if (state.selected.size > 0) {
+      return state.selected.has(kernel.name);
+    }
+    return withinThreshold(kernel);
   }
 
   function pointsForCurrentPeak(kernel) {
@@ -389,6 +437,8 @@
         var selected = state.selected.has(kernel.name);
         item.classList.toggle("selected", selected);
         item.classList.toggle("dimmed", filtering && !selected);
+        // Trim rows outside the runtime threshold, but never a selected one.
+        item.classList.toggle("filtered", !withinThreshold(kernel) && !selected);
       });
     }
     // Count how many kernels are actually drawn under the current peak +
@@ -422,6 +472,16 @@
     if (showAllBtn) {
       showAllBtn.addEventListener("click", function () {
         state.selected.clear();
+        render();
+      });
+    }
+    if (runtimeSlider) {
+      runtimeSlider.addEventListener("input", function () {
+        state.runtimeThreshold = Number(runtimeSlider.value);
+        if (runtimeValueEl) {
+          runtimeValueEl.textContent = state.runtimeThreshold + "%";
+        }
+        recomputeThresholdSet();
         render();
       });
     }
@@ -490,6 +550,11 @@
   function init() {
     buildPeakOptions();
     buildKernelPanel();
+    // The runtime filter is meaningless without per-kernel runtime data.
+    if (runtimeFilterEl && !hasRuntimeData) {
+      runtimeFilterEl.style.display = "none";
+    }
+    recomputeThresholdSet();
     whenPlotReady(function () {
       wireEvents();
       resizePlot();

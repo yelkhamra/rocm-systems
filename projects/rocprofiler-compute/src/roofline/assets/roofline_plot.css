@@ -100,8 +100,8 @@ body {
 }
 
 .roofline-panel-wrap {
-  flex: 0 0 400px;
-  max-width: 460px;
+  flex: 0 1 320px;
+  max-width: 380px;
   position: relative;
 }
 
@@ -151,6 +151,35 @@ body {
   border-bottom: 1px solid var(--roofline-border);
 }
 
+.roofline-runtime-filter {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--roofline-muted);
+  border-bottom: 1px solid var(--roofline-border);
+}
+
+.roofline-runtime-filter label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.roofline-runtime-value {
+  color: var(--roofline-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.roofline-runtime-filter input[type="range"] {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--roofline-accent);
+}
+
 .roofline-kernel-list {
   list-style: none;
   margin: 0;
@@ -182,6 +211,11 @@ body {
 
 .roofline-kernel-item.dimmed {
   opacity: 0.4;
+}
+
+/* Hidden by the runtime-percent filter (unless explicitly selected). */
+.roofline-kernel-item.filtered {
+  display: none;
 }
 
 .roofline-swatch {
