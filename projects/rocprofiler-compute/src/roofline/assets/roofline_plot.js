@@ -26,7 +26,6 @@
   var gd = document.getElementById(model.divId);
   var peakSelect = document.getElementById("roofline-peak-select");
   var kernelList = document.getElementById("roofline-kernel-list");
-  var detailsEl = document.getElementById("roofline-kernel-details");
   var showAllBtn = document.getElementById("roofline-show-all");
   var kernelCountEl = document.getElementById("roofline-kernel-count");
   var autoZoomToggle = document.getElementById("roofline-auto-zoom");
@@ -36,10 +35,7 @@
   var rooflineTraces = model.rooflineTraces || [];
   var computeTraces = model.computeTraces || [];
   var roofMaxAi = model.roofMaxAi || 1e150;
-  var peakSymbols = model.peakSymbols || {};
   var peakColors = model.peakColors || {};
-  var aiUnit = model.aiUnit || "FLOPs/Byte";
-  var perfUnit = model.perfUnit || "GFLOP/s";
 
   // Every non-kernel legend trace (memory roofs + compute ceilings). Clicking
   // one in the legend isolates it (dims the rest) rather than hiding it.
@@ -52,20 +48,6 @@
         return ceiling.traceIndex;
       })
     );
-
-  var hasTruncatedNames = kernels.some(function (kernel) {
-    return kernel.hoverName && kernel.hoverName !== kernel.name;
-  });
-
-  // Unicode glyphs approximating the Plotly marker shapes, used in the details
-  // table's symbol column so each row shows the same marker as its plot dot.
-  var SYMBOL_GLYPHS = {
-    circle: "\u25CF",
-    square: "\u25A0",
-    diamond: "\u25C6",
-    cross: "\u271A",
-    "triangle-up": "\u25B2",
-  };
 
   var state = {
     // The memory region shown in the aggregate (multi-kernel) view; defaults to
@@ -80,10 +62,6 @@
 
   // The first fit (page open) snaps instantly; later re-fits animate.
   var hasFitted = false;
-
-  function peakGlyph(peak) {
-    return SYMBOL_GLYPHS[peakSymbols[peak]] || SYMBOL_GLYPHS.circle;
-  }
 
   function kernelIsVisible(kernel) {
     return state.selected.size === 0 || state.selected.has(kernel.name);
@@ -428,103 +406,6 @@
     if (showAllBtn) {
       showAllBtn.disabled = !filtering;
     }
-    updateDetails();
-  }
-
-  function buildKernelDetailBlock(kernel) {
-    var block = document.createElement("div");
-    block.className = "roofline-detail-block";
-
-    var heading = document.createElement("div");
-    heading.className = "roofline-details-name";
-    heading.title = kernel.name;
-
-    var swatch = document.createElement("span");
-    swatch.className = "roofline-swatch";
-    swatch.style.backgroundColor = kernel.color || "#888888";
-    heading.appendChild(swatch);
-
-    var nameText = document.createElement("span");
-    nameText.className = "roofline-details-name-text";
-    // Truncated heading
-    nameText.textContent = kernel.hoverName || kernel.name;
-    heading.appendChild(nameText);
-    block.appendChild(heading);
-
-    var points = pointsForCurrentPeak(kernel);
-    if (!points.length) {
-      var note = document.createElement("div");
-      note.className = "roofline-detail-empty";
-      note.textContent = "No points at the selected peak.";
-      block.appendChild(note);
-      return block;
-    }
-
-    var table = document.createElement("table");
-    table.className = "roofline-details-table";
-    var head = document.createElement("tr");
-    // Leading empty header is the marker-symbol column; AI/Perf carry units.
-    ["", "Peak", "AI (" + aiUnit + ")", "Perf (" + perfUnit + ")", "Bound"].forEach(
-      function (label) {
-        var th = document.createElement("th");
-        th.textContent = label;
-        head.appendChild(th);
-      }
-    );
-    table.appendChild(head);
-
-    points.forEach(function (point) {
-      var row = document.createElement("tr");
-
-      // Symbol cell: same marker shape as the plot dot, in the kernel color.
-      var symbolCell = document.createElement("td");
-      symbolCell.className = "roofline-details-symbol";
-      symbolCell.textContent = peakGlyph(point.peak);
-      symbolCell.style.color = kernel.color || "#444444";
-      row.appendChild(symbolCell);
-
-      [
-        point.peak,
-        Number(point.ai).toFixed(2),
-        Number(point.perf).toFixed(2),
-        point.status,
-      ].forEach(function (value) {
-        var td = document.createElement("td");
-        td.textContent = value;
-        td.title = value;
-        row.appendChild(td);
-      });
-      table.appendChild(row);
-    });
-    block.appendChild(table);
-    return block;
-  }
-
-  function updateDetails() {
-    updateLongNameHint();
-    if (!detailsEl) {
-      return;
-    }
-    detailsEl.innerHTML = "";
-    if (state.selected.size === 0) {
-      return;
-    }
-    kernels.forEach(function (kernel) {
-      if (state.selected.has(kernel.name)) {
-        detailsEl.appendChild(buildKernelDetailBlock(kernel));
-      }
-    });
-  }
-
-  function updateLongNameHint() {
-    var hintEl = document.getElementById("roofline-longname-hint");
-    if (!hintEl) {
-      return;
-    }
-    // The tip sits directly above the selected-kernel subtables, whose headings
-    // are truncated, so only surface it when a subtable is shown and a name is
-    // actually clipped.
-    hintEl.hidden = !(hasTruncatedNames && state.selected.size > 0);
   }
 
   function wireEvents() {

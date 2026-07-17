@@ -45,25 +45,11 @@ ROOFLINE_SUPPORTED = [
     "gfx1152",
 ]
 
-# A kernel's memory peaks are told apart by marker shape.
-_PEAK_SYMBOLS: dict[str, str] = {
-    "L0": "circle",
-    "L1": "square",
-    "L2": "diamond",
-    "HBM": "cross",
-    "LDS": "triangle-up",
-}
-
 # One color per kernel from a high-contrast qualitative palette.
 _KERNEL_PALETTE: list[str] = pcolors.qualitative.Dark24 + pcolors.qualitative.Light24
 
 # Which memory region the roofline opens on
 _DEFAULT_PEAK = "HBM"
-
-# Kernel names can be hundreds of characters, so the hover
-# tooltip shows a truncated form. Store the max length of a
-# kernel name here before it is truncated.
-_HOVER_NAME_LIMIT = 48
 
 # We draw the segments so far past the data on both ends that no amount of
 # realistic panning/zooming reaches an endpoint. A log axis can never reach 0,
@@ -98,19 +84,6 @@ def to_int(value: Union[float, None]) -> Union[int, float]:
     if value is None:
         return np.nan
     return int(value)
-
-
-def peak_symbol(level_name: str) -> str:
-    """Return the Plotly marker shape used for a memory peak."""
-    return _PEAK_SYMBOLS.get(level_name.upper(), "circle")
-
-
-def truncate_kernel_name(name: str, limit: int = _HOVER_NAME_LIMIT) -> str:
-    """Shorten a kernel name for compact UI, keeping
-    the identifying prefix and appending an ellipsis when it is clipped."""
-    if len(name) <= limit:
-        return name
-    return name[: limit - 1].rstrip() + "\u2026"
 
 
 def wrap_hover_name(name: str, width: int = 44) -> str:
@@ -406,7 +379,6 @@ class Roofline:
         min_peak = self._roof_min_peak(ceiling_data)
 
         for kernel_index, kernel_name in enumerate(kernel_names):
-            hover_name = truncate_kernel_name(kernel_name)
             xs: list[float] = []
             ys: list[float] = []
             points: list[dict[str, Any]] = []
@@ -499,7 +471,6 @@ class Roofline:
             )
             kernels_model.append({
                 "name": kernel_name,
-                "hoverName": hover_name,
                 "color": color,
                 "points": points,
                 "count": count_val,
@@ -801,14 +772,10 @@ class Roofline:
             )
             self.__view_models[ops_flops] = RooflineViewModel(
                 peaks=present_peaks,
-                peak_symbols={peak: peak_symbol(peak) for peak in present_peaks},
                 peak_colors={peak: get_color(peak.lower()) for peak in present_peaks},
                 default_peak=default_peak,
                 kernels=kernels_model,
                 kernel_trace_indices=trace_indices,
-                ai_unit=f"{ops_flops}s/Byte",
-                perf_unit=f"G{ops_flops}/s",
-                time_unit=self.__ai_data.get("timeUnit", "") or "",
             )
 
         #######################

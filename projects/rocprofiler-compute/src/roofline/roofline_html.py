@@ -39,7 +39,6 @@ class RooflineViewModel:
     Attributes:
         peaks: Ordered memory levels that have at least one point (e.g.
             ["L1", "L2", "HBM", "LDS"]).
-        peak_symbols: Legacy map from memory level to Plotly marker symbol
         peak_colors: Map from memory level to its roof color, used to color an
             isolated kernel's dots by memory level
         default_peak: Memory region shown on load
@@ -53,8 +52,8 @@ class RooflineViewModel:
             Any of these may be None when the underlying data is missing.
         kernel_trace_indices: Indices into figure.data of the per-kernel
             scatter traces, in the same order as kernels.
-        roofline_traces: Bandwidth-roof (memory-level) line traces the peak
-            dropdown filters, each {"level", "traceIndex", "bandwidth"}.
+        roofline_traces: Bandwidth-roof (memory-level) line traces; clicking one
+            in the legend isolates it, each {"level", "traceIndex", "bandwidth"}.
         compute_traces: Horizontal compute-ceiling traces (VALU/matrix), each
             {"traceIndex", "peakPerf"}. These always stay shown, but their
             left endpoint tracks the steepest *visible* diagonal.
@@ -63,7 +62,6 @@ class RooflineViewModel:
     """
 
     peaks: list[str] = field(default_factory=list)
-    peak_symbols: dict[str, str] = field(default_factory=dict)
     peak_colors: dict[str, str] = field(default_factory=dict)
     default_peak: Optional[str] = None
     kernels: list[dict[str, Any]] = field(default_factory=list)
@@ -71,9 +69,6 @@ class RooflineViewModel:
     roofline_traces: list[dict[str, Any]] = field(default_factory=list)
     compute_traces: list[dict[str, Any]] = field(default_factory=list)
     roof_max_ai: float = 0.0
-    ai_unit: str = "FLOPs/Byte"
-    perf_unit: str = "GFLOP/s"
-    time_unit: str = "ns"
     div_id: str = PLOT_DIV_ID
 
     def to_json(self) -> str:
@@ -85,7 +80,6 @@ class RooflineViewModel:
         payload = {
             "divId": self.div_id,
             "peaks": self.peaks,
-            "peakSymbols": self.peak_symbols,
             "peakColors": self.peak_colors,
             "defaultPeak": self.default_peak,
             "kernels": self.kernels,
@@ -93,9 +87,6 @@ class RooflineViewModel:
             "rooflineTraces": self.roofline_traces,
             "computeTraces": self.compute_traces,
             "roofMaxAi": self.roof_max_ai,
-            "aiUnit": self.ai_unit,
-            "perfUnit": self.perf_unit,
-            "timeUnit": self.time_unit,
         }
         return json.dumps(payload, allow_nan=True).replace("</", "<\\/")
 
@@ -132,9 +123,6 @@ __CSS__
       <select id="roofline-peak-select"
               aria-label="Memory peak for kernel points"></select>
     </label>
-    <button type="button" id="roofline-show-all" class="roofline-btn">
-      Show all kernels
-    </button>
     <label class="roofline-control roofline-toggle"
            title="Automatically fit the view (recenter and zoom) to the visible points and the roofs they are measured against whenever you change the memory peak or kernel selection. Turn off to keep your own pan/zoom.">
       <input type="checkbox" id="roofline-auto-zoom">
@@ -148,16 +136,16 @@ __PLOT_FRAGMENT__
     <div class="roofline-panel-wrap">
     <aside class="roofline-panel">
       <div class="roofline-panel-title">
-        Kernels
-        <span id="roofline-kernel-count" class="roofline-kernel-count"></span>
+        <span class="roofline-panel-title-label">Kernels
+          <span id="roofline-kernel-count" class="roofline-kernel-count"></span>
+        </span>
+        <button type="button" id="roofline-show-all"
+                class="roofline-btn roofline-btn-sm">Show all kernels</button>
       </div>
       <p class="roofline-panel-help">Click a row to show only that kernel; click
         again to show all. Ctrl+click (&#8984;+click on Mac) to add or remove
         kernels.</p>
       <ul id="roofline-kernel-list" class="roofline-kernel-list"></ul>
-      <p id="roofline-longname-hint" class="roofline-longname-hint" hidden>
-        Tip: hover on a kernel name to see it in full.</p>
-      <div id="roofline-kernel-details" class="roofline-kernel-details"></div>
     </aside>
     </div>
   </div>
