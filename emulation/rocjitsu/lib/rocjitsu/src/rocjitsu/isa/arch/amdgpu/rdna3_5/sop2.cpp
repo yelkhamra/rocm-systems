@@ -6,6 +6,7 @@
 
 #include "rocjitsu/isa/arch/amdgpu/rdna3_5/sop2.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/execute_shared.h"
+#include "rocjitsu/vm/amdgpu/register_access.h"
 #include "rocjitsu/vm/amdgpu/wavefront.h"
 #include "util/data_types.h"
 #include "util/except.h"
@@ -1307,9 +1308,9 @@ SMinF32Sop2::SMinF32Sop2(const MachineInst *inst)
 }
 
 void SMinF32Sop2::execute_impl(amdgpu::Wavefront &wf) {
-  float result = std::min(std::bit_cast<float>(ssrc0.read_scalar(wf)),
-                          std::bit_cast<float>(ssrc1.read_scalar(wf)));
-  sdst.write_scalar(wf, std::bit_cast<uint32_t>(result));
+  float result = std::min(std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_scalar(ssrc0)),
+                          std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_scalar(ssrc1)));
+  amdgpu::RegisterAccess(wf).write_scalar(sdst, std::bit_cast<uint32_t>(result));
 }
 
 SMaxF32Sop2::SMaxF32Sop2(const MachineInst *inst)
@@ -1333,9 +1334,9 @@ SMaxF32Sop2::SMaxF32Sop2(const MachineInst *inst)
 }
 
 void SMaxF32Sop2::execute_impl(amdgpu::Wavefront &wf) {
-  float result = std::max(std::bit_cast<float>(ssrc0.read_scalar(wf)),
-                          std::bit_cast<float>(ssrc1.read_scalar(wf)));
-  sdst.write_scalar(wf, std::bit_cast<uint32_t>(result));
+  float result = std::max(std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_scalar(ssrc0)),
+                          std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_scalar(ssrc1)));
+  amdgpu::RegisterAccess(wf).write_scalar(sdst, std::bit_cast<uint32_t>(result));
 }
 
 SMulF32Sop2::SMulF32Sop2(const MachineInst *inst)
@@ -1387,10 +1388,10 @@ SFmaakF32Sop2::SFmaakF32Sop2(const MachineInst *inst)
 }
 
 void SFmaakF32Sop2::execute_impl(amdgpu::Wavefront &wf) {
-  float result = std::fma(std::bit_cast<float>(ssrc0.read_scalar(wf)),
-                          std::bit_cast<float>(ssrc1.read_scalar(wf)),
-                          std::bit_cast<float>(src2.read_scalar(wf)));
-  sdst.write_scalar(wf, std::bit_cast<uint32_t>(result));
+  float result = std::fma(std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_scalar(ssrc0)),
+                          std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_scalar(ssrc1)),
+                          std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_scalar(src2)));
+  amdgpu::RegisterAccess(wf).write_scalar(sdst, std::bit_cast<uint32_t>(result));
 }
 
 SFmamkF32Sop2::SFmamkF32Sop2(const MachineInst *inst)
@@ -1420,10 +1421,10 @@ SFmamkF32Sop2::SFmamkF32Sop2(const MachineInst *inst)
 }
 
 void SFmamkF32Sop2::execute_impl(amdgpu::Wavefront &wf) {
-  float result = std::fma(std::bit_cast<float>(ssrc0.read_scalar(wf)),
-                          std::bit_cast<float>(src2.read_scalar(wf)),
-                          std::bit_cast<float>(ssrc1.read_scalar(wf)));
-  sdst.write_scalar(wf, std::bit_cast<uint32_t>(result));
+  float result = std::fma(std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_scalar(ssrc0)),
+                          std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_scalar(src2)),
+                          std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_scalar(ssrc1)));
+  amdgpu::RegisterAccess(wf).write_scalar(sdst, std::bit_cast<uint32_t>(result));
 }
 
 SFmacF32Sop2::SFmacF32Sop2(const MachineInst *inst)
@@ -1571,9 +1572,10 @@ void SMinF16Sop2::implicit_uses(RegisterSet &uses) const {
 }
 
 void SMinF16Sop2::execute_impl(amdgpu::Wavefront &wf) {
-  float result = std::min(util::f16_to_f32(static_cast<uint16_t>(ssrc0.read_scalar(wf))),
-                          util::f16_to_f32(static_cast<uint16_t>(ssrc1.read_scalar(wf))));
-  sdst.write_scalar(wf, util::f32_to_f16(result));
+  float result = std::min(
+      util::f16_to_f32(static_cast<uint16_t>(amdgpu::RegisterAccess(wf).read_scalar(ssrc0))),
+      util::f16_to_f32(static_cast<uint16_t>(amdgpu::RegisterAccess(wf).read_scalar(ssrc1))));
+  amdgpu::RegisterAccess(wf).write_scalar(sdst, util::f32_to_f16(result));
 }
 
 SMaxF16Sop2::SMaxF16Sop2(const MachineInst *inst)
@@ -1605,9 +1607,10 @@ void SMaxF16Sop2::implicit_uses(RegisterSet &uses) const {
 }
 
 void SMaxF16Sop2::execute_impl(amdgpu::Wavefront &wf) {
-  float result = std::max(util::f16_to_f32(static_cast<uint16_t>(ssrc0.read_scalar(wf))),
-                          util::f16_to_f32(static_cast<uint16_t>(ssrc1.read_scalar(wf))));
-  sdst.write_scalar(wf, util::f32_to_f16(result));
+  float result = std::max(
+      util::f16_to_f32(static_cast<uint16_t>(amdgpu::RegisterAccess(wf).read_scalar(ssrc0))),
+      util::f16_to_f32(static_cast<uint16_t>(amdgpu::RegisterAccess(wf).read_scalar(ssrc1))));
+  amdgpu::RegisterAccess(wf).write_scalar(sdst, util::f32_to_f16(result));
 }
 
 SMulF16Sop2::SMulF16Sop2(const MachineInst *inst)

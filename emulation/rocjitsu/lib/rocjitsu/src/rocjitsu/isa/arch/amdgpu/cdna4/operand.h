@@ -25,6 +25,8 @@ public:
   std::optional<uint64_t> literal64_value() const override;
   std::optional<uint64_t> const_value() const override;
   std::optional<RegisterRef> to_register_ref() const override;
+
+private:
   uint32_t read_scalar(const amdgpu::Wavefront &wf) const override;
   uint32_t read_lane(const amdgpu::Wavefront &wf, uint32_t lane) const override;
   void write_scalar(amdgpu::Wavefront &wf, uint32_t val) const override;

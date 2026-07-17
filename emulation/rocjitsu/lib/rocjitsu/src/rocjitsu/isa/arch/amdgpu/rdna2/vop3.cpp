@@ -7,6 +7,7 @@
 #include "rocjitsu/isa/arch/amdgpu/rdna2/vop3.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/execute_shared.h"
 #include "rocjitsu/isa/arch/amdgpu/shared/transcendental.h"
+#include "rocjitsu/vm/amdgpu/register_access.h"
 #include "rocjitsu/vm/amdgpu/wavefront.h"
 #include "util/data_types.h"
 #include "util/except.h"
@@ -138,11 +139,11 @@ void VReadfirstlaneB32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   uint32_t val = 0;
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (exec & (1ULL << lane)) {
-      val = src0.read_lane(wf, lane);
+      val = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
       break;
     }
   }
-  vdst.write_scalar(wf, val);
+  amdgpu::RegisterAccess(wf).write_scalar(vdst, val);
 }
 
 VCvtI32F64Vop3::VCvtI32F64Vop3(const MachineInst *inst)
@@ -1123,7 +1124,8 @@ void VMovreldB32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    rel_dst.write_lane(wf, lane, src0.read_lane(wf, lane));
+    amdgpu::RegisterAccess(wf).write_lane(rel_dst, lane,
+                                          amdgpu::RegisterAccess(wf).read_lane(src0, lane));
   }
 }
 
@@ -1154,7 +1156,8 @@ void VMovrelsB32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    vdst.write_lane(wf, lane, rel_src.read_lane(wf, lane));
+    amdgpu::RegisterAccess(wf).write_lane(vdst, lane,
+                                          amdgpu::RegisterAccess(wf).read_lane(rel_src, lane));
   }
 }
 
@@ -1845,38 +1848,39 @@ void VFmacLegacyF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    vdst.write_lane(wf, lane, std::bit_cast<uint32_t>([&]() {
-                      float v = [&]() {
-                        float v = std::fma(
-                            [&]() {
-                              float sv = std::bit_cast<float>(src0.read_lane(wf, lane));
-                              if (inst_.abs & (1u << 0))
-                                sv = std::fabs(sv);
-                              if (inst_.neg & (1u << 0))
-                                sv = -sv;
-                              return sv;
-                            }(),
-                            [&]() {
-                              float sv = std::bit_cast<float>(src1.read_lane(wf, lane));
-                              if (inst_.abs & (1u << 1))
-                                sv = std::fabs(sv);
-                              if (inst_.neg & (1u << 1))
-                                sv = -sv;
-                              return sv;
-                            }(),
-                            std::bit_cast<float>(vdst.read_lane(wf, lane)));
-                        if (inst_.omod == 1)
-                          v *= 2.0f;
-                        else if (inst_.omod == 2)
-                          v *= 4.0f;
-                        else if (inst_.omod == 3)
-                          v *= 0.5f;
-                        return v;
-                      }();
-                      if (inst_.clamp)
-                        v = std::clamp(v, 0.0f, 1.0f);
-                      return v;
-                    }()));
+    amdgpu::RegisterAccess(wf).write_lane(
+        vdst, lane, std::bit_cast<uint32_t>([&]() {
+          float v = [&]() {
+            float v = std::fma(
+                [&]() {
+                  float sv = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+                  if (inst_.abs & (1u << 0))
+                    sv = std::fabs(sv);
+                  if (inst_.neg & (1u << 0))
+                    sv = -sv;
+                  return sv;
+                }(),
+                [&]() {
+                  float sv = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
+                  if (inst_.abs & (1u << 1))
+                    sv = std::fabs(sv);
+                  if (inst_.neg & (1u << 1))
+                    sv = -sv;
+                  return sv;
+                }(),
+                std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(vdst, lane)));
+            if (inst_.omod == 1)
+              v *= 2.0f;
+            else if (inst_.omod == 2)
+              v *= 4.0f;
+            else if (inst_.omod == 3)
+              v *= 0.5f;
+            return v;
+          }();
+          if (inst_.clamp)
+            v = std::clamp(v, 0.0f, 1.0f);
+          return v;
+        }()));
   }
 }
 
@@ -2730,45 +2734,46 @@ void VFmaLegacyF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    vdst.write_lane(wf, lane, std::bit_cast<uint32_t>([&]() {
-                      float v = [&]() {
-                        float v = std::fma(
-                            [&]() {
-                              float sv = std::bit_cast<float>(src0.read_lane(wf, lane));
-                              if (inst_.abs & (1u << 0))
-                                sv = std::fabs(sv);
-                              if (inst_.neg & (1u << 0))
-                                sv = -sv;
-                              return sv;
-                            }(),
-                            [&]() {
-                              float sv = std::bit_cast<float>(src1.read_lane(wf, lane));
-                              if (inst_.abs & (1u << 1))
-                                sv = std::fabs(sv);
-                              if (inst_.neg & (1u << 1))
-                                sv = -sv;
-                              return sv;
-                            }(),
-                            [&]() {
-                              float sv = std::bit_cast<float>(src2.read_lane(wf, lane));
-                              if (inst_.abs & (1u << 2))
-                                sv = std::fabs(sv);
-                              if (inst_.neg & (1u << 2))
-                                sv = -sv;
-                              return sv;
-                            }());
-                        if (inst_.omod == 1)
-                          v *= 2.0f;
-                        else if (inst_.omod == 2)
-                          v *= 4.0f;
-                        else if (inst_.omod == 3)
-                          v *= 0.5f;
-                        return v;
-                      }();
-                      if (inst_.clamp)
-                        v = std::clamp(v, 0.0f, 1.0f);
-                      return v;
-                    }()));
+    amdgpu::RegisterAccess(wf).write_lane(
+        vdst, lane, std::bit_cast<uint32_t>([&]() {
+          float v = [&]() {
+            float v = std::fma(
+                [&]() {
+                  float sv = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+                  if (inst_.abs & (1u << 0))
+                    sv = std::fabs(sv);
+                  if (inst_.neg & (1u << 0))
+                    sv = -sv;
+                  return sv;
+                }(),
+                [&]() {
+                  float sv = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
+                  if (inst_.abs & (1u << 1))
+                    sv = std::fabs(sv);
+                  if (inst_.neg & (1u << 1))
+                    sv = -sv;
+                  return sv;
+                }(),
+                [&]() {
+                  float sv = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src2, lane));
+                  if (inst_.abs & (1u << 2))
+                    sv = std::fabs(sv);
+                  if (inst_.neg & (1u << 2))
+                    sv = -sv;
+                  return sv;
+                }());
+            if (inst_.omod == 1)
+              v *= 2.0f;
+            else if (inst_.omod == 2)
+              v *= 4.0f;
+            else if (inst_.omod == 3)
+              v *= 0.5f;
+            return v;
+          }();
+          if (inst_.clamp)
+            v = std::clamp(v, 0.0f, 1.0f);
+          return v;
+        }()));
   }
 }
 
@@ -5450,8 +5455,8 @@ VReadlaneB32Vop3::VReadlaneB32Vop3(const MachineInst *inst)
 }
 
 void VReadlaneB32Vop3::execute_impl(amdgpu::Wavefront &wf) {
-  uint32_t lane = src1.read_scalar(wf);
-  vdst.write_scalar(wf, src0.read_lane(wf, lane));
+  uint32_t lane = amdgpu::RegisterAccess(wf).read_scalar(src1);
+  amdgpu::RegisterAccess(wf).write_scalar(vdst, amdgpu::RegisterAccess(wf).read_lane(src0, lane));
 }
 
 VWritelaneB32Vop3::VWritelaneB32Vop3(const MachineInst *inst)
@@ -5477,9 +5482,9 @@ VWritelaneB32Vop3::VWritelaneB32Vop3(const MachineInst *inst)
 }
 
 void VWritelaneB32Vop3::execute_impl(amdgpu::Wavefront &wf) {
-  uint32_t val = src0.read_scalar(wf);
-  uint32_t lane = src1.read_scalar(wf);
-  vdst.write_lane(wf, lane, val);
+  uint32_t val = amdgpu::RegisterAccess(wf).read_scalar(src0);
+  uint32_t lane = amdgpu::RegisterAccess(wf).read_scalar(src1);
+  amdgpu::RegisterAccess(wf).write_lane(vdst, lane, val);
 }
 
 VLdexpF32Vop3::VLdexpF32Vop3(const MachineInst *inst)
@@ -5948,12 +5953,13 @@ void VPermlane16B32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t exec = wf.exec();
   uint32_t snap[64];
   for (uint32_t i = 0; i < wf.wf_size(); ++i)
-    snap[i] = src0.read_lane(wf, i);
+    snap[i] = amdgpu::RegisterAccess(wf).read_lane(src0, i);
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
     uint32_t sub = lane & 0xF;
-    uint32_t sel_word = (sub < 8u) ? src1.read_scalar(wf) : src2.read_scalar(wf);
+    uint32_t sel_word = (sub < 8u) ? amdgpu::RegisterAccess(wf).read_scalar(src1)
+                                   : amdgpu::RegisterAccess(wf).read_scalar(src2);
     uint32_t sel = (sel_word >> ((sub & 7u) * 4u)) & 0xF;
     uint32_t src_lane = (lane & ~0xFu) | sel;
     if (src_lane >= wf.wf_size())
@@ -5961,10 +5967,10 @@ void VPermlane16B32Vop3::execute_impl(amdgpu::Wavefront &wf) {
     bool src_active = (exec & (1ULL << src_lane)) != 0;
     if (!src_active && !fi) {
       if (bound_ctrl)
-        vdst.write_lane(wf, lane, 0);
+        amdgpu::RegisterAccess(wf).write_lane(vdst, lane, 0);
       continue;
     }
-    vdst.write_lane(wf, lane, snap[src_lane]);
+    amdgpu::RegisterAccess(wf).write_lane(vdst, lane, snap[src_lane]);
   }
 }
 
@@ -6001,12 +6007,13 @@ void VPermlanex16B32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t exec = wf.exec();
   uint32_t snap[64];
   for (uint32_t i = 0; i < wf.wf_size(); ++i)
-    snap[i] = src0.read_lane(wf, i);
+    snap[i] = amdgpu::RegisterAccess(wf).read_lane(src0, i);
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
     uint32_t sub = lane & 0xF;
-    uint32_t sel_word = (sub < 8u) ? src1.read_scalar(wf) : src2.read_scalar(wf);
+    uint32_t sel_word = (sub < 8u) ? amdgpu::RegisterAccess(wf).read_scalar(src1)
+                                   : amdgpu::RegisterAccess(wf).read_scalar(src2);
     uint32_t sel = (sel_word >> ((sub & 7u) * 4u)) & 0xF;
     uint32_t row_base = lane & ~0x1Fu;
     uint32_t half = (lane ^ 0x10u) & 0x10u;
@@ -6016,10 +6023,10 @@ void VPermlanex16B32Vop3::execute_impl(amdgpu::Wavefront &wf) {
     bool src_active = (exec & (1ULL << src_lane)) != 0;
     if (!src_active && !fi) {
       if (bound_ctrl)
-        vdst.write_lane(wf, lane, 0);
+        amdgpu::RegisterAccess(wf).write_lane(vdst, lane, 0);
       continue;
     }
-    vdst.write_lane(wf, lane, snap[src_lane]);
+    amdgpu::RegisterAccess(wf).write_lane(vdst, lane, snap[src_lane]);
   }
 }
 
@@ -6506,8 +6513,8 @@ void VCmpxLtF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -6550,8 +6557,8 @@ void VCmpxEqF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -6594,8 +6601,8 @@ void VCmpxLeF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -6638,8 +6645,8 @@ void VCmpxGtF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -6682,8 +6689,8 @@ void VCmpxLgF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -6726,8 +6733,8 @@ void VCmpxGeF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -6770,8 +6777,8 @@ void VCmpxOF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -6814,8 +6821,8 @@ void VCmpxUF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -6858,8 +6865,8 @@ void VCmpxNgeF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -6902,8 +6909,8 @@ void VCmpxNlgF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -6946,8 +6953,8 @@ void VCmpxNgtF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -6990,8 +6997,8 @@ void VCmpxNleF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -7034,8 +7041,8 @@ void VCmpxNeqF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -7078,8 +7085,8 @@ void VCmpxNltF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
-    float s1 = std::bit_cast<float>(src1.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    float s1 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -7657,8 +7664,8 @@ void VCmpxLtF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -7705,8 +7712,8 @@ void VCmpxEqF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -7753,8 +7760,8 @@ void VCmpxLeF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -7801,8 +7808,8 @@ void VCmpxGtF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -7849,8 +7856,8 @@ void VCmpxLgF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -7897,8 +7904,8 @@ void VCmpxGeF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -7945,8 +7952,8 @@ void VCmpxOF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -7993,8 +8000,8 @@ void VCmpxUF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -8041,8 +8048,8 @@ void VCmpxNgeF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -8089,8 +8096,8 @@ void VCmpxNlgF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -8137,8 +8144,8 @@ void VCmpxNgtF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -8185,8 +8192,8 @@ void VCmpxNleF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -8233,8 +8240,8 @@ void VCmpxNeqF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -8281,8 +8288,8 @@ void VCmpxNltF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
-    double s1 = std::bit_cast<double>(src1.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    double s1 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
@@ -8807,8 +8814,8 @@ void VCmpxLtI32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    int32_t s0 = static_cast<int32_t>(src0.read_lane(wf, lane));
-    int32_t s1 = static_cast<int32_t>(src1.read_lane(wf, lane));
+    int32_t s0 = static_cast<int32_t>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    int32_t s1 = static_cast<int32_t>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (s0 < s1)
       result |= (1ULL << lane);
   }
@@ -8843,8 +8850,8 @@ void VCmpxEqI32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    int32_t s0 = static_cast<int32_t>(src0.read_lane(wf, lane));
-    int32_t s1 = static_cast<int32_t>(src1.read_lane(wf, lane));
+    int32_t s0 = static_cast<int32_t>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    int32_t s1 = static_cast<int32_t>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (s0 == s1)
       result |= (1ULL << lane);
   }
@@ -8879,8 +8886,8 @@ void VCmpxLeI32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    int32_t s0 = static_cast<int32_t>(src0.read_lane(wf, lane));
-    int32_t s1 = static_cast<int32_t>(src1.read_lane(wf, lane));
+    int32_t s0 = static_cast<int32_t>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    int32_t s1 = static_cast<int32_t>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (s0 <= s1)
       result |= (1ULL << lane);
   }
@@ -8915,8 +8922,8 @@ void VCmpxGtI32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    int32_t s0 = static_cast<int32_t>(src0.read_lane(wf, lane));
-    int32_t s1 = static_cast<int32_t>(src1.read_lane(wf, lane));
+    int32_t s0 = static_cast<int32_t>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    int32_t s1 = static_cast<int32_t>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (s0 > s1)
       result |= (1ULL << lane);
   }
@@ -8951,8 +8958,8 @@ void VCmpxNeI32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    int32_t s0 = static_cast<int32_t>(src0.read_lane(wf, lane));
-    int32_t s1 = static_cast<int32_t>(src1.read_lane(wf, lane));
+    int32_t s0 = static_cast<int32_t>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    int32_t s1 = static_cast<int32_t>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (s0 != s1)
       result |= (1ULL << lane);
   }
@@ -8987,8 +8994,8 @@ void VCmpxGeI32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    int32_t s0 = static_cast<int32_t>(src0.read_lane(wf, lane));
-    int32_t s1 = static_cast<int32_t>(src1.read_lane(wf, lane));
+    int32_t s0 = static_cast<int32_t>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
+    int32_t s1 = static_cast<int32_t>(amdgpu::RegisterAccess(wf).read_lane(src1, lane));
     if (s0 >= s1)
       result |= (1ULL << lane);
   }
@@ -9056,12 +9063,12 @@ void VCmpxClassF32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    float s0 = std::bit_cast<float>(src0.read_lane(wf, lane));
+    float s0 = std::bit_cast<float>(amdgpu::RegisterAccess(wf).read_lane(src0, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
       s0 = -s0;
-    uint32_t mask = src1.read_lane(wf, lane);
+    uint32_t mask = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     bool match = false;
     if ((mask & 0x001) && std::isnan(s0) && (std::bit_cast<uint32_t>(s0) & 0x00400000) == 0)
       match = true;
@@ -9122,8 +9129,8 @@ void VCmpxLtI16Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0_raw = src0.read_lane(wf, lane);
-    uint32_t s1_raw = src1.read_lane(wf, lane);
+    uint32_t s0_raw = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1_raw = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (opsel & (1u << 0))
       s0_raw >>= 16;
     if (opsel & (1u << 1))
@@ -9167,8 +9174,8 @@ void VCmpxEqI16Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0_raw = src0.read_lane(wf, lane);
-    uint32_t s1_raw = src1.read_lane(wf, lane);
+    uint32_t s0_raw = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1_raw = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (opsel & (1u << 0))
       s0_raw >>= 16;
     if (opsel & (1u << 1))
@@ -9212,8 +9219,8 @@ void VCmpxLeI16Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0_raw = src0.read_lane(wf, lane);
-    uint32_t s1_raw = src1.read_lane(wf, lane);
+    uint32_t s0_raw = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1_raw = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (opsel & (1u << 0))
       s0_raw >>= 16;
     if (opsel & (1u << 1))
@@ -9257,8 +9264,8 @@ void VCmpxGtI16Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0_raw = src0.read_lane(wf, lane);
-    uint32_t s1_raw = src1.read_lane(wf, lane);
+    uint32_t s0_raw = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1_raw = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (opsel & (1u << 0))
       s0_raw >>= 16;
     if (opsel & (1u << 1))
@@ -9302,8 +9309,8 @@ void VCmpxNeI16Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0_raw = src0.read_lane(wf, lane);
-    uint32_t s1_raw = src1.read_lane(wf, lane);
+    uint32_t s0_raw = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1_raw = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (opsel & (1u << 0))
       s0_raw >>= 16;
     if (opsel & (1u << 1))
@@ -9347,8 +9354,8 @@ void VCmpxGeI16Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0_raw = src0.read_lane(wf, lane);
-    uint32_t s1_raw = src1.read_lane(wf, lane);
+    uint32_t s0_raw = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1_raw = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (opsel & (1u << 0))
       s0_raw >>= 16;
     if (opsel & (1u << 1))
@@ -9882,8 +9889,8 @@ void VCmpxLtI64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    int64_t s0 = static_cast<int64_t>(src0.read_lane64(wf, lane));
-    int64_t s1 = static_cast<int64_t>(src1.read_lane64(wf, lane));
+    int64_t s0 = static_cast<int64_t>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    int64_t s1 = static_cast<int64_t>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (s0 < s1)
       result |= (1ULL << lane);
   }
@@ -9918,8 +9925,8 @@ void VCmpxEqI64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    int64_t s0 = static_cast<int64_t>(src0.read_lane64(wf, lane));
-    int64_t s1 = static_cast<int64_t>(src1.read_lane64(wf, lane));
+    int64_t s0 = static_cast<int64_t>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    int64_t s1 = static_cast<int64_t>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (s0 == s1)
       result |= (1ULL << lane);
   }
@@ -9954,8 +9961,8 @@ void VCmpxLeI64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    int64_t s0 = static_cast<int64_t>(src0.read_lane64(wf, lane));
-    int64_t s1 = static_cast<int64_t>(src1.read_lane64(wf, lane));
+    int64_t s0 = static_cast<int64_t>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    int64_t s1 = static_cast<int64_t>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (s0 <= s1)
       result |= (1ULL << lane);
   }
@@ -9990,8 +9997,8 @@ void VCmpxGtI64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    int64_t s0 = static_cast<int64_t>(src0.read_lane64(wf, lane));
-    int64_t s1 = static_cast<int64_t>(src1.read_lane64(wf, lane));
+    int64_t s0 = static_cast<int64_t>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    int64_t s1 = static_cast<int64_t>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (s0 > s1)
       result |= (1ULL << lane);
   }
@@ -10026,8 +10033,8 @@ void VCmpxNeI64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    int64_t s0 = static_cast<int64_t>(src0.read_lane64(wf, lane));
-    int64_t s1 = static_cast<int64_t>(src1.read_lane64(wf, lane));
+    int64_t s0 = static_cast<int64_t>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    int64_t s1 = static_cast<int64_t>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (s0 != s1)
       result |= (1ULL << lane);
   }
@@ -10062,8 +10069,8 @@ void VCmpxGeI64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    int64_t s0 = static_cast<int64_t>(src0.read_lane64(wf, lane));
-    int64_t s1 = static_cast<int64_t>(src1.read_lane64(wf, lane));
+    int64_t s0 = static_cast<int64_t>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
+    int64_t s1 = static_cast<int64_t>(amdgpu::RegisterAccess(wf).read_lane64(src1, lane));
     if (s0 >= s1)
       result |= (1ULL << lane);
   }
@@ -10133,12 +10140,12 @@ void VCmpxClassF64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    double s0 = std::bit_cast<double>(src0.read_lane64(wf, lane));
+    double s0 = std::bit_cast<double>(amdgpu::RegisterAccess(wf).read_lane64(src0, lane));
     if (inst_.abs & (1u << 0))
       s0 = std::fabs(s0);
     if (inst_.neg & (1u << 0))
       s0 = -s0;
-    uint32_t mask = src1.read_lane(wf, lane);
+    uint32_t mask = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     bool match = false;
     if ((mask & 0x001) && std::isnan(s0) &&
         (std::bit_cast<uint64_t>(s0) & 0x0008000000000000ULL) == 0)
@@ -10201,8 +10208,8 @@ void VCmpxLtU16Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0_raw = src0.read_lane(wf, lane);
-    uint32_t s1_raw = src1.read_lane(wf, lane);
+    uint32_t s0_raw = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1_raw = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (opsel & (1u << 0))
       s0_raw >>= 16;
     if (opsel & (1u << 1))
@@ -10246,8 +10253,8 @@ void VCmpxEqU16Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0_raw = src0.read_lane(wf, lane);
-    uint32_t s1_raw = src1.read_lane(wf, lane);
+    uint32_t s0_raw = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1_raw = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (opsel & (1u << 0))
       s0_raw >>= 16;
     if (opsel & (1u << 1))
@@ -10291,8 +10298,8 @@ void VCmpxLeU16Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0_raw = src0.read_lane(wf, lane);
-    uint32_t s1_raw = src1.read_lane(wf, lane);
+    uint32_t s0_raw = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1_raw = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (opsel & (1u << 0))
       s0_raw >>= 16;
     if (opsel & (1u << 1))
@@ -10336,8 +10343,8 @@ void VCmpxGtU16Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0_raw = src0.read_lane(wf, lane);
-    uint32_t s1_raw = src1.read_lane(wf, lane);
+    uint32_t s0_raw = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1_raw = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (opsel & (1u << 0))
       s0_raw >>= 16;
     if (opsel & (1u << 1))
@@ -10381,8 +10388,8 @@ void VCmpxNeU16Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0_raw = src0.read_lane(wf, lane);
-    uint32_t s1_raw = src1.read_lane(wf, lane);
+    uint32_t s0_raw = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1_raw = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (opsel & (1u << 0))
       s0_raw >>= 16;
     if (opsel & (1u << 1))
@@ -10426,8 +10433,8 @@ void VCmpxGeU16Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0_raw = src0.read_lane(wf, lane);
-    uint32_t s1_raw = src1.read_lane(wf, lane);
+    uint32_t s0_raw = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1_raw = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (opsel & (1u << 0))
       s0_raw >>= 16;
     if (opsel & (1u << 1))
@@ -10913,8 +10920,8 @@ void VCmpxLtU32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0 = src0.read_lane(wf, lane);
-    uint32_t s1 = src1.read_lane(wf, lane);
+    uint32_t s0 = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1 = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (s0 < s1)
       result |= (1ULL << lane);
   }
@@ -10949,8 +10956,8 @@ void VCmpxEqU32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0 = src0.read_lane(wf, lane);
-    uint32_t s1 = src1.read_lane(wf, lane);
+    uint32_t s0 = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1 = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (s0 == s1)
       result |= (1ULL << lane);
   }
@@ -10985,8 +10992,8 @@ void VCmpxLeU32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0 = src0.read_lane(wf, lane);
-    uint32_t s1 = src1.read_lane(wf, lane);
+    uint32_t s0 = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1 = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (s0 <= s1)
       result |= (1ULL << lane);
   }
@@ -11021,8 +11028,8 @@ void VCmpxGtU32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0 = src0.read_lane(wf, lane);
-    uint32_t s1 = src1.read_lane(wf, lane);
+    uint32_t s0 = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1 = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (s0 > s1)
       result |= (1ULL << lane);
   }
@@ -11057,8 +11064,8 @@ void VCmpxNeU32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0 = src0.read_lane(wf, lane);
-    uint32_t s1 = src1.read_lane(wf, lane);
+    uint32_t s0 = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1 = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (s0 != s1)
       result |= (1ULL << lane);
   }
@@ -11093,8 +11100,8 @@ void VCmpxGeU32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint32_t s0 = src0.read_lane(wf, lane);
-    uint32_t s1 = src1.read_lane(wf, lane);
+    uint32_t s0 = amdgpu::RegisterAccess(wf).read_lane(src0, lane);
+    uint32_t s1 = amdgpu::RegisterAccess(wf).read_lane(src1, lane);
     if (s0 >= s1)
       result |= (1ULL << lane);
   }
@@ -11986,8 +11993,8 @@ void VCmpxLtU64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint64_t s0 = src0.read_lane64(wf, lane);
-    uint64_t s1 = src1.read_lane64(wf, lane);
+    uint64_t s0 = amdgpu::RegisterAccess(wf).read_lane64(src0, lane);
+    uint64_t s1 = amdgpu::RegisterAccess(wf).read_lane64(src1, lane);
     if (s0 < s1)
       result |= (1ULL << lane);
   }
@@ -12022,8 +12029,8 @@ void VCmpxEqU64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint64_t s0 = src0.read_lane64(wf, lane);
-    uint64_t s1 = src1.read_lane64(wf, lane);
+    uint64_t s0 = amdgpu::RegisterAccess(wf).read_lane64(src0, lane);
+    uint64_t s1 = amdgpu::RegisterAccess(wf).read_lane64(src1, lane);
     if (s0 == s1)
       result |= (1ULL << lane);
   }
@@ -12058,8 +12065,8 @@ void VCmpxLeU64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint64_t s0 = src0.read_lane64(wf, lane);
-    uint64_t s1 = src1.read_lane64(wf, lane);
+    uint64_t s0 = amdgpu::RegisterAccess(wf).read_lane64(src0, lane);
+    uint64_t s1 = amdgpu::RegisterAccess(wf).read_lane64(src1, lane);
     if (s0 <= s1)
       result |= (1ULL << lane);
   }
@@ -12094,8 +12101,8 @@ void VCmpxGtU64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint64_t s0 = src0.read_lane64(wf, lane);
-    uint64_t s1 = src1.read_lane64(wf, lane);
+    uint64_t s0 = amdgpu::RegisterAccess(wf).read_lane64(src0, lane);
+    uint64_t s1 = amdgpu::RegisterAccess(wf).read_lane64(src1, lane);
     if (s0 > s1)
       result |= (1ULL << lane);
   }
@@ -12130,8 +12137,8 @@ void VCmpxNeU64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint64_t s0 = src0.read_lane64(wf, lane);
-    uint64_t s1 = src1.read_lane64(wf, lane);
+    uint64_t s0 = amdgpu::RegisterAccess(wf).read_lane64(src0, lane);
+    uint64_t s1 = amdgpu::RegisterAccess(wf).read_lane64(src1, lane);
     if (s0 != s1)
       result |= (1ULL << lane);
   }
@@ -12166,8 +12173,8 @@ void VCmpxGeU64Vop3::execute_impl(amdgpu::Wavefront &wf) {
   for (uint32_t lane = 0; lane < wf.wf_size(); ++lane) {
     if (!(exec & (1ULL << lane)))
       continue;
-    uint64_t s0 = src0.read_lane64(wf, lane);
-    uint64_t s1 = src1.read_lane64(wf, lane);
+    uint64_t s0 = amdgpu::RegisterAccess(wf).read_lane64(src0, lane);
+    uint64_t s1 = amdgpu::RegisterAccess(wf).read_lane64(src1, lane);
     if (s0 >= s1)
       result |= (1ULL << lane);
   }

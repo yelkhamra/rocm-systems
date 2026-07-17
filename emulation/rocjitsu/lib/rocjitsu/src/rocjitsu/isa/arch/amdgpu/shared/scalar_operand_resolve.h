@@ -5,6 +5,7 @@
 #define ROCJITSU_ISA_AMDGPU_SHARED_SCALAR_OPERAND_RESOLVE_H_
 
 #include "rocjitsu/vm/amdgpu/compute_unit.h"
+#include "rocjitsu/vm/amdgpu/register_access.h"
 #include "rocjitsu/vm/amdgpu/wavefront.h"
 #include <cstdint>
 #include <optional>
@@ -54,13 +55,13 @@ inline uint32_t resolve_src_scalar(const Wavefront &wf, int ev, int m0_ev) {
   if (ev == 103)
     return static_cast<uint32_t>(wf.scratch_base() >> 32);
   if (ev <= 105)
-    return wf.cu().read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev));
+    return RegisterAccess(wf).read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev));
   if (ev == 106)
     return static_cast<uint32_t>(wf.vcc());
   if (ev == 107)
     return static_cast<uint32_t>(wf.vcc() >> 32);
   if (ev >= 108 && ev <= 123)
-    return wf.cu().read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev));
+    return RegisterAccess(wf).read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev));
   if (m0_ev == 125 && ev == 124)
     return 0u; // NULL
   if (ev == m0_ev)
@@ -165,15 +166,17 @@ inline uint64_t resolve_src_scalar64(const Wavefront &wf, int ev, int m0_ev) {
   if (ev == 102)
     return wf.scratch_base();
   if (ev <= 105) {
-    uint32_t lo = wf.cu().read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev));
-    uint32_t hi = wf.cu().read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev + 1));
+    uint32_t lo = RegisterAccess(wf).read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev));
+    uint32_t hi =
+        RegisterAccess(wf).read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev + 1));
     return static_cast<uint64_t>(hi) << 32 | lo;
   }
   if (ev == 106)
     return wf.vcc();
   if (ev >= 108 && ev <= 122) {
-    uint32_t lo = wf.cu().read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev));
-    uint32_t hi = wf.cu().read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev + 1));
+    uint32_t lo = RegisterAccess(wf).read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev));
+    uint32_t hi =
+        RegisterAccess(wf).read_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev + 1));
     return static_cast<uint64_t>(hi) << 32 | lo;
   }
   if (m0_ev == 125 && ev == 124)
@@ -229,7 +232,7 @@ inline void resolve_dst_write(Wavefront &wf, int ev, uint32_t val, int m0_ev) {
     return;
   }
   if (ev <= 105) {
-    wf.cu().write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev), val);
+    RegisterAccess(wf).write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev), val);
     return;
   }
   if (ev == 106) {
@@ -241,7 +244,7 @@ inline void resolve_dst_write(Wavefront &wf, int ev, uint32_t val, int m0_ev) {
     return;
   }
   if (ev >= 108 && ev <= 123) {
-    wf.cu().write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev), val);
+    RegisterAccess(wf).write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev), val);
     return;
   }
   if (m0_ev == 125 && ev == 124)
@@ -267,10 +270,10 @@ inline void resolve_dst_write64(Wavefront &wf, int ev, uint64_t val) {
     return;
   }
   if (ev <= 105) {
-    wf.cu().write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev),
-                       static_cast<uint32_t>(val));
-    wf.cu().write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev + 1),
-                       static_cast<uint32_t>(val >> 32));
+    RegisterAccess(wf).write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev),
+                                  static_cast<uint32_t>(val));
+    RegisterAccess(wf).write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev + 1),
+                                  static_cast<uint32_t>(val >> 32));
     return;
   }
   if (ev == 106) {
@@ -278,10 +281,10 @@ inline void resolve_dst_write64(Wavefront &wf, int ev, uint64_t val) {
     return;
   }
   if (ev >= 108 && ev <= 122) {
-    wf.cu().write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev),
-                       static_cast<uint32_t>(val));
-    wf.cu().write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev + 1),
-                       static_cast<uint32_t>(val >> 32));
+    RegisterAccess(wf).write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev),
+                                  static_cast<uint32_t>(val));
+    RegisterAccess(wf).write_sgpr(wf.sgpr_alloc().base + static_cast<uint32_t>(ev + 1),
+                                  static_cast<uint32_t>(val >> 32));
     return;
   }
   if (ev == 124)
