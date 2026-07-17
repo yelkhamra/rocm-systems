@@ -489,7 +489,7 @@ InstrumentedCodeObjectDebug Instrumentor::patch_with_debug_summaries() {
   liveness_scope.reserve(blocks_.size());
   for (const auto &block : blocks_)
     liveness_scope.push_back(block.get());
-  const ExecMaskAnalysis exec{KernelBlockScope(liveness_scope), /*wave_size=*/64};
+  const ExecMaskAnalysis exec{KernelBlockScope(liveness_scope), obj_.kernel_wavefront_size(arch_)};
   const LivenessAnalysis liveness{KernelBlockScope(liveness_scope), exec};
 
   // Lay out the appended region as [probe bodies][trampolines]. Each distinct
