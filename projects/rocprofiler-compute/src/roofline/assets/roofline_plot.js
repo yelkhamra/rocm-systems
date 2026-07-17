@@ -66,12 +66,6 @@
     return SYMBOL_GLYPHS[peakSymbols[peak]] || SYMBOL_GLYPHS.circle;
   }
 
-  function boundLabel(status) {
-    return status === "Memory" || status === "Compute"
-      ? status + " Bound"
-      : status;
-  }
-
   function kernelIsVisible(kernel) {
     return state.selected.size === 0 || state.selected.has(kernel.name);
   }
@@ -168,7 +162,6 @@
     kernels.forEach(function (kernel) {
       var visible = kernelIsVisible(kernel);
       var points = visible ? pointsForCurrentPeak(kernel) : [];
-      var hoverName = kernel.hoverName || kernel.name;
       xs.push(
         points.map(function (point) {
           return point.ai;
@@ -184,9 +177,10 @@
           return peakSymbols[point.peak] || "circle";
         })
       );
+      // The full tooltip body is precomputed server-side; just pass it back.
       customdata.push(
         points.map(function (point) {
-          return [hoverName, point.peak, boundLabel(point.status)];
+          return [point.hover];
         })
       );
       visibility.push(visible && points.length > 0);
@@ -314,7 +308,16 @@
     if (!kernelList) {
       return;
     }
-    kernels.forEach(function (kernel, index) {
+    // Show the heaviest kernels first, but keep dataset.index pointing at the
+    // original kernels[] position so click handling and restyle stay aligned.
+    var order = kernels.map(function (_, index) {
+      return index;
+    });
+    order.sort(function (a, b) {
+      return (kernels[b].pctRuntime || 0) - (kernels[a].pctRuntime || 0);
+    });
+    order.forEach(function (index) {
+      var kernel = kernels[index];
       var item = document.createElement("li");
       item.className = "roofline-kernel-item";
       item.dataset.index = String(index);
@@ -330,6 +333,16 @@
 
       item.appendChild(swatch);
       item.appendChild(name);
+
+      // Percent of GPU resident time.
+      if (kernel.pctRuntime != null && isFinite(kernel.pctRuntime)) {
+        var pct = document.createElement("span");
+        pct.className = "roofline-kernel-pct";
+        pct.textContent = kernel.pctRuntime.toFixed(1) + "%";
+        pct.title = "Percent of GPU resident time";
+        item.appendChild(pct);
+      }
+
       item.addEventListener("click", function (event) {
         toggleKernel(kernel.name, event);
       });

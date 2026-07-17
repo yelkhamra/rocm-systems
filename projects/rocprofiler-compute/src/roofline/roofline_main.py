@@ -106,11 +106,74 @@ def peak_symbol(level_name: str) -> str:
 
 
 def truncate_kernel_name(name: str, limit: int = _HOVER_NAME_LIMIT) -> str:
-    """Shorten a kernel name for the hover tooltip, keeping the identifying
-    prefix and appending an ellipsis when it is clipped."""
+    """Shorten a kernel name for compact UI, keeping
+    the identifying prefix and appending an ellipsis when it is clipped."""
     if len(name) <= limit:
         return name
     return name[: limit - 1].rstrip() + "\u2026"
+
+
+def wrap_hover_name(name: str, width: int = 44) -> str:
+    """Wrap a full kernel name so long names stay readable in the tooltip."""
+    if not name:
+        return ""
+    chunks = [name[i : i + width] for i in range(0, len(name), width)]
+    escaped = [
+        chunk.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        for chunk in chunks
+    ]
+    return "<br>".join(escaped)
+
+
+def _fmt_hover_num(value: Any, digits: int = 2) -> str:
+    """Thousands-separated float for the tooltip, or N/A when missing."""
+    if value is None:
+        return "N/A"
+    try:
+        return f"{float(value):,.{digits}f}"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
+def _fmt_hover_int(value: Any) -> str:
+    """Thousands-separated integer for the tooltip, or N/A when missing."""
+    if value is None:
+        return "N/A"
+    try:
+        return f"{int(round(float(value))):,}"
+    except (TypeError, ValueError):
+        return "N/A"
+
+
+def build_point_hover(
+    name_html: str,
+    point: dict[str, Any],
+    limiter: str,
+    count: Optional[float],
+    total_time: Optional[float],
+    time_unit: str,
+    pct_runtime: Optional[float],
+    ops_flops: str,
+) -> str:
+    """Assemble the full HTML hover body for one kernel point."""
+    pct_roof = point.get("pctRoof")
+    pct_roof_txt = f"{float(pct_roof):.1f}%" if pct_roof is not None else "N/A"
+    time_txt = (
+        f"{_fmt_hover_num(total_time)} {time_unit}".strip()
+        if total_time is not None
+        else "N/A"
+    )
+    pct_run_txt = f"{float(pct_runtime):.2f}%" if pct_runtime is not None else "N/A"
+    lines = [
+        f"<b>{name_html}</b>",
+        f"{point['peak']} peak \u00b7 Limiter: {limiter}",
+        f"AI {_fmt_hover_num(point['ai'])} {ops_flops}s/Byte",
+        f"Perf {_fmt_hover_num(point['perf'])} G{ops_flops}/s "
+        f"({pct_roof_txt} of roof)",
+        f"Dispatches: {_fmt_hover_int(count)}",
+        f"Time: {time_txt} ({pct_run_txt} of runtime)",
+    ]
+    return "<br>".join(lines)
 
 
 def build_kernel_colors(num_kernels: int) -> list[str]:
@@ -336,17 +399,7 @@ class Roofline:
         the traces one-for-one and is the source of truth the client-side
         controller restyles from.
         """
-        # The name is carried in customdata (truncated) rather than via
-        # %{fullData.name} so a several-hundred-character kernel name can't blow
-        # out the tooltip. customdata is [name, peak, status] per point and is
-        # kept in sync by the client when it filters points.
-        hovertemplate = (
-            "<b>%{customdata[0]}</b><br>"
-            "%{customdata[1]} peak<br>"
-            f"AI %{{x:.2f}} {ops_flops}s/Byte<br>"
-            f"Perf %{{y:.2f}} G{ops_flops}/s<br>"
-            "%{customdata[2]}<extra></extra>"
-        )
+        hovertemplate = "%{customdata[0]}<extra></extra>"
 
         traces: list[go.Scatter] = []
         kernels_model: list[dict[str, Any]] = []
@@ -355,6 +408,7 @@ class Roofline:
         counts = self.__ai_data.get("counts", []) or []
         total_time = self.__ai_data.get("totalTime", []) or []
         pct_runtime = self.__ai_data.get("pctRuntime", []) or []
+        time_unit = self.__ai_data.get("timeUnit", "") or ""
         # The compute ridge is the same for every kernel; compute it once.
         min_peak = self._roof_min_peak(ceiling_data)
 
@@ -363,7 +417,6 @@ class Roofline:
             xs: list[float] = []
             ys: list[float] = []
             symbols: list[str] = []
-            customdata: list[list[str]] = []
             points: list[dict[str, Any]] = []
             level_ai: dict[str, float] = {}
 
@@ -385,9 +438,6 @@ class Roofline:
                     cache_level=cache_level,
                     ceiling_data=ceiling_data,
                 )
-                hover_status = (
-                    f"{status} Bound" if status in ("Memory", "Compute") else status
-                )
                 pct_roof = self._pct_of_roofline(
                     ai_value=ai_value,
                     performance=performance,
@@ -398,7 +448,6 @@ class Roofline:
                 xs.append(ai_value)
                 ys.append(performance)
                 symbols.append(peak_symbol(level_name))
-                customdata.append([hover_name, level_name, hover_status])
                 points.append({
                     "peak": level_name,
                     "ai": ai_value,
@@ -416,6 +465,30 @@ class Roofline:
                 if kernel_index < len(kernel_colors)
                 else None
             )
+            count_val = counts[kernel_index] if kernel_index < len(counts) else None
+            time_val = (
+                total_time[kernel_index] if kernel_index < len(total_time) else None
+            )
+            pct_val = (
+                pct_runtime[kernel_index] if kernel_index < len(pct_runtime) else None
+            )
+            limiter = self._determine_kernel_limiter(level_ai, ceiling_data)
+
+            # Build each point's tooltip now that the kernel-level fields exist.
+            wrapped_name = wrap_hover_name(kernel_name)
+            for point in points:
+                point["hover"] = build_point_hover(
+                    name_html=wrapped_name,
+                    point=point,
+                    limiter=limiter,
+                    count=count_val,
+                    total_time=time_val,
+                    time_unit=time_unit,
+                    pct_runtime=pct_val,
+                    ops_flops=ops_flops,
+                )
+            customdata = [[point["hover"]] for point in points]
+
             traces.append(
                 go.Scatter(
                     x=xs,
@@ -439,6 +512,10 @@ class Roofline:
                 "hoverName": hover_name,
                 "color": color,
                 "points": points,
+                "count": count_val,
+                "totalTime": time_val,
+                "pctRuntime": pct_val,
+                "limiter": limiter,
             })
 
         return traces, kernels_model
@@ -963,7 +1040,7 @@ class Roofline:
                     borderwidth=1,
                     itemsizing="constant",
                 ),
-                hoverlabel=dict(bgcolor="white", font_size=11),
+                hoverlabel=dict(bgcolor="white", font_size=11, align="left"),
             )
 
         # For additional datatypes stacked onto an existing figure, extend the

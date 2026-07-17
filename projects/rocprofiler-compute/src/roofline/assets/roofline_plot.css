@@ -224,6 +224,15 @@ body {
   overflow-wrap: anywhere;
 }
 
+.roofline-kernel-pct {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding-left: 8px;
+  color: var(--roofline-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .roofline-kernel-details {
   flex: 0 0 auto;
   min-height: 0;
