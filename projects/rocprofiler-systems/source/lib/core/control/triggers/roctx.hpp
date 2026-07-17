@@ -47,11 +47,11 @@ public:
 private:
     session&                           m_session;
     std::set<std::string, std::less<>> m_trace_regions;
-    std::unordered_set<std::uint64_t>   m_active_range_ids;
-    std::atomic<bool>                   m_in_region{ false };
-    std::atomic<bool>                   m_user_paused{ false };
-    std::atomic<bool>                   m_should_write{ true };
-    std::mutex                          m_mutex;
+    std::unordered_set<std::uint64_t>  m_active_range_ids;
+    std::atomic<bool>                  m_in_region{ false };
+    std::atomic<bool>                  m_user_paused{ false };
+    std::atomic<bool>                  m_should_write{ true };
+    std::mutex                         m_mutex;
 
     [[nodiscard]] vote compute_vote() const noexcept;
     [[nodiscard]] bool compute_should_write() const noexcept;

@@ -35,10 +35,7 @@ roctx::roctx(session& sess, std::string_view trace_regions)
     m_should_write.store(compute_should_write(), std::memory_order_relaxed);
 }
 
-roctx::~roctx()
-{
-    m_session.unregister_trigger(*this);
-}
+roctx::~roctx() { m_session.unregister_trigger(*this); }
 
 vote
 roctx::initial_vote() const noexcept

@@ -4,6 +4,7 @@
 #include "core/rocprofiler-sdk.hpp"
 #include "api.hpp"
 #include "binary/analysis.hpp"
+#include "common/delimit.hpp"
 #include "common/env_vars.hpp"
 #include "common/synchronized.hpp"
 #include "core/common.hpp"
@@ -96,7 +97,7 @@ get_roctx_client()
 {
     if(!g_roctx_client)
     {
-        const auto _domains = tim::delimit(
+        const auto _domains = rocprofsys::delimit(
             config::get_setting_value<std::string>(std::string{ env_vars::ROCM_DOMAINS })
                 .value_or(std::string{}),
             " ,;:\t\n");
@@ -114,10 +115,10 @@ get_roctx_client()
         }
 
         const auto roctx_config = roctx_client_config{
-            .pause_resume_enabled  = has_marker_domain,
-            .use_perfetto          = config::get_use_perfetto(),
-            .use_timemory          = config::get_use_timemory(),
-            .perfetto_annotations  = config::get_perfetto_annotations(),
+            .pause_resume_enabled   = has_marker_domain,
+            .use_perfetto           = config::get_use_perfetto(),
+            .use_timemory           = config::get_use_timemory(),
+            .perfetto_annotations   = config::get_perfetto_annotations(),
             .selected_trace_regions = roctx_traced_regions,
         };
         g_roctx_client = std::make_shared<roctx_client<>>(roctx_config);

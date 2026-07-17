@@ -103,11 +103,11 @@ TEST_F(roctx_client_test, constructor_creates_controller)
 {
     using namespace rocprofsys::rocprofiler_sdk;
 
-    const roctx_client_config config{ .pause_resume_enabled = true,
-                                       .use_perfetto = true,
-                                       .use_timemory = true,
-                                       .perfetto_annotations = false,
-                                       .selected_trace_regions = "TestRegion" };
+    const roctx_client_config        config{ .pause_resume_enabled   = true,
+                                             .use_perfetto           = true,
+                                             .use_timemory           = true,
+                                             .perfetto_annotations   = false,
+                                             .selected_trace_regions = "TestRegion" };
     roctx_client<mock_marker_policy> client(config);
     EXPECT_NE(client.get_session(), nullptr);
 }
@@ -116,11 +116,11 @@ TEST_F(roctx_client_test, constructor_without_region_filter)
 {
     using namespace rocprofsys::rocprofiler_sdk;
 
-    const roctx_client_config config{ .pause_resume_enabled = true,
-                                       .use_perfetto = true,
-                                       .use_timemory = true,
-                                       .perfetto_annotations = false,
-                                       .selected_trace_regions = "" };
+    const roctx_client_config        config{ .pause_resume_enabled   = true,
+                                             .use_perfetto           = true,
+                                             .use_timemory           = true,
+                                             .perfetto_annotations   = false,
+                                             .selected_trace_regions = "" };
     roctx_client<mock_marker_policy> client(config);
     EXPECT_NE(client.get_session(), nullptr);
     EXPECT_FALSE(client.get_trigger().filter_active());
@@ -130,11 +130,11 @@ TEST_F(roctx_client_test, constructor_with_region_filter)
 {
     using namespace rocprofsys::rocprofiler_sdk;
 
-    const roctx_client_config config{ .pause_resume_enabled = true,
-                                       .use_perfetto = true,
-                                       .use_timemory = true,
-                                       .perfetto_annotations = false,
-                                       .selected_trace_regions = "Region 1" };
+    const roctx_client_config        config{ .pause_resume_enabled   = true,
+                                             .use_perfetto           = true,
+                                             .use_timemory           = true,
+                                             .perfetto_annotations   = false,
+                                             .selected_trace_regions = "Region 1" };
     roctx_client<mock_marker_policy> client(config);
     EXPECT_TRUE(client.get_trigger().filter_active());
 }
@@ -143,11 +143,11 @@ TEST_F(roctx_client_test, should_write_no_filter)
 {
     using namespace rocprofsys::rocprofiler_sdk;
 
-    const roctx_client_config config{ .pause_resume_enabled = true,
-                                       .use_perfetto = true,
-                                       .use_timemory = true,
-                                       .perfetto_annotations = false,
-                                       .selected_trace_regions = "" };
+    const roctx_client_config        config{ .pause_resume_enabled   = true,
+                                             .use_perfetto           = true,
+                                             .use_timemory           = true,
+                                             .perfetto_annotations   = false,
+                                             .selected_trace_regions = "" };
     roctx_client<mock_marker_policy> client(config);
     EXPECT_TRUE(client.get_trigger().should_write_markers());
 }
@@ -156,11 +156,11 @@ TEST_F(roctx_client_test, should_write_with_filter_not_in_region)
 {
     using namespace rocprofsys::rocprofiler_sdk;
 
-    const roctx_client_config config{ .pause_resume_enabled = true,
-                                       .use_perfetto = true,
-                                       .use_timemory = true,
-                                       .perfetto_annotations = false,
-                                       .selected_trace_regions = "Region 1" };
+    const roctx_client_config        config{ .pause_resume_enabled   = true,
+                                             .use_perfetto           = true,
+                                             .use_timemory           = true,
+                                             .perfetto_annotations   = false,
+                                             .selected_trace_regions = "Region 1" };
     roctx_client<mock_marker_policy> client(config);
     EXPECT_FALSE(client.get_trigger().should_write_markers());
 }
@@ -189,11 +189,11 @@ protected:
     /// so trigger.should_write_markers() purely reflects the trigger state.
     std::unique_ptr<roctx_client_t> make_client(const std::string& regions)
     {
-        const roctx_config_t config{ .pause_resume_enabled = true,
-                                  .use_perfetto = false,
-                                  .use_timemory = false,
-                                  .perfetto_annotations = false,
-                                  .selected_trace_regions = regions };
+        const roctx_config_t config{ .pause_resume_enabled   = true,
+                                     .use_perfetto           = false,
+                                     .use_timemory           = false,
+                                     .perfetto_annotations   = false,
+                                     .selected_trace_regions = regions };
         auto                 client = std::make_unique<roctx_client_t>(config);
 
         auto ctrl = client->get_session();
@@ -737,10 +737,10 @@ protected:
     std::unique_ptr<roctx_client_t> make_client(const std::string& regions)
     {
         const roctx_config_t config{ .pause_resume_enabled   = true,
-                                      .use_perfetto           = false,
-                                      .use_timemory           = false,
-                                      .perfetto_annotations   = false,
-                                      .selected_trace_regions = regions };
+                                     .use_perfetto           = false,
+                                     .use_timemory           = false,
+                                     .perfetto_annotations   = false,
+                                     .selected_trace_regions = regions };
         auto                 client = std::make_unique<roctx_client_t>(config);
 
         auto ctrl = client->get_session();
