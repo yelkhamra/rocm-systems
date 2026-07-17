@@ -413,9 +413,10 @@ static ncclResult_t ncclIbCreateQpIonic(struct ncclIbQpCreateAttr* createQpAttrs
   qpInitAttr.cap.max_send_wr = createQpAttrs->maxSendWorkRequest;
   qpInitAttr.cap.max_send_sge = 1;
   qpInitAttr.cap.max_recv_sge = 1;
-  qpInitAttr.cap.max_inline_data = IbCastUseInline ? sizeof(struct ncclIbSendFifo) * NCCL_NET_IB_MAX_RECVS : 0;
-  if (createQpAttrs->isCtsEnabled) {
+  if (IbCastAinicCtsInlineData) {
     qpInitAttr.cap.max_inline_data = MAX_INLINE_DATA_SIZE;
+  } else {
+    qpInitAttr.cap.max_inline_data = IbCastUseInline ? sizeof(struct ncclIbSendFifo) * NCCL_NET_IB_MAX_RECVS : 0;
   }
   qpInitAttr.sq_sig_all |= (1 << 16);
   if (createQpAttrs->isDataQp) {
@@ -1573,7 +1574,7 @@ ib_recv:
                   ret, fail);
     meta.devs[i].rkey = rCommDev->cmplsRecordsMr->rkey;
   }
-  if (IbCastUseInline && (!IbCastAinicRoce || rComm->useCtsOffload)) rComm->remCtsFifo.flags = IBV_SEND_INLINE;
+  if (IbCastUseInline) rComm->remCtsFifo.flags = IBV_SEND_INLINE;
 
   for (int i = 0; i < rComm->base.vProps.ndevs; i++) {
     rCommDev = rComm->devs + i;

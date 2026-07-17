@@ -144,7 +144,7 @@ extern bool IbCastUseInline;
 #define WR_IMM_SIZE_MASK 0x007fffff
 extern int IbCastGdrFlushDisable;
 extern bool IbCastAinicRoce;
-extern bool rcclCtsInlineData;
+extern bool IbCastAinicCtsInlineData;
 extern bool IbCastOffloadEnabled;
 extern int64_t rcclParamIbCastP2pDisableCts();
 
@@ -366,10 +366,10 @@ struct alignas(32) ncclIbSendFifoCtsInline {
   uint32_t rkeys[1];
   int size;
   uint8_t nreqs;
-  uint16_t rxReqIndex;
+  uint8_t rxReqIndex; // num req is max 256
   uint16_t tag;
   uint32_t idx;
-  char padding[9];
+  char padding[8];
 } __attribute__((packed));
 
 struct ncclIbQpInitAttr {
@@ -578,7 +578,13 @@ struct ncclIbSendComm {
   // issuing a (multi-)receive request). Each row in the 2D array corresponds
   // to a single CTS message but can describe multiple recv-requests issued
   // on the receiver side.
-  struct ncclIbSendFifo ctsFifo[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+  // Union of the two CTS FIFO layouts so the same memory can be accessed
+  // with either the 64-byte (ncclIbSendFifo) or 32-byte
+  // (ncclIbSendFifoCtsInline) stride depending on IbCastAinicCtsInlineData.
+  union {
+    struct ncclIbSendFifo ctsFifo[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+    struct ncclIbSendFifoCtsInline ctsFifoInline[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+  };
   struct ibv_sge sges[NCCL_NET_IB_MAX_RECVS];
   struct ibv_send_wr wrs[NCCL_NET_IB_MAX_RECVS + 1];
   // Each dev correlates to a mergedIbDev
@@ -605,7 +611,9 @@ static_assert((offsetof(struct ncclIbSendComm, ctsFifo) % 32) == 0, "ncclIbSendC
 static_assert((sizeof(struct ncclIbSendFifo) % 32) == 0, "ncclIbSendFifo element size must be 32-byte multiples");
 static_assert(sizeof(struct ncclIbSendFifo) <= 64, "struct ncclIbSendFifo should fit one cache line");
 static_assert((sizeof(struct ncclIbSendFifoCtsInline) % 32) == 0,
-              "ncclIbSendFifoCtsInline element size must be 32-byte multiples");
+              "ncclIbSendFifoCtsInline element size must be 32-byte aligned");
+static_assert((sizeof(struct ncclIbSendFifoCtsInline) <=32),
+               "struct ncclIbSendFifoCtsInline should fit within 32-bytes");
 static_assert((offsetof(struct ncclIbSendComm, sges) % 32) == 0, "sges must be 32-byte aligned");
 static_assert((offsetof(struct ncclIbSendComm, wrs) % 32) == 0, "wrs must be 32-byte aligned");
 
@@ -625,7 +633,12 @@ struct ncclIbRemCtsFifo {
   // the CTS FIFO locally on its side. Receiver uses this memory to place the
   // CTS messages and populates the RDMA message "gather address" with the
   // memory of the CTS message that is sent.
-  struct ncclIbSendFifo elems[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+  // Union of the two CTS FIFO layouts — same memory accessed with 64-byte
+  // or 32-byte stride depending on IbCastAinicCtsInlineData.
+  union {
+    struct ncclIbSendFifo elems[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+    struct ncclIbSendFifoCtsInline elemsInline[NET_IB_MAX_REQUESTS][NCCL_NET_IB_MAX_RECVS];
+  };
   uint64_t addr;
   // Array of RKeys (one RKey per device) from which the receiver chooses the
   // RKey (depending on the device being used) when it posts a CTS to the
