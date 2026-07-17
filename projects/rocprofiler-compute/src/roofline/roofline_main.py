@@ -127,14 +127,7 @@ def roofline_axis_bounds(
     sanitized_cache_hierarchy: list[str],
     pad: float = 1.6,
 ) -> tuple[float, float, float, float]:
-    """Compute explicit ``(x_lo, x_hi, y_lo, y_hi)`` log-axis bounds.
-
-    This is only the initial view: bounds span every roof ridge and every kernel
-    point (shown or not) so nothing is clipped on open and toggling the
-    peak/kernel filters never moves a point outside the view. ``pad`` widens the
-    range slightly on each side. The roofs themselves are drawn far past these
-    bounds (see ``_ROOF_EXTRAP_*``) so panning reveals them continuing.
-    """
+    """Compute explicit (x_lo, x_hi, y_lo, y_hi) log-axis bounds."""
     roof_keys = [level.lower() for level in sanitized_cache_hierarchy]
     roof_keys += ["valu", "matrix_ops"]
 
@@ -256,6 +249,77 @@ class Roofline:
         else:
             return "Compute"
 
+    @staticmethod
+    def _peak_value(ceiling_data: dict[str, Any], key: str) -> Optional[float]:
+        """Scalar peak of a ceiling entry, or None when the entry is missing/empty."""
+        data = ceiling_data.get(key)
+        if (
+            isinstance(data, (list, tuple))
+            and len(data) >= 3
+            and isinstance(data[2], (int, float))
+        ):
+            return float(data[2])
+        return None
+
+    def _roof_min_peak(self, ceiling_data: dict[str, Any]) -> float:
+        """Lowest compute ceiling, or inf when none is present."""
+        peaks = [
+            peak
+            for peak in (
+                self._peak_value(ceiling_data, "valu"),
+                self._peak_value(ceiling_data, "matrix_ops"),
+            )
+            if peak is not None and peak > 0
+        ]
+        return min(peaks) if peaks else float("inf")
+
+    def _pct_of_roofline(
+        self,
+        ai_value: float,
+        performance: float,
+        cache_key: str,
+        ceiling_data: dict[str, Any],
+        min_peak: float,
+    ) -> Optional[float]:
+        """Percent of the roofline achieved at this point."""
+        bandwidth = self._peak_value(ceiling_data, cache_key)
+        if not bandwidth or ai_value <= 0 or performance <= 0:
+            return None
+        roof = bandwidth * ai_value
+        if min_peak != float("inf"):
+            roof = min(roof, min_peak)
+        if roof <= 0:
+            return None
+        return 100.0 * performance / roof
+
+    def _determine_kernel_limiter(
+        self,
+        level_ai: dict[str, float],
+        ceiling_data: dict[str, Any],
+    ) -> str:
+        """Name the specific binding roof for a kernel: the roof with the lowest
+        achievable performance at the kernel's operating point."""
+        candidates: list[tuple[float, str]] = []
+        for level_name, ai_value in level_ai.items():
+            bandwidth = self._peak_value(ceiling_data, level_name.lower())
+            if bandwidth and ai_value > 0:
+                candidates.append((bandwidth * ai_value, level_name))
+
+        valu_peak = self._peak_value(ceiling_data, "valu")
+        if valu_peak and valu_peak > 0:
+            candidates.append((valu_peak, "VALU"))
+
+        matrix_peak = self._peak_value(ceiling_data, "matrix_ops")
+        if matrix_peak and matrix_peak > 0:
+            matrix_label = get_matrix_ops_type(
+                getattr(self.__mspec, "gpu_series", "unknown_series")
+            )
+            candidates.append((matrix_peak, matrix_label))
+
+        if not candidates:
+            return "Unknown"
+        return min(candidates, key=lambda candidate: candidate[0])[1]
+
     def _build_kernel_traces(
         self,
         kernel_names: list[str],
@@ -267,8 +331,8 @@ class Roofline:
         """Build one marker trace per kernel plus the matching view-model data.
 
         Each kernel becomes a single scatter trace carrying all of its points
-        across the memory peaks: ``marker.color`` identifies the kernel and
-        ``marker.symbol`` identifies the peak. The returned model list mirrors
+        across the memory peaks: marker.color identifies the kernel and
+        marker.symbol identifies the peak. The returned model list mirrors
         the traces one-for-one and is the source of truth the client-side
         controller restyles from.
         """
@@ -287,6 +351,13 @@ class Roofline:
         traces: list[go.Scatter] = []
         kernels_model: list[dict[str, Any]] = []
 
+        # Per-kernel stats joined, aligned index-for-index with kernel_names.
+        counts = self.__ai_data.get("counts", []) or []
+        total_time = self.__ai_data.get("totalTime", []) or []
+        pct_runtime = self.__ai_data.get("pctRuntime", []) or []
+        # The compute ridge is the same for every kernel; compute it once.
+        min_peak = self._roof_min_peak(ceiling_data)
+
         for kernel_index, kernel_name in enumerate(kernel_names):
             hover_name = truncate_kernel_name(kernel_name)
             xs: list[float] = []
@@ -294,6 +365,7 @@ class Roofline:
             symbols: list[str] = []
             customdata: list[list[str]] = []
             points: list[dict[str, Any]] = []
+            level_ai: dict[str, float] = {}
 
             for cache_level in CACHE_LEVELS:
                 level_name = cache_level.removeprefix("ai_").upper()
@@ -316,6 +388,13 @@ class Roofline:
                 hover_status = (
                     f"{status} Bound" if status in ("Memory", "Compute") else status
                 )
+                pct_roof = self._pct_of_roofline(
+                    ai_value=ai_value,
+                    performance=performance,
+                    cache_key=cache_level.removeprefix("ai_"),
+                    ceiling_data=ceiling_data,
+                    min_peak=min_peak,
+                )
                 xs.append(ai_value)
                 ys.append(performance)
                 symbols.append(peak_symbol(level_name))
@@ -325,7 +404,9 @@ class Roofline:
                     "ai": ai_value,
                     "perf": performance,
                     "status": status,
+                    "pctRoof": pct_roof,
                 })
+                level_ai[level_name] = ai_value
 
             if not xs:
                 continue
@@ -659,6 +740,7 @@ class Roofline:
                 kernel_trace_indices=trace_indices,
                 ai_unit=f"{ops_flops}s/Byte",
                 perf_unit=f"G{ops_flops}/s",
+                time_unit=self.__ai_data.get("timeUnit", "") or "",
             )
 
         #######################

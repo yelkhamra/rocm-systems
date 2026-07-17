@@ -38,21 +38,26 @@ class RooflineViewModel:
 
     Attributes:
         peaks: Ordered memory levels that have at least one point (e.g.
-            ``["L1", "L2", "HBM", "LDS"]``).
+            ["L1", "L2", "HBM", "LDS"]).
         peak_symbols: Map from memory level to Plotly marker symbol; the shape
             identifies the peak (kernel identity is carried by color instead).
         default_peak: Level selected when the page loads. A single default peak
             means the plot opens with one dot per kernel rather than the full
-            cloud of every level at once. ``None`` when there are no points.
+            cloud of every level at once. None when there are no points.
         kernels: One entry per plotted kernel:
-            ``{"name", "color", "traceIndex", "points": [{"peak", "ai",
-            "perf", "status"}]}``.
-        kernel_trace_indices: Indices into ``figure.data`` of the per-kernel
-            scatter traces, in the same order as ``kernels``.
+            {"name", "color", "traceIndex", "count", "totalTime",
+            "pctRuntime", "limiter", "points": [{"peak", "ai", "perf",
+            "status", "pctRoof"}]}. count/totalTime/pctRuntime
+            are the dispatch count, aggregate time (in time_unit), and
+            percent of total runtime; limiter is the specific binding roof;
+            pctRoof is the percent of the roofline achieved at each point.
+            Any of these may be None when the underlying data is missing.
+        kernel_trace_indices: Indices into figure.data of the per-kernel
+            scatter traces, in the same order as kernels.
         roofline_traces: Bandwidth-roof (memory-level) line traces the peak
-            dropdown filters, each ``{"level", "traceIndex", "bandwidth"}``.
+            dropdown filters, each {"level", "traceIndex", "bandwidth"}.
         compute_traces: Horizontal compute-ceiling traces (VALU/matrix), each
-            ``{"traceIndex", "peakPerf"}``. These always stay shown, but their
+            {"traceIndex", "peakPerf"}. These always stay shown, but their
             left endpoint tracks the steepest *visible* diagonal.
         roof_max_ai: Right-edge AI the roofs extrapolate to.
         div_id: Id of the Plotly graph div.
@@ -68,12 +73,13 @@ class RooflineViewModel:
     roof_max_ai: float = 0.0
     ai_unit: str = "FLOPs/Byte"
     perf_unit: str = "GFLOP/s"
+    time_unit: str = "ns"
     div_id: str = PLOT_DIV_ID
 
     def to_json(self) -> str:
-        """Serialize the model for embedding in a ``<script>`` tag.
+        """Serialize the model for embedding in a <script> tag.
 
-        ``</`` is escaped so a kernel name can never prematurely close the
+        </ is escaped so a kernel name can never prematurely close the
         surrounding script element.
         """
         payload = {
@@ -88,6 +94,7 @@ class RooflineViewModel:
             "roofMaxAi": self.roof_max_ai,
             "aiUnit": self.ai_unit,
             "perfUnit": self.perf_unit,
+            "timeUnit": self.time_unit,
         }
         return json.dumps(payload, allow_nan=True).replace("</", "<\\/")
 

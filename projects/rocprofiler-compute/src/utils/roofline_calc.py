@@ -128,37 +128,6 @@ CACHE_LEVELS = ["ai_l0", "ai_l1", "ai_l2", "ai_hbm", "ai_lds"]
 # Helper funcs
 ################################################
 @dataclass
-class AI_Data:
-    KernelName: str
-    numCalls: float
-
-    total_flops: float
-    valu_flops: float
-    mfma_flops_f6f4: float
-    mfma_flops_f8: float
-    mfma_flops_f16: float
-    mfma_flops_bf16: float
-    mfma_flops_f32: float
-    mfma_flops_f64: float
-    mfma_iops_i8: float
-    wmma_flops_f6f4: float
-    wmma_flops_f8: float
-    wmma_flops_f16: float
-    wmma_flops_bf16: float
-    wmma_flops_f32: float
-    wmma_flops_f64: float
-    wmma_iops_i8: float
-    lds_data: float
-    L0cache_data: float
-    L1cache_data: float
-    L2cache_data: float
-    hbm_data: float
-
-    totalDuration: float
-    avgDuration: float
-
-
-@dataclass
 class PlotPoints:
     """Data structure for storing roofline plot points."""
 
@@ -168,6 +137,10 @@ class PlotPoints:
     ai_hbm: list[list[float]]
     ai_lds: list[list[float]]
     kernelNames: list[str]
+    counts: list[Optional[float]]
+    totalTime: list[Optional[float]]
+    pctRuntime: list[Optional[float]]
+    timeUnit: str
 
     @classmethod
     def empty(cls) -> "PlotPoints":
@@ -179,6 +152,10 @@ class PlotPoints:
             ai_hbm=[[], []],
             ai_lds=[[], []],
             kernelNames=[],
+            counts=[],
+            totalTime=[],
+            pctRuntime=[],
+            timeUnit="",
         )
 
 
@@ -223,6 +200,15 @@ def get_font() -> dict[str, Union[int, str]]:
 def sanitize_ai_value(value: float) -> float:
     excluded_values = ("", "N/A", np.inf, -np.inf, None)
     return value if value and value not in excluded_values else 0
+
+
+def _stat_or_none(row: pd.Series, column: Optional[str]) -> Optional[float]:
+    """Read a numeric stat from a top-kernels row as a float, or None when
+    the column is missing or the value is NaN."""
+    if column is None or column not in row.index:
+        return None
+    value = row[column]
+    return float(value) if pd.notna(value) else None
 
 
 def sanitize_mem_level(mem_level: Union[list[str], str], gpu_model: str) -> list[str]:
@@ -442,6 +428,17 @@ def calc_ai_analyze(
     kernel_ids_to_process: list[int] = []
     kernel_top_table_id = 1
 
+    # The top-kernels table carries per-kernel dispatch count, aggregate time
+    sum_column: Optional[str] = None
+    _top_df = workload.dfs.get(kernel_top_table_id)
+    if _top_df is not None:
+        sum_column = next(
+            (c for c in _top_df.columns if c.startswith("Sum(") and c.endswith(")")),
+            None,
+        )
+        if sum_column:
+            plot_points.timeUnit = sum_column[len("Sum(") : -1]
+
     if workload.filter_kernel_ids:
         if all(isinstance(k, int) for k in workload.filter_kernel_ids):
             kernel_ids_to_process = workload.filter_kernel_ids
@@ -548,6 +545,12 @@ def calc_ai_analyze(
                 plot_points.ai_lds[1].append(performance)
 
             plot_points.kernelNames.append(kernel_name)
+            # Join the per-kernel stats from the same top-kernels row, keeping
+            # these lists aligned index-for-index with kernelNames.
+            stat_row = kernel_top_df.loc[kernel_id]
+            plot_points.counts.append(_stat_or_none(stat_row, "Count"))
+            plot_points.totalTime.append(_stat_or_none(stat_row, sum_column))
+            plot_points.pctRuntime.append(_stat_or_none(stat_row, "Percent"))
             console_debug(
                 "roofline",
                 f"Added kernel {kernel_id}: {kernel_name[:50]} to plot points",
