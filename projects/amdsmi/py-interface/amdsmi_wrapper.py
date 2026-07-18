@@ -1344,6 +1344,22 @@ AMDSMI_LINK_STATUS_DISABLED = 1
 AMDSMI_LINK_STATUS_INACTIVE = 2
 AMDSMI_LINK_STATUS_ERROR = 3
 amdsmi_link_status_t = ctypes.c_uint32 # enum
+class struct_amdsmi_link_topology_t(Structure):
+    pass
+
+struct_amdsmi_link_topology_t._pack_ = 1 # source:False
+struct_amdsmi_link_topology_t._fields_ = [
+    ('weight', ctypes.c_uint64),
+    ('link_status', amdsmi_link_status_t),
+    ('link_type', amdsmi_link_type_t),
+    ('num_hops', ctypes.c_ubyte),
+    ('fb_sharing', ctypes.c_ubyte),
+    ('PADDING_0', ctypes.c_ubyte * 2),
+    ('reserved', ctypes.c_uint32 * 10),
+    ('PADDING_1', ctypes.c_ubyte * 4),
+]
+
+amdsmi_link_topology_t = struct_amdsmi_link_topology_t
 class struct_amdsmi_link_metrics_t(Structure):
     pass
 
@@ -1373,22 +1389,6 @@ struct_amdsmi_link_metrics_t._fields_ = [
 ]
 
 amdsmi_link_metrics_t = struct_amdsmi_link_metrics_t
-class struct_amdsmi_link_topology_t(Structure):
-    pass
-
-struct_amdsmi_link_topology_t._pack_ = 1 # source:False
-struct_amdsmi_link_topology_t._fields_ = [
-    ('weight', ctypes.c_uint64),
-    ('link_status', amdsmi_link_status_t),
-    ('link_type', amdsmi_link_type_t),
-    ('num_hops', ctypes.c_ubyte),
-    ('fb_sharing', ctypes.c_ubyte),
-    ('PADDING_0', ctypes.c_ubyte * 2),
-    ('reserved', ctypes.c_uint32 * 10),
-    ('PADDING_1', ctypes.c_ubyte * 4),
-]
-
-amdsmi_link_topology_t = struct_amdsmi_link_topology_t
 class struct_amdsmi_vram_info_t(Structure):
     pass
 
@@ -3925,6 +3925,12 @@ try:
 except AttributeError:
     pass
 try:
+    amdsmi_get_link_topology = _libraries['libamd_smi.so'].amdsmi_get_link_topology
+    amdsmi_get_link_topology.restype = amdsmi_status_t
+    amdsmi_get_link_topology.argtypes = [amdsmi_processor_handle, amdsmi_processor_handle, ctypes.POINTER(struct_amdsmi_link_topology_t)]
+except AttributeError:
+    pass
+try:
     amdsmi_get_link_topology_nearest = _libraries['libamd_smi.so'].amdsmi_get_link_topology_nearest
     amdsmi_get_link_topology_nearest.restype = amdsmi_status_t
     amdsmi_get_link_topology_nearest.argtypes = [amdsmi_processor_handle, amdsmi_link_type_t, ctypes.POINTER(struct_amdsmi_topology_nearest_t)]
@@ -3940,12 +3946,6 @@ try:
     amdsmi_topo_get_p2p_status = _libraries['libamd_smi.so'].amdsmi_topo_get_p2p_status
     amdsmi_topo_get_p2p_status.restype = amdsmi_status_t
     amdsmi_topo_get_p2p_status.argtypes = [amdsmi_processor_handle, amdsmi_processor_handle, ctypes.POINTER(amdsmi_link_type_t), ctypes.POINTER(struct_amdsmi_p2p_capability_t)]
-except AttributeError:
-    pass
-try:
-    amdsmi_get_link_topology = _libraries['libamd_smi.so'].amdsmi_get_link_topology
-    amdsmi_get_link_topology.restype = amdsmi_status_t
-    amdsmi_get_link_topology.argtypes = [amdsmi_processor_handle, amdsmi_processor_handle, ctypes.POINTER(struct_amdsmi_link_topology_t)]
 except AttributeError:
     pass
 try:
@@ -5062,13 +5062,14 @@ __all__ = \
     'amdsmi_board_info_t', 'amdsmi_cache_property_type_t',
     'amdsmi_card_form_factor_t', 'amdsmi_clean_gpu_local_data',
     'amdsmi_clk_info_t', 'amdsmi_clk_limit_type_t',
-    'amdsmi_clk_type_t', 'amdsmi_compute_partition_type_t',
-    'amdsmi_container_types_t', 'amdsmi_counter_command_t',
-    'amdsmi_counter_value_t', 'amdsmi_cper_guid_t',
-    'amdsmi_cper_hdr_t', 'amdsmi_cper_notify_type_t',
-    'amdsmi_cper_sev_t', 'amdsmi_cper_timestamp_t',
-    'amdsmi_cper_valid_bits_t', 'amdsmi_cpu_apb_disable',
-    'amdsmi_cpu_apb_enable', 'amdsmi_cpu_info_t', 'amdsmi_cpu_util_t',
+    'amdsmi_clk_type_t', 'amdsmi_compute_partition_mem_alloc_mode_t',
+    'amdsmi_compute_partition_type_t', 'amdsmi_container_types_t',
+    'amdsmi_counter_command_t', 'amdsmi_counter_value_t',
+    'amdsmi_cper_guid_t', 'amdsmi_cper_hdr_t',
+    'amdsmi_cper_notify_type_t', 'amdsmi_cper_sev_t',
+    'amdsmi_cper_timestamp_t', 'amdsmi_cper_valid_bits_t',
+    'amdsmi_cpu_apb_disable', 'amdsmi_cpu_apb_enable',
+    'amdsmi_cpu_info_t', 'amdsmi_cpu_util_t',
     'amdsmi_cpusocket_handle', 'amdsmi_ddr_bw_metrics_t',
     'amdsmi_dev_perf_level_t', 'amdsmi_dimm_power_t',
     'amdsmi_dimm_thermal_t', 'amdsmi_dpm_level_t',
@@ -5185,7 +5186,8 @@ __all__ = \
     'amdsmi_get_gpu_xcd_counter', 'amdsmi_get_gpu_xgmi_link_status',
     'amdsmi_get_hsmp_metrics_table',
     'amdsmi_get_hsmp_metrics_table_version', 'amdsmi_get_lib_version',
-    'amdsmi_get_link_metrics', 'amdsmi_get_link_topology_nearest',
+    'amdsmi_get_link_metrics', 'amdsmi_get_link_topology',
+    'amdsmi_get_link_topology_nearest',
     'amdsmi_get_minmax_bandwidth_between_processors',
     'amdsmi_get_nic_asic_info', 'amdsmi_get_nic_bus_info',
     'amdsmi_get_nic_device_bdf', 'amdsmi_get_nic_driver_info',
@@ -5220,9 +5222,10 @@ __all__ = \
     'amdsmi_init_gpu_event_notification', 'amdsmi_io_bw_encoding_t',
     'amdsmi_is_P2P_accessible',
     'amdsmi_is_gpu_power_management_enabled', 'amdsmi_kfd_info_t',
-    'amdsmi_link_id_bw_type_t', 'amdsmi_link_metrics_t', 'amdsmi_link_topology_t',
-    'amdsmi_link_status_t', 'amdsmi_link_type_t',
-    'amdsmi_memory_page_status_t', 'amdsmi_memory_partition_config_t',
+    'amdsmi_link_id_bw_type_t', 'amdsmi_link_metrics_t',
+    'amdsmi_link_status_t', 'amdsmi_link_topology_t',
+    'amdsmi_link_type_t', 'amdsmi_memory_page_status_t',
+    'amdsmi_memory_partition_config_t',
     'amdsmi_memory_partition_type_t', 'amdsmi_memory_type_t',
     'amdsmi_mm_ip_t', 'amdsmi_name_value_t', 'amdsmi_nic_asic_info_t',
     'amdsmi_nic_bus_info_t', 'amdsmi_nic_driver_info_t',
@@ -5323,7 +5326,8 @@ __all__ = \
     'struct_amdsmi_gpu_xcp_metrics_t',
     'struct_amdsmi_hsmp_driver_version_t',
     'struct_amdsmi_hsmp_metrics_table_t', 'struct_amdsmi_kfd_info_t',
-    'struct_amdsmi_link_id_bw_type_t', 'struct_amdsmi_link_metrics_t', 'struct_amdsmi_link_topology_t',
+    'struct_amdsmi_link_id_bw_type_t', 'struct_amdsmi_link_metrics_t',
+    'struct_amdsmi_link_topology_t',
     'struct_amdsmi_memory_partition_config_t',
     'struct_amdsmi_name_value_t', 'struct_amdsmi_nic_asic_info_t',
     'struct_amdsmi_nic_bus_info_t', 'struct_amdsmi_nic_driver_info_t',
