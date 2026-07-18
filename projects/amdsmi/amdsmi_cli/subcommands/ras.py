@@ -19,6 +19,7 @@
 # IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 # CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+import json
 import logging
 import os
 import sys
@@ -241,7 +242,7 @@ class RasCommands:
             if partition_id != 0 and primary_partition_gpu_id is not None:
                 primary_partition_gpu_ids.add(primary_partition_gpu_id)
 
-        if partition_warning_flag:
+        if partition_warning_flag and not self.logger.is_json_format():
             # Create a list of the primary partitions
             primary_partitions_str = " ".join(
                 f"GPU{gpu_id}" for gpu_id in primary_partition_gpu_ids
@@ -289,9 +290,14 @@ class RasCommands:
                     cper_counter=cper_counter,
                 )
                 all_json_rows.extend(rows)
-            if is_json and all_json_rows:
-                self.logger.multiple_device_output = all_json_rows
-                self.logger.print_output(multiple_device_enabled=True)
+            if is_json:
+                if all_json_rows:
+                    self.logger.multiple_device_output = all_json_rows
+                    self.logger.print_output(multiple_device_enabled=True)
+                elif not args.follow:
+                    # No entries: still emit one valid JSON document ("[]") so
+                    # json.loads consumers don't choke on empty output.
+                    self.helpers.cper_print(json.dumps(all_json_rows, indent=4), self.logger)
             if not args.follow:
                 break
             time.sleep(1)
