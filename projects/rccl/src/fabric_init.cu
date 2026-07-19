@@ -22,6 +22,7 @@
 
 using meta::comms::kDdaMaxNranks;
 using nccl_dda_detail::ddaFabricMaxNBlocksForScratch;
+using nccl_dda_detail::ddaFabricScratchBytes;
 using nccl_dda_detail::ddaLLEpochCount;
 using nccl_dda_detail::DdaFabricBarrierState;
 using nccl_dda_detail::kDdaFabricLLArMaxBlocks;
@@ -55,7 +56,9 @@ ncclResult_t ncclDdaFabricCommInit(ncclComm* comm) {
 
   const int nRanks = comm->nRanks;
 
-  size_t bytes = DDA_FABRIC_BUFFER_SIZE;
+  // Right-sized from the DDA thresholds and nRanks (env-overridable) instead of
+  // a fixed 10 GiB. RCCL_DDA_FABRIC_BUFFER_SIZE=0 disables the fabric DDA path.
+  size_t bytes = ddaFabricScratchBytes(nRanks);
   if (bytes == 0) {
     return ncclSuccess;
   }
@@ -190,7 +193,7 @@ ncclResult_t ncclDdaFabricCommInit(ncclComm* comm) {
   comm->ddaLLArEpochLen = kDdaFabricLLArMaxBlocks;
   INFO(
       NCCL_INIT,
-      "ncclDdaFabricCommInit: nRanks %d, scratch %zu bytes (vmm), FabricGpuBarrier nBlocks=%d, peer table on device",
+      "ncclDdaFabricCommInit: nRanks %d, scratch %zu bytes (vmm, derived from DDA thresholds; override RCCL_DDA_FABRIC_BUFFER_SIZE), FabricGpuBarrier nBlocks=%d, peer table on device",
       nRanks,
       bytes,
       nBlocksMax);
