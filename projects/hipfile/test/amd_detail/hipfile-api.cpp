@@ -132,7 +132,21 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitSuccess)
     ASSERT_EQ(result, HIPFILE_SUCCESS);
 }
 
-TEST_F(HipFileUnit, TestHipFileBatchIOSubmitBadHandle)
+TEST_F(HipFileUnit, TestHipFileBatchIOSubmitNonZeroFlagsIgnored)
+{
+    hipFileBatchHandle_t           b_handle       = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    hipFileIOParams_t              io_param       = makeBatchParam();
+    std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
+    expectBatchLookup(io_param);
+    EXPECT_CALL(*mock_b_context, submitOperations(_));
+
+    auto result = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0x1234);
+    ASSERT_EQ(result, HIPFILE_SUCCESS);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOSubmitNullHandle)
 {
     hipFileBatchHandle_t           b_handle = nullptr;
     hipFileIOParams_t              io_param;
@@ -144,6 +158,54 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitBadHandle)
     auto           result          = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
     hipFileError_t expected_result = {hipFileInvalidValue, hipSuccess};
     ASSERT_EQ(result, expected_result);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOSubmitUnknownHandle)
+{
+    hipFileBatchHandle_t           b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    hipFileIOParams_t              io_param;
+    std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Throw(InvalidBatchHandle()));
+    EXPECT_CALL(*mock_b_context, submitOperations(_)).Times(0);
+
+    auto result = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
+    ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOSubmitNullParams)
+{
+    hipFileBatchHandle_t b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+
+    EXPECT_CALL(mock_state, getBatchContext).Times(0);
+
+    auto result = hipFileBatchIOSubmit(b_handle, 1, nullptr, 0);
+    ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOSubmitZeroRequests)
+{
+    hipFileBatchHandle_t b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    hipFileIOParams_t    io_param;
+
+    EXPECT_CALL(mock_state, getBatchContext).Times(0);
+
+    auto result = hipFileBatchIOSubmit(b_handle, 0, &io_param, 0);
+    ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOSubmitBatchFull)
+{
+    hipFileBatchHandle_t           b_handle       = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    hipFileIOParams_t              io_param       = makeBatchParam();
+    std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
+    expectBatchLookup(io_param);
+    EXPECT_CALL(*mock_b_context, submitOperations(_)).WillOnce(Throw(BatchFull()));
+
+    auto result = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
+    ASSERT_EQ(result, HipFileOpError(hipFileBatchFull));
 }
 
 TEST_F(HipFileUnit, TestHipFileBatchIOSubmitBadArgument)
@@ -175,6 +237,39 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitInvalidOperation)
     ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
 }
 
+TEST_F(HipFileUnit, TestHipFileBatchIOSubmitInvalidSecondOperationDoesNotSubmit)
+{
+    hipFileBatchHandle_t             b_handle = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    hipFileIOParams_t                io_param = makeBatchParam();
+    std::array<hipFileIOParams_t, 2> io_params{io_param, io_param};
+    std::shared_ptr<MBatchContext>   mock_b_context = std::make_shared<MBatchContext>();
+    io_params[1].u.batch.file_offset                = -1;
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
+    EXPECT_CALL(mock_state, getFileAndBuffer(io_param.fh, io_param.u.batch.devPtr_base))
+        .Times(2)
+        .WillRepeatedly(Return(file_buffer_pair{batch_file, batch_buffer}));
+    EXPECT_CALL(*mock_b_context, submitOperations(_)).Times(0);
+
+    auto result = hipFileBatchIOSubmit(b_handle, io_params.size(), io_params.data(), 0);
+    ASSERT_EQ(result, HIPFILE_INVALID_VALUE);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOSubmitFileNotRegistered)
+{
+    hipFileBatchHandle_t           b_handle       = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    hipFileIOParams_t              io_param       = makeBatchParam();
+    std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
+    EXPECT_CALL(mock_state, getFileAndBuffer(io_param.fh, io_param.u.batch.devPtr_base))
+        .WillOnce(Throw(FileNotRegistered()));
+    EXPECT_CALL(*mock_b_context, submitOperations(_)).Times(0);
+
+    auto result = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
+    ASSERT_EQ(result, HipFileOpError(hipFileHandleNotRegistered));
+}
+
 TEST_F(HipFileUnit, TestHipFileBatchIOSubmitNullptrParams)
 {
     hipFileBatchHandle_t           b_handle       = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
@@ -188,6 +283,20 @@ TEST_F(HipFileUnit, TestHipFileBatchIOSubmitNullptrParams)
     auto           result          = hipFileBatchIOSubmit(b_handle, 1, nullptr, 0);
     hipFileError_t expected_result = {hipFileInvalidValue, hipSuccess};
     ASSERT_EQ(result, expected_result);
+}
+
+TEST_F(HipFileUnit, TestHipFileBatchIOSubmitUnexpectedException)
+{
+    hipFileBatchHandle_t           b_handle       = reinterpret_cast<hipFileBatchHandle_t>(0x12345678);
+    hipFileIOParams_t              io_param       = makeBatchParam();
+    std::shared_ptr<MBatchContext> mock_b_context = std::make_shared<MBatchContext>();
+
+    EXPECT_CALL(mock_state, getBatchContext(b_handle)).WillOnce(Return(mock_b_context));
+    expectBatchLookup(io_param);
+    EXPECT_CALL(*mock_b_context, submitOperations(_)).WillOnce(Throw(std::runtime_error("test error")));
+
+    auto result = hipFileBatchIOSubmit(b_handle, 1, &io_param, 0);
+    ASSERT_EQ(result, HipFileOpError(hipFileInternalError));
 }
 
 /// @brief Test hipFileIO function
