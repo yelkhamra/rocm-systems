@@ -68,6 +68,7 @@ class RooflineViewModel:
     kernel_trace_indices: list[int] = field(default_factory=list)
     roofline_traces: list[dict[str, Any]] = field(default_factory=list)
     compute_traces: list[dict[str, Any]] = field(default_factory=list)
+    compute_overlay_traces: list[dict[str, Any]] = field(default_factory=list)
     ceiling_dense_hi: float = 0.0
     roof_samples: int = 200
     div_id: str = PLOT_DIV_ID
@@ -87,6 +88,7 @@ class RooflineViewModel:
             "kernelTraceIndices": self.kernel_trace_indices,
             "rooflineTraces": self.roofline_traces,
             "computeTraces": self.compute_traces,
+            "computeOverlayTraces": self.compute_overlay_traces,
             "ceilingDenseHi": self.ceiling_dense_hi,
             "roofSamples": self.roof_samples,
         }
@@ -155,6 +157,18 @@ __PLOT_FRAGMENT__
                aria-label="Cumulative percent of GPU resident time to display">
       </div>
       <ul id="roofline-kernel-list" class="roofline-kernel-list"></ul>
+      <div class="roofline-panel-title roofline-roof-title">
+        <span class="roofline-panel-title-label">Bandwidth rooflines
+          <span id="roofline-roof-count" class="roofline-kernel-count"></span>
+        </span>
+        <button type="button" id="roofline-show-all-roofs"
+                class="roofline-btn roofline-btn-sm">Show all rooflines</button>
+      </div>
+      <p class="roofline-panel-help">Click a row to show only that roofline; click
+        again to show all. Ctrl+click (&#8984;+click on Mac) to add or remove
+        rooflines.</p>
+      <ul id="roofline-roof-list" class="roofline-kernel-list roofline-roof-list">
+      </ul>
     </aside>
     </div>
   </div>

@@ -248,6 +248,30 @@ body {
   white-space: nowrap;
 }
 
+.roofline-roof-title {
+  border-top: 1px solid var(--roofline-border);
+}
+
+.roofline-roof-list {
+  flex: 0 0 auto;
+  max-height: 34%;
+}
+
+.roofline-roof-swatch {
+  border-radius: 2px;
+  height: 4px;
+  margin-top: 6px;
+}
+
+.roofline-roof-aiaxis {
+  flex: 0 0 auto;
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--roofline-accent);
+  white-space: nowrap;
+}
+
 @media (max-width: 900px) {
   .roofline-body {
     flex-direction: column;

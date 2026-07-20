@@ -233,6 +233,37 @@ def roofline_axis_bounds(
     return min(xs) / pad, max(xs) * pad, min(ys) / pad, max(ys) * pad
 
 
+def framed_axis_bounds(
+    ai_data: dict[str, Any],
+    ceiling_data: dict[str, Any],
+    default_peak: Optional[str],
+    pad: float = 5.0,
+) -> Optional[tuple[float, float, float, float]]:
+    """Initial framing: the aggregate view's kernel
+    points at default_peak plus the compute ceilings. This matches the view
+    the plot opens on, so Plotly's reset returns to the same framing instead of
+    the full multi-level span. Returns None when there is nothing to frame."""
+    if not default_peak:
+        return None
+    level_points = ai_data.get(f"ai_{default_peak.lower()}")
+    if not level_points or len(level_points) < 2:
+        return None
+    xs = [v for v in level_points[0] if v is not None and v > 0]
+    ys = [v for v in level_points[1] if v is not None and v > 0]
+    for key in ("valu", "matrix_ops"):
+        data = ceiling_data.get(key)
+        if (
+            isinstance(data, (list, tuple))
+            and len(data) >= 3
+            and isinstance(data[2], (int, float))
+            and data[2] > 0
+        ):
+            ys.append(float(data[2]))
+    if not xs or not ys:
+        return None
+    return min(xs) / pad, max(xs) * pad, min(ys) / pad, max(ys) * pad
+
+
 class Roofline:
     def __init__(
         self,
@@ -353,6 +384,58 @@ class Roofline:
         xs.append(_ROOF_EXTRAP_MAX_AI)
         ys = [peak_perf] * len(xs)
         return xs, ys
+
+    def _add_compute_ceiling(
+        self,
+        fig: go.Figure,
+        label: str,
+        color_key: str,
+        ceiling: list,
+        ops_flops: str,
+        max_bw: float,
+        roof_dense_hi: float,
+        subplot_kwargs: dict[str, Any],
+    ) -> None:
+        """Draw a flat compute-peak line plus a hidden highlight overlay."""
+        peak_perf = ceiling[1][0]
+        left_x = peak_perf / max_bw if max_bw > 0 else ceiling[0][0]
+        xs, ys = self._sample_ceiling(left_x, peak_perf, roof_dense_hi)
+        fig.add_trace(
+            go.Scatter(
+                x=xs,
+                y=ys,
+                name=f"Peak {label}",
+                mode="lines",
+                showlegend=False,
+                line=dict(color=get_color(color_key)),
+                hovertemplate=build_compute_peak_hover(label, ceiling[2], ops_flops),
+            ),
+            **subplot_kwargs,
+        )
+        vm = self.__view_models.get(ops_flops)
+        if vm is None:
+            return
+        vm.compute_traces.append({
+            "traceIndex": len(fig.data) - 1,
+            "peakPerf": peak_perf,
+        })
+        fig.add_trace(
+            go.Scatter(
+                x=[],
+                y=[],
+                name=f"Peak {label} (isolated)",
+                mode="lines",
+                showlegend=False,
+                visible=False,
+                line=dict(color=get_color(color_key), width=3),
+                hoverinfo="skip",
+            ),
+            **subplot_kwargs,
+        )
+        vm.compute_overlay_traces.append({
+            "traceIndex": len(fig.data) - 1,
+            "peakPerf": peak_perf,
+        })
 
     def _roof_min_peak(self, ceiling_data: dict[str, Any]) -> float:
         """Lowest compute ceiling, or inf when none is present."""
@@ -795,6 +878,10 @@ class Roofline:
         roof_dense_lo = x_lo / 1e3
         roof_dense_hi = x_hi * 1e3
 
+        # Initial/reset framing; starts at the full span
+        # and is narrowed to the default-peak aggregate view once it is known.
+        frame_x_lo, frame_x_hi, frame_y_lo, frame_y_hi = x_lo, x_hi, y_lo, y_hi
+
         #######################
         # Plot Application AI
         #######################
@@ -835,6 +922,11 @@ class Roofline:
                 if _DEFAULT_PEAK in present_peaks
                 else (present_peaks[0] if present_peaks else "all")
             )
+            framed = framed_axis_bounds(
+                self.__ai_data or {}, self.__ceiling_data, default_peak
+            )
+            if framed:
+                frame_x_lo, frame_x_hi, frame_y_lo, frame_y_hi = framed
             self.__view_models[ops_flops] = RooflineViewModel(
                 peaks=present_peaks,
                 peak_colors={peak: get_color(peak.lower()) for peak in present_peaks},
@@ -949,66 +1041,22 @@ class Roofline:
         )
 
         # The horizontal compute peaks cap every roofline. They are kept OFF the
-        # legend (their values live in the roof hover); the flat line itself
-        # still carries a concise hover of its own peak throughput.
+        # legend (their values live in the roof hover) and drawn full width, with
+        # a highlight overlay the client reveals when a roof is isolated.
         if valu_data:
-            peak_perf = valu_data[1][0]
-            left_x = peak_perf / max_bw if max_bw > 0 else valu_data[0][0]
-            valu_x, valu_y = self._sample_ceiling(
-                left_x, peak_perf, roof_dense_hi
+            self._add_compute_ceiling(
+                fig, "VALU", "valu", valu_data, ops_flops, max_bw,
+                roof_dense_hi, subplot_kwargs,
             )
-            fig.add_trace(
-                go.Scatter(
-                    x=valu_x,
-                    y=valu_y,
-                    name="Peak VALU",
-                    mode="lines",
-                    showlegend=False,
-                    line=dict(color=get_color("valu")),
-                    hovertemplate=build_compute_peak_hover(
-                        "VALU", valu_data[2], ops_flops
-                    ),
-                ),
-                **subplot_kwargs,
-            )
-            compute_vm = self.__view_models.get(ops_flops)
-            if compute_vm is not None:
-                compute_vm.compute_traces.append({
-                    "traceIndex": len(fig.data) - 1,
-                    "peakPerf": peak_perf,
-                })
 
         if matrix_data:
             matrix_ops_type = get_matrix_ops_type(
                 getattr(self.__mspec, "gpu_series", "unknown_series")
             )
-            # Extend left to the steepest (first) diagonal and right past the
-            # data so panning never reaches an end of the compute ceiling.
-            peak_perf = matrix_data[1][0]
-            left_x = peak_perf / max_bw if max_bw > 0 else matrix_data[0][0]
-            matrix_x, matrix_y = self._sample_ceiling(
-                left_x, peak_perf, roof_dense_hi
+            self._add_compute_ceiling(
+                fig, matrix_ops_type, "matrix_ops", matrix_data, ops_flops,
+                max_bw, roof_dense_hi, subplot_kwargs,
             )
-            fig.add_trace(
-                go.Scatter(
-                    x=matrix_x,
-                    y=matrix_y,
-                    name=f"Peak {matrix_ops_type}",
-                    mode="lines",
-                    showlegend=False,
-                    line=dict(color=get_color("matrix_ops")),
-                    hovertemplate=build_compute_peak_hover(
-                        matrix_ops_type, matrix_data[2], ops_flops
-                    ),
-                ),
-                **subplot_kwargs,
-            )
-            compute_vm = self.__view_models.get(ops_flops)
-            if compute_vm is not None:
-                compute_vm.compute_traces.append({
-                    "traceIndex": len(fig.data) - 1,
-                    "peakPerf": peak_perf,
-                })
 
         #######################
         # Layout Configuration
@@ -1016,13 +1064,13 @@ class Roofline:
         if is_new_figure:
             fig.update_xaxes(
                 type="log",
-                range=[float(np.log10(x_lo)), float(np.log10(x_hi))],
+                range=[float(np.log10(frame_x_lo)), float(np.log10(frame_x_hi))],
                 title_text=f"Arithmetic Intensity ({ops_flops}s/Byte)",
                 gridcolor="rgba(0, 0, 0, 0.08)",
             )
             fig.update_yaxes(
                 type="log",
-                range=[float(np.log10(y_lo)), float(np.log10(y_hi))],
+                range=[float(np.log10(frame_y_lo)), float(np.log10(frame_y_hi))],
                 title_text=f"Performance (G{ops_flops}/sec)",
                 gridcolor="rgba(0, 0, 0, 0.08)",
             )
@@ -1040,21 +1088,9 @@ class Roofline:
                 dragmode="pan",
                 hovermode="closest",
                 margin=dict(l=82, r=40, b=62, t=62, pad=4, autoexpand=False),
-                legend=dict(
-                    title=dict(
-                        text="Achievable peak (click to isolate)", font=dict(size=11)
-                    ),
-                    orientation="v",
-                    yanchor="bottom",
-                    y=0.02,
-                    xanchor="right",
-                    x=0.99,
-                    font=dict(size=11),
-                    bgcolor="rgba(255, 255, 255, 0.72)",
-                    bordercolor="rgba(0, 0, 0, 0.12)",
-                    borderwidth=1,
-                    itemsizing="constant",
-                ),
+                # Roofs are listed/isolated in the side panel, so the in-plot
+                # Plotly legend is turned off.
+                showlegend=False,
                 hoverlabel=dict(
                     bgcolor="white",
                     bordercolor="rgba(0, 0, 0, 0.15)",
