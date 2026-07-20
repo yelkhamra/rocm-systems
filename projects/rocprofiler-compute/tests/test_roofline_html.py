@@ -3,9 +3,9 @@
 
 """Unit coverage for the interactive roofline HTML layer.
 
-Exercises the kernel-identity helpers, the axis-bounds helper, the per-kernel
-trace builder, the view-model serialization, and the standalone-document
-assembler. None of these tests touch the analyze CLI.
+Exercises the color/axis helpers, the per-kernel trace builder, the view-model
+serialization, and the standalone-document assembler. None of these tests touch
+the analyze CLI.
 """
 
 import argparse
@@ -19,13 +19,11 @@ from roofline.roofline_html import (
     build_interactive_document,
 )
 from roofline.roofline_main import (
-    _HOVER_NAME_LIMIT,
     _KERNEL_PALETTE,
     Roofline,
     build_kernel_colors,
-    peak_symbol,
+    get_color,
     roofline_axis_bounds,
-    truncate_kernel_name,
 )
 
 
@@ -58,17 +56,30 @@ CEILING = {
 
 
 # =============================================================================
-# Kernel-identity helpers
+# Color helper
 # =============================================================================
 
 
-def test_peak_symbol_maps_each_level_to_a_distinct_shape() -> None:
-    shapes = {peak_symbol(level) for level in ["L0", "L1", "L2", "HBM", "LDS"]}
-    assert len(shapes) == 5, "each memory peak must have its own marker shape"
+def test_get_color_maps_each_level_to_a_distinct_html_color() -> None:
+    colors = {get_color(level) for level in ["l0", "l1", "l2", "hbm", "lds"]}
+    assert len(colors) == 5, "each memory level must have its own color"
 
 
-def test_peak_symbol_defaults_to_circle_for_unknown_level() -> None:
-    assert peak_symbol("does-not-exist") == "circle"
+def test_get_color_accepts_ai_prefixed_keys() -> None:
+    assert get_color("ai_hbm") == get_color("hbm")
+
+
+def test_get_color_rejects_unknown_category() -> None:
+    try:
+        get_color("does-not-exist")
+    except RuntimeError:
+        return
+    raise AssertionError("get_color must reject an unknown category")
+
+
+# =============================================================================
+# Kernel colors
+# =============================================================================
 
 
 def test_build_kernel_colors_unique_within_palette() -> None:
@@ -86,16 +97,6 @@ def test_build_kernel_colors_cycles_past_palette() -> None:
 
 def test_build_kernel_colors_empty() -> None:
     assert build_kernel_colors(0) == []
-
-
-def test_truncate_kernel_name_leaves_short_names_untouched() -> None:
-    assert truncate_kernel_name("short_kernel(int)") == "short_kernel(int)"
-
-
-def test_truncate_kernel_name_clips_long_names_with_ellipsis() -> None:
-    truncated = truncate_kernel_name("Cijk_" + "x" * 500)
-    assert truncated.endswith("\u2026")
-    assert len(truncated) <= _HOVER_NAME_LIMIT
 
 
 # =============================================================================
@@ -118,11 +119,11 @@ def test_roofline_axis_bounds_defaults_when_empty() -> None:
 
 
 # =============================================================================
-# Per-kernel trace builder
+# Per-kernel trace builder (circles-only; memory level lives in the model)
 # =============================================================================
 
 
-def test_build_kernel_traces_one_trace_per_kernel_color_and_peak_shape() -> None:
+def test_build_kernel_traces_one_marker_trace_per_kernel() -> None:
     roofline = make_roofline()
     # kernel "kA" has an L2 and an HBM point; "kB" only an L2 point (its HBM
     # entry is zeroed out and must be dropped).
@@ -143,32 +144,24 @@ def test_build_kernel_traces_one_trace_per_kernel_color_and_peak_shape() -> None
 
     assert len(traces) == 2
     assert [t.name for t in traces] == ["kA", "kB"]
-    # One color per kernel; peaks are told apart by marker shape.
+    # One color per kernel; points are drawn as uniform circles (no per-peak
+    # marker-shape table any more).
+    assert traces[0].mode == "markers"
     assert traces[0].marker.color == colors[0]
     assert traces[1].marker.color == colors[1]
-    assert list(traces[0].marker.symbol) == ["diamond", "cross"]  # L2, HBM order
-    assert list(traces[1].marker.symbol) == ["diamond"]
+    assert traces[0].marker.symbol is None, "points are circles, not per-peak shapes"
     assert all(t.showlegend is False for t in traces)
 
+    # The memory level of each point is carried in the view model, not the trace.
     assert [p["peak"] for p in model[0]["points"]] == ["L2", "HBM"]
     assert [p["peak"] for p in model[1]["points"]] == ["L2"]
     valid = {"Memory", "Compute", "Unknown"}
     assert all(p["status"] in valid for k in model for p in k["points"])
 
-    def _hover_bound(status: str) -> str:
-        return f"{status} Bound" if status in ("Memory", "Compute") else status
-
-    assert model[0]["hoverName"] == "kA"
-    assert list(traces[0].customdata[0]) == [
-        "kA",
-        "L2",
-        _hover_bound(model[0]["points"][0]["status"]),
-    ]
-    assert list(traces[0].customdata[1]) == [
-        "kA",
-        "HBM",
-        _hover_bound(model[0]["points"][1]["status"]),
-    ]
+    # customdata carries the fully-rendered per-point hover; the kernel name is
+    # embedded in it.
+    assert list(traces[0].customdata[0]) == [model[0]["points"][0]["hover"]]
+    assert "kA" in model[0]["points"][0]["hover"]
 
 
 def test_build_kernel_traces_skips_kernels_without_points() -> None:
@@ -196,7 +189,7 @@ def test_build_kernel_traces_skips_kernels_without_points() -> None:
 def make_view_model() -> RooflineViewModel:
     return RooflineViewModel(
         peaks=["L2", "HBM"],
-        peak_symbols={"L2": "diamond", "HBM": "cross"},
+        peak_colors={"L2": "#009E73", "HBM": "#D55E00"},
         default_peak="HBM",
         kernels=[
             {
@@ -204,7 +197,7 @@ def make_view_model() -> RooflineViewModel:
                 "color": "#123456",
                 "traceIndex": 0,
                 "points": [
-                    {"peak": "HBM", "ai": 1.2, "perf": 300.0, "status": "Memory Bound"}
+                    {"peak": "HBM", "ai": 1.2, "perf": 300.0, "status": "Memory"}
                 ],
             }
         ],
@@ -217,11 +210,18 @@ def test_view_model_to_json_round_trips() -> None:
     assert payload["divId"] == PLOT_DIV_ID
     assert payload["defaultPeak"] == "HBM"
     assert payload["peaks"] == ["L2", "HBM"]
+    assert payload["peakColors"] == {"L2": "#009E73", "HBM": "#D55E00"}
     assert payload["kernelTraceIndices"] == [0]
     assert payload["kernels"][0]["name"] == "kA"
-    # Roof/ceiling filtering, roof extrapolation, and table units are driven by
+    # Roof/ceiling filtering and client-side overlay sampling are driven by
     # these fields.
-    for key in ("rooflineTraces", "computeTraces", "roofMaxAi", "aiUnit", "perfUnit"):
+    for key in (
+        "rooflineTraces",
+        "computeTraces",
+        "computeOverlayTraces",
+        "ceilingDenseHi",
+        "roofSamples",
+    ):
         assert key in payload
 
 
@@ -247,12 +247,8 @@ def test_empty_view_model_is_serializable() -> None:
 def test_build_interactive_document_includes_controls_and_model() -> None:
     fig = go.Figure()
     # A roof line whose legend name must survive into the document text.
-    fig.add_trace(
-        go.Scatter(x=[0.01, 1.0], y=[1.0, 1500.0], name="HBM-FP32<br>1500 GB/s")
-    )
-    fig.add_trace(
-        go.Scatter(x=[0.01, 1000.0], y=[9000.0, 9000.0], name="Peak VALU-FP32<br>x")
-    )
+    fig.add_trace(go.Scatter(x=[0.01, 1.0], y=[1.0, 1500.0], name="HBM"))
+    fig.add_trace(go.Scatter(x=[0.01, 1000.0], y=[9000.0, 9000.0], name="Peak VALU"))
     fig.add_trace(go.Scatter(x=[1.2], y=[300.0], name="kA", mode="markers"))
 
     document = build_interactive_document(fig, make_view_model(), title="Doc")
@@ -262,13 +258,11 @@ def test_build_interactive_document_includes_controls_and_model() -> None:
         "roofline-show-all",
         'id="roofline-model"',
         "roofline-kernel-list",
+        "roofline-roof-list",
         PLOT_DIV_ID,
         "Plotly.newPlot",
     ]:
         assert marker in document, f"document missing {marker!r}"
-    # Roof legend names are preserved (the analyze suite asserts on these).
-    assert "Peak VALU-FP32" in document
-    assert "HBM-FP32" in document
 
 
 def test_build_interactive_document_is_self_contained() -> None:

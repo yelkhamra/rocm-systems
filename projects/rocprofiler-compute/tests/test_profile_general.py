@@ -1536,7 +1536,6 @@ def test_roofline_plot_points_data_generation():
                     if x_vals[i] > 0 and y_vals[i] > 0:
                         status = roofline_instance._determine_kernel_bound_status(
                             ai_value=x_vals[i],
-                            performance=y_vals[i],
                             cache_level=cache_level,
                             ceiling_data=mock_ceiling_data,
                         )
@@ -1612,7 +1611,6 @@ def test_roofline_bound_status_calculation():
 
         status1 = roofline_instance._determine_kernel_bound_status(
             ai_value=1.0,
-            performance=100.0,
             cache_level="ai_hbm",
             ceiling_data=ceiling_data,
         )
@@ -1620,7 +1618,6 @@ def test_roofline_bound_status_calculation():
 
         status2 = roofline_instance._determine_kernel_bound_status(
             ai_value=5.0,
-            performance=150.0,
             cache_level="ai_hbm",
             ceiling_data=ceiling_data,
         )
@@ -1628,7 +1625,6 @@ def test_roofline_bound_status_calculation():
 
         status_lds = roofline_instance._determine_kernel_bound_status(
             ai_value=1.0,
-            performance=100.0,
             cache_level="ai_lds",
             ceiling_data=ceiling_data,
         )
@@ -1636,7 +1632,6 @@ def test_roofline_bound_status_calculation():
 
         status3 = roofline_instance._determine_kernel_bound_status(
             ai_value=1.0,
-            performance=100.0,
             cache_level="ai_l1",
             ceiling_data=ceiling_data,
         )
@@ -1647,7 +1642,6 @@ def test_roofline_bound_status_calculation():
         }
         status4 = roofline_instance._determine_kernel_bound_status(
             ai_value=1.0,
-            performance=100.0,
             cache_level="ai_hbm",
             ceiling_data=bad_ceiling_data,
         )
