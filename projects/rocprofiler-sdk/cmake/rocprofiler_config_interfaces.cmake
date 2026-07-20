@@ -2,6 +2,7 @@
 include_guard(DIRECTORY)
 
 include(rocprofiler_config_nolink_target)
+include(rocprofiler-sdk-utilities)
 
 # ########################################################################################
 #
@@ -402,12 +403,6 @@ endif()
 #
 # ----------------------------------------------------------------------------------------#
 
-if(NOT ROCPROFILER_DISABLE_TRACE_DECODER AND NOT TARGET
-                                             rocprof-trace-decoder::rocprof-trace-decoder)
-    if(ROCPROF_TRACE_DECODER_DIR)
-        find_package(rocprof-trace-decoder 0.2 REQUIRED CONFIG HINTS
-                     ${ROCPROF_TRACE_DECODER_DIR} NO_DEFAULT_PATH)
-    else()
-        find_package(rocprof-trace-decoder 0.2 REQUIRED CONFIG)
-    endif()
+if(NOT ROCPROFILER_DISABLE_TRACE_DECODER)
+    rocprofiler_sdk_find_trace_decoder()
 endif()
