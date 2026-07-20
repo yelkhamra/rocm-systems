@@ -28,6 +28,9 @@
   var ROOF_SAMPLES = model.roofSamples || 200;
   // Float tolerance when comparing a kernel's cumulative runtime to a slider stop.
   var RUNTIME_EPSILON = 1e-6;
+  // Memory-roof line widths: the AI-axis roof is drawn thicker for emphasis.
+  var ROOF_WIDTH_NORMAL = 2;
+  var ROOF_WIDTH_EMPHASIS = 3;
   // Poll for Plotly to finish its initial paint before wiring interactivity.
   var PLOT_READY_POLL_MS = 50;
   var PLOT_READY_MAX_ATTEMPTS = 40;
@@ -191,11 +194,14 @@
   }
 
   function kernelIsVisible(kernel) {
-    // An explicit selection overrides the runtime filter
+    // An active selection further narrows to just the picked kernels.
+    if (!withinThreshold(kernel)) {
+      return false;
+    }
     if (state.selected.size > 0) {
       return state.selected.has(kernel.name);
     }
-    return withinThreshold(kernel);
+    return true;
   }
 
   // A kernel is actually drawn only if it is visible and has points at the
@@ -298,7 +304,25 @@
     if (indices.length) {
       Plotly.restyle(gd, { opacity: opacities }, indices);
     }
+    applyRoofEmphasis();
     updateCeilings();
+  }
+
+  // Thicken the roof on the current AI axis.
+  // While roofs are being isolated, keep them uniform.
+  function applyRoofEmphasis() {
+    if (!plotlyReady() || !memoryRoofIndices.length) {
+      return;
+    }
+    var isolating = state.isolatedRoofs.size > 0;
+    var emphasizeAll = state.selected.size === 1;
+    var widths = rooflineTraces.map(function (roof) {
+      if (!isolating && (emphasizeAll || roof.level === state.peak)) {
+        return ROOF_WIDTH_EMPHASIS;
+      }
+      return ROOF_WIDTH_NORMAL;
+    });
+    Plotly.restyle(gd, { "line.width": widths }, memoryRoofIndices);
   }
 
   // Isolate a memory roof, shared by the roofline panel rows and by clicking a
@@ -395,6 +419,7 @@
       },
       kernelTraceIndices
     );
+    applyRoofEmphasis();
     updatePanel();
     updateRoofPanel();
   }
@@ -450,7 +475,16 @@
     (opts.extras || []).forEach(function (node) {
       item.appendChild(node);
     });
+    // Clickable and keyboard-activatable.
+    item.tabIndex = 0;
+    item.setAttribute("role", "button");
     item.addEventListener("click", opts.onClick);
+    item.addEventListener("keydown", function (event) {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        opts.onClick(event);
+      }
+    });
     return item;
   }
 
@@ -551,13 +585,40 @@
     }
   }
 
+  // Hard-stop linear gradient so each memory-level color shows as its own band.
+  function swatchGradient(colors) {
+    var count = colors.length;
+    var stops = colors.map(function (color, i) {
+      var start = ((i / count) * 100).toFixed(2);
+      var end = (((i + 1) / count) * 100).toFixed(2);
+      return color + " " + start + "%, " + color + " " + end + "%";
+    });
+    return "linear-gradient(90deg, " + stops.join(", ") + ")";
+  }
+
   function updatePanel() {
     var filtering = state.selected.size > 0;
     eachKernelRow(function (item, kernel) {
       var selected = state.selected.has(kernel.name);
       setRowState(item, selected, filtering && !selected);
       // Trim rows outside the runtime threshold, but never a selected one.
-      item.classList.toggle("filtered", !withinThreshold(kernel) && !selected);
+      item.classList.toggle("filtered", !withinThreshold(kernel));
+      // A sole-isolated kernel is drawn across every level (colored by level),
+      // so its swatch becomes a gradient of those level colors to match.
+      var swatch = item.querySelector(".roofline-swatch");
+      if (swatch) {
+        if (state.selected.size === 1 && selected) {
+          var levelColors = (kernel.points || []).map(function (point) {
+            return peakColors[point.peak] || kernel.color || FALLBACK_COLOR;
+          });
+          swatch.style.background =
+            levelColors.length > 1
+              ? swatchGradient(levelColors)
+              : levelColors[0] || kernel.color || FALLBACK_COLOR;
+        } else {
+          swatch.style.background = kernel.color || FALLBACK_COLOR;
+        }
+      }
     });
     // Count how many kernels are actually drawn under the current peak +
     // selection filters, shown as "(drawn / total)" next to the title.
@@ -649,7 +710,7 @@
   // Show the true cumulative percent of runtime covered at the current stop.
   function updateRuntimeLabel() {
     if (runtimeValueEl) {
-      runtimeValueEl.textContent = state.runtimeThreshold.toFixed(1) + "%";
+      runtimeValueEl.textContent = state.runtimeThreshold.toFixed(3) + "%";
     }
   }
 
