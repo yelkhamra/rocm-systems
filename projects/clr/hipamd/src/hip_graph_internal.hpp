@@ -240,6 +240,11 @@ class GraphNode : public hipGraphNodeDOTAttribute {
     nodeSet_.insert(this);
     isEnabled_ = node.isEnabled_;
     dev_id_ = ihipGetDevice();
+    // Timing events must NOT be copied — both original and clone would delete the same
+    // handle, causing a double-free. Each clone starts with no timing events.
+    timing_start_hip_ = nullptr;
+    timing_stop_hip_  = nullptr;
+    gpu_time_us_      = node.gpu_time_us_;  // safe scalar — inherit measured value
   }
 
   // Delete copy-assignment operator to prevent accidental copies causing unexpected behaviors.
@@ -272,6 +277,8 @@ class GraphNode : public hipGraphNodeDOTAttribute {
     for (auto packet : gpuMetadataPackets_) {
       delete[] packet;
     }
+    delete reinterpret_cast<hip::Event*>(timing_start_hip_);
+    delete reinterpret_cast<hip::Event*>(timing_stop_hip_);
     amd::ScopedLock lock(nodeSetLock_);
     nodeSet_.erase(this);
   }
@@ -520,6 +527,11 @@ class GraphNode : public hipGraphNodeDOTAttribute {
     if (DEBUG_HIP_GRAPH_DOT_PRINT >= 2) {
       out << "\nLaunchId:" << launch_id_;
     }
+    if (DEBUG_HIP_GRAPH_DOT_PRINT >= 3 && gpu_time_us_ >= 0.0f) {
+      char buf[32];
+      snprintf(buf, sizeof(buf), "\nGPU_us:%.1f", gpu_time_us_);
+      out << buf;
+    }
     out << "\"";
     if (DEBUG_HIP_GRAPH_DOT_PRINT) {
       if (segment_id_ != -1) {
@@ -568,6 +580,10 @@ class GraphNode : public hipGraphNodeDOTAttribute {
   int dev_id_;  //!< Device Id when node is created(dev id from capture stream/current device
                 //!< when explicitly added)
   bool wait_ = false;
+public: //! debug API - don't care
+  hipEvent_t timing_start_hip_ = nullptr;  //!< GPU timestamp event for node start (DEBUG_HIP_GRAPH_DOT_PRINT >= 3)
+  hipEvent_t timing_stop_hip_  = nullptr;  //!< GPU timestamp event for node stop
+  float      gpu_time_us_      = -1.0f;   //!< Per-node GPU elapsed time in microseconds
 };
 
 class GraphEventWaitNode : public GraphNode {
@@ -1531,6 +1547,11 @@ class GraphKernelNode : public GraphNode {
     }
     if (DEBUG_HIP_GRAPH_DOT_PRINT >= 2) {
       out << "\nLaunchId:" << launch_id_;
+    }
+    if (DEBUG_HIP_GRAPH_DOT_PRINT >= 3 && gpu_time_us_ >= 0.0f) {
+      char buf[32];
+      snprintf(buf, sizeof(buf), "\nGPU_us:%.1f", gpu_time_us_);
+      out << buf;
     }
     out << "\"";
     out << "];";

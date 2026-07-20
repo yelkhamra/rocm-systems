@@ -1627,7 +1627,25 @@ hipError_t GraphExecClassic::Run(hip::Stream* launch_stream) {
     }
   }
 
-  if (DEBUG_HIP_GRAPH_DOT_PRINT == 2 && !graph_dumped_) {
+  if (unlikely(DEBUG_HIP_GRAPH_DOT_PRINT >= 3)) {
+    // Block until all GPU work is done so timing events are queryable.
+    // Makes hipGraphLaunch synchronous at level 3 — acceptable for debug profiling.
+    // Must run after RunNodes() (which enqueues the per-node timing markers in
+    // Graph::RunOneNode) and before the DOT dump, so gpu_time_us_ is populated by
+    // the time ihipGraphLaunch generates the DOT after Run() returns.
+    launch_stream->finish();
+    for (auto node : GetTopoOrder()) {
+      if (node->timing_start_hip_ && node->timing_stop_hip_) {
+        float ms = 0.0f;
+        auto* e_start = reinterpret_cast<hip::Event*>(node->timing_start_hip_);
+        auto* e_stop  = reinterpret_cast<hip::Event*>(node->timing_stop_hip_);
+        (void)e_start->elapsedTime(*e_stop, ms);
+        node->gpu_time_us_ = ms * 1000.0f;
+      }
+    }
+  }
+
+  if (unlikely(DEBUG_HIP_GRAPH_DOT_PRINT == 2 && !graph_dumped_)) {
     graph_dumped_ = true;
     std::string filename =
         "graph_" + std::to_string(amd::Os::getProcessId()) + "_dot_print_launch_1";
@@ -2661,7 +2679,7 @@ hipError_t GraphExecSegmented::EnqueueSegment(const Segment& segment, hip::Strea
       // Node was successfully captured - dispatch its batch
       if (segBatch && batchIndex < segBatch->packet_batches.size()) {
         auto& packetBatch = segBatch->packet_batches[batchIndex];
-        if (DEBUG_HIP_GRAPH_DOT_PRINT) {
+        if (unlikely(DEBUG_HIP_GRAPH_DOT_PRINT)) {
           for (size_t j = i; j < i + packetBatch.nodeRanges.size(); j++) {
             segment.nodes[j]->stream_id_ = stream->GetStreamId();
             segment.nodes[j]->hw_queue_id_ = stream->getQueueID();
@@ -2694,7 +2712,7 @@ hipError_t GraphExecSegmented::EnqueueSegment(const Segment& segment, hip::Strea
       // Node doesn't support capture - execute individually. Upstream flat batches
       // hand off via attach_signal (SDMA memcpy) or BuildSyncPlan dep barriers;
       // no pre/post Markers needed around the uncaptured node.
-      if (DEBUG_HIP_GRAPH_DOT_PRINT) {
+      if (unlikely(DEBUG_HIP_GRAPH_DOT_PRINT)) {
         node->stream_id_ = stream->GetStreamId();
         node->hw_queue_id_ = stream->getQueueID();
       }
@@ -2818,7 +2836,7 @@ bool Graph::RunOneNode(Node node) {
   } else {
     // Assign a stream to the current node
     node->SetStream(streams_);
-    if (DEBUG_HIP_GRAPH_DOT_PRINT) {
+    if (unlikely(DEBUG_HIP_GRAPH_DOT_PRINT)) {
       node->hw_queue_id_ = node->GetQueue()->getQueueID();
     }
     // Create the execution commands on the assigned stream
@@ -2831,8 +2849,24 @@ bool Graph::RunOneNode(Node node) {
     if (node->GetWait() && !waitList.empty()) {
       node->UpdateEventWaitLists(waitList);
     }
+    if (unlikely(DEBUG_HIP_GRAPH_DOT_PRINT >= 3)) {
+      if (node->timing_start_hip_ == nullptr) {
+        // Use ihipEventCreateWithFlags so that AMD_DIRECT_DISPATCH mode gets hip::EventDD
+        // (the correct subclass).  Plain `new hip::Event` causes heap corruption via
+        // submitMarker→ActiveSignal when running with direct dispatch enabled.
+        (void)ihipEventCreateWithFlags(&node->timing_start_hip_, hipEventDefault);
+        (void)ihipEventCreateWithFlags(&node->timing_stop_hip_, hipEventDefault);
+      }
+      // batch_flush=false: do not prematurely flush the CPU command ring inside a graph launch.
+      auto* e_start = reinterpret_cast<hip::Event*>(node->timing_start_hip_);
+      (void)e_start->addMarker(node->GetQueue(), nullptr, false);
+    }
     // Start the execution
     node->EnqueueCommands(node->GetQueue());
+    if (unlikely((DEBUG_HIP_GRAPH_DOT_PRINT >= 3) && node->timing_stop_hip_)) {
+      auto* e_stop = reinterpret_cast<hip::Event*>(node->timing_stop_hip_);
+      (void)e_stop->addMarker(node->GetQueue(), nullptr, false);
+    }
   }
   // Release commands of dependency nodes that were included in the wait list after enqueue
   for (auto dep : wait_order_) {
@@ -2932,7 +2966,7 @@ bool Graph::RunNodes(int32_t base_stream, const std::vector<hip::Stream*>* paral
       return false;
     }
   }
-  fprintf(stderr, "Xwait_count: %d\n", Xwait_count);
+  // XPUT("Xwait_count: %d", Xwait_count);
   wait_list.clear();
   // Check if the graph has multiple leaf nodes
   for (uint32_t i = 0; i < DEBUG_HIP_FORCE_GRAPH_QUEUES; ++i) {
@@ -3060,7 +3094,7 @@ hipError_t GraphExecSegmented::Run(hip::Stream* launch_stream) {
       launch_stream->DeviceId(), captureDeviceId_);
     status = hipErrorInvalidValue;
   }
-  if (DEBUG_HIP_GRAPH_DOT_PRINT == 2 && !graph_dumped_) {
+  if (unlikely(DEBUG_HIP_GRAPH_DOT_PRINT == 2 && !graph_dumped_)) {
     graph_dumped_ = true;
     std::string filename =
         "graph_" + std::to_string(amd::Os::getProcessId()) + "_dot_print_launch_1";
