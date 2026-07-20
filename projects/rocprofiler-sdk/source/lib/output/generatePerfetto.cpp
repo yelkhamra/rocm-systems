@@ -101,8 +101,13 @@ write_perfetto(
     auto shmem_size_hint = ocfg.perfetto_shmem_size_hint;
     auto buffer_size_kb  = ocfg.perfetto_buffer_size;
 
+    LOG_IF(FATAL, !defaults::is_valid_perfetto_buffer_size(buffer_size_kb))
+        << "Invalid Perfetto buffer size: " << buffer_size_kb << " KB. Expected a value from "
+        << defaults::perfetto_buffer_size_min_kb << " to " << defaults::perfetto_buffer_size_max_kb
+        << " KB";
+
     auto* buffer_config = cfg.add_buffers();
-    buffer_config->set_size_kb(buffer_size_kb);
+    buffer_config->set_size_kb(static_cast<uint32_t>(buffer_size_kb));
 
     if(ocfg.perfetto_buffer_fill_policy == "discard" || ocfg.perfetto_buffer_fill_policy.empty())
         buffer_config->set_fill_policy(

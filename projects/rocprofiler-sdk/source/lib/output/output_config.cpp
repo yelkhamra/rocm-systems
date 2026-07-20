@@ -57,6 +57,10 @@ output_config::parse_env()
     perfetto_shmem_size_hint =
         common::get_env("ROCPROF_PERFETTO_SHMEM_SIZE_HINT_KB", perfetto_shmem_size_hint);
     perfetto_buffer_size = common::get_env("ROCPROF_PERFETTO_BUFFER_SIZE_KB", perfetto_buffer_size);
+    LOG_IF(FATAL, !defaults::is_valid_perfetto_buffer_size(perfetto_buffer_size))
+        << "Invalid Perfetto buffer size: " << perfetto_buffer_size << " KB. Expected a value from "
+        << defaults::perfetto_buffer_size_min_kb << " to " << defaults::perfetto_buffer_size_max_kb
+        << " KB";
 
     output_path    = common::get_env("ROCPROF_OUTPUT_PATH", output_path);
     output_file    = common::get_env("ROCPROF_OUTPUT_FILE_NAME", output_file);
