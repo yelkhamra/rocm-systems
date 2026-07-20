@@ -246,6 +246,10 @@ release(bool, DEBUG_HIP_FORCE_ASYNC_QUEUE, false,                             \
         "Forces grpahs into async queue mode. DEBUG_HIP_FORCE_GRAPH_QUEUES must be 1") \
 release(uint, DEBUG_HIP_FORCE_GRAPH_QUEUES, 4,                                \
         "Forces the number of streams for the graph parallel execution")      \
+release(uint, DEBUG_HIP_GRAPH_LIST_SCHED, 0,                                  \
+        "Classic graph path: lazily reschedule node stream assignment and run "\
+        "order using a critical-path list scheduler. Launch idx 2 collects "   \
+        "per-node GPU times, idx 3 decomposes and caches the schedule")        \
 release(uint, DEBUG_HIP_GRAPH_BATCH_SIZE, 256,                                \
         "Number of graph nodes to batch at a time")                           \
 release(uint, DEBUG_HIP_GRAPH_SEGMENT_SCHEDULING, 0,                          \

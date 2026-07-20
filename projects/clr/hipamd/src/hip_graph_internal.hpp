@@ -813,6 +813,11 @@ class Graph {
   //! Schedules all nodes in the graph into different streams
   hipError_t ScheduleNodes();
 
+  //! Critical-path list scheduler (classic path). When DEBUG_HIP_GRAPH_LIST_SCHED
+  //! is set, this reassigns node stream_id_ and produces sched_order_ (the run order)
+  //! using per-node gpu_time_us_ collected during a warm-up launch. Runs once.
+  void PathDecomposition();
+
   int Xwait_count = 0;
   //! Runs one node on the assigned stream
   bool RunOneNode(Node node);  //!< Node for the execution on GPU
@@ -1038,6 +1043,13 @@ class Graph {
   std::vector<Node> wait_order_;
   std::vector<hip::Stream*> streams_;  //!< The list of streams, used in the execution
   int32_t current_id_ = 0;             //!< The current node ID in the graph execution sequence
+
+  //! List-scheduler (DEBUG_HIP_GRAPH_LIST_SCHED) state, per executable graph instance.
+  uint32_t list_sched_launch_count_ = 0;  //!< Number of times this graph has been launched
+  int32_t current_launch_idx_ = -1;       //!< 0-based index of the in-flight launch
+  bool collect_node_timing_ = false;      //!< Enable per-node timing markers this launch
+  bool list_sched_done_ = false;          //!< Set once PathDecomposition has run
+  std::vector<Node> sched_order_;          //!< List-scheduler run order (replaces topoOrder_)
   hip::Device* device_;                //!< HIP device object
   hip::MemoryPool* mem_pool_;          //!< Memory pool, associated with this graph
   std::unordered_set<GraphNode*> capturedNodes_;
@@ -1539,11 +1551,6 @@ class GraphKernelNode : public GraphNode {
         out << "\nStreamId:" << stream_id_;
         out << "\nHW Queue:" << hw_queue_id_;
       }
-      if (segment_id_ == -1) {
-        out << "\n\nStreamId:" << stream_id_;
-        // out << "\nSignalIsRequired: " << ((signal_is_required_) ? "true" : "false");
-      }
-      // out << "\nDeviceId:" << dev_id_;
     }
     if (DEBUG_HIP_GRAPH_DOT_PRINT >= 2) {
       out << "\nLaunchId:" << launch_id_;
