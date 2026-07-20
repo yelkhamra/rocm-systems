@@ -63,7 +63,3 @@ class TestGfxActivitySilence(unittest.TestCase):
         self.assertEqual(
             self._validate(self._max.UINT32_T, self._max.UINT64_T), int(self._max.UINT32_T)
         )
-
-
-if __name__ == "__main__":
-    unittest.main()
