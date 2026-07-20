@@ -238,3 +238,7 @@ Conclusion
 ==========
 
 With cooperative groups, you can easily use custom partitions to create custom tiles for custom solutions. You can find the complete code at `cooperative groups ROCm example. <https://github.com/ROCm/rocm-examples/tree/develop/HIP-Basic/cooperative_groups>`_
+
+Additional cooperative groups examples demonstrate more recent features of the API:
+
+- `double-buffered tile <https://github.com/ROCm/rocm-examples/tree/develop/HIP-Basic/cooperative_groups_double_buffered_tile>`_ combines ``memcpy_async`` with a split barrier.
