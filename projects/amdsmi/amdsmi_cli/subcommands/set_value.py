@@ -1667,8 +1667,8 @@ class SetValueCommands:
                     # The driver does not clamp caps that fall between those
                     # levels, so an unaligned request could otherwise run at the
                     # next-higher level. sclk (GFX) supports a continuous
-                    # frequency range and enforces an arbitrary cap exactly, so
-                    # its requested value is honored as-is and never snapped.
+                    # frequency range, so its requested value is honored as-is
+                    # and never snapped.
                     if clk_type != "sclk":
                         snapped_val = self._snap_clk_limit_to_dpm(args.gpu, amdsmi_clk_type, val)
                         if snapped_val is not None and snapped_val != val:
