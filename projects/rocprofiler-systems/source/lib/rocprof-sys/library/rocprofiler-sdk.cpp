@@ -13,8 +13,9 @@
 #include "core/containers/stable_vector.hpp"
 #include "core/demangler.hpp"
 #include "core/gpu.hpp"
-#include "core/output_file_registry.hpp"
+#include "core/output/registry.hpp"
 #include "core/perfetto.hpp"
+#include "core/perfetto/log_filter.hpp"
 #include "core/perfetto_fwd.hpp"
 #include "core/state.hpp"
 #include "core/trace_cache/cache_manager.hpp"
@@ -2946,10 +2947,8 @@ tool_attach_fini(void* /* tool_data */)
     // Write Perfetto trace output
     if(get_use_perfetto())
     {
-        bool                             _perfetto_output_error = false;
-        rocprofsys::output_file_registry _output_registry{};
-        ::rocprofsys::perfetto::post_process(nullptr, _perfetto_output_error,
-                                             _output_registry);
+        bool _perfetto_output_error = false;
+        ::rocprofsys::perfetto::post_process(nullptr, _perfetto_output_error);
         if(_perfetto_output_error)
             LOG_ERROR("Perfetto output error occurred during attach finalization");
     }
@@ -2970,6 +2969,10 @@ tool_attach_init([[maybe_unused]] rocprofiler_client_detach_t detach_func,
         LOG_INFO("Re-attaching to process {} (session {})", getpid(), current_count);
         rocprofsys_reset_for_reattach_hidden();
         reset_sdk_session_guards();
+
+        output::registry::instance().start_new_session();
+
+        core::log_filter::register_with_perfetto_logger();
 
         // Restart Perfetto for a new tracing session
         if(get_use_perfetto()) ::rocprofsys::perfetto::start();

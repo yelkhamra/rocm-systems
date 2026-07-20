@@ -4,12 +4,13 @@
 #pragma once
 #include "agent_manager.hpp"
 #include "core/node_info.hpp"
-#include "core/output_file_registry.hpp"
 #include "core/rocpd/data_processor.hpp"
 #include "core/trace_cache/metadata_registry.hpp"
 #include "core/trace_cache/sample_processor.hpp"
 
 #include "trace_cache/sample_type.hpp"
+
+#include <sys/types.h>
 
 namespace rocprofsys
 {
@@ -20,8 +21,8 @@ class rocpd_processor_t : public processor_t<rocpd_processor_t>
 {
 public:
     rocpd_processor_t(const std::shared_ptr<metadata_registry>& metadata,
-                      const std::shared_ptr<agent_manager>& agent_mngr, int pid, int ppid,
-                      output_file_registry& output_registry);
+                      const std::shared_ptr<agent_manager>& agent_mngr, pid_t pid,
+                      pid_t ppid);
 
     void prepare_for_processing();
     void finalize_processing();
@@ -50,7 +51,6 @@ private:
     std::shared_ptr<metadata_registry>     m_metadata;
     std::shared_ptr<agent_manager>         m_agent_manager;
     std::shared_ptr<rocpd::data_processor> m_data_processor;
-    output_file_registry&                  m_output_registry;
     std::string                            m_db_output_path;
 };
 
