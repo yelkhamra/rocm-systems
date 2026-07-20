@@ -96,6 +96,20 @@ public:
   /// @retval false No live guest process to retain.
   [[nodiscard]] bool retain_local_open() override;
 
+  /// @brief Number of app-facing KFD descriptor references still live.
+  /// @details Only application-visible dup fds are counted (the internal real
+  /// /dev/kfd fd is not), so a count of zero means the guest driver is idle. The
+  /// interposer uses this to decide when the local VM may be torn down.
+  [[nodiscard]] uint32_t local_open_ref_count() const;
+
+  /// @brief Wake blocking calls before teardown (delegates to the simulator
+  /// execution backend, if any).
+  /// @details A simulator-backed guest forwards WAIT_EVENTS to its SimulatedKfd
+  /// execution driver, so the wake must reach that driver's local process. A
+  /// hardware-backed guest forwards to the real kernel and owns no simulator wait,
+  /// so this is a no-op there.
+  void begin_local_shutdown() override;
+
   /// @brief Stop classifying the hidden real /dev/kfd fd number as KFD after a
   /// dup2/dup3 overwrote it.
   /// @details GuestKfd hands applications ordinary dup fds and keeps the real

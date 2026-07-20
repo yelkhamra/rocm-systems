@@ -28,6 +28,9 @@ void SimulationEngine::create() {
   setup_partitions();
 
   done_.store(false, std::memory_order_release);
+  startup_complete_.store(false, std::memory_order_release);
+  startup_failed_.store(false, std::memory_order_release);
+  started_component_count_ = 0;
   active_primaries_.store(0, std::memory_order_release);
   has_primaries_.store(false, std::memory_order_release);
   exit_status_ = {};
@@ -97,8 +100,33 @@ ExitStatus SimulationEngine::run() {
   assert(created_ && "run() called before create()");
   const uint32_t num_threads = config_.num_threads;
 
-  startup_components();
+  // A component startup() can throw. run() may execute on a background thread
+  // (the LD_PRELOAD interposer's local VM) whose top-level lambda has no catch, so
+  // an escaping exception would call std::terminate AND leave wait_until_started()
+  // blocked forever (startup_complete_ never set). Catch it, latch readiness with a
+  // failure flag so waiters wake and can unwind, and return an error ExitStatus
+  // rather than running the epoch loop against half-started components.
+  try {
+    startup_components();
+  } catch (const std::exception &e) {
+    set_exit(ExitReason::INTERRUPTED, current_time_.load(std::memory_order_acquire),
+             std::string("component startup failed: ") + e.what(), /*code=*/1);
+    latch_startup(/*failed=*/true);
+    return exit_status_;
+  } catch (...) {
+    // The engine may run on a background thread whose lambda has no catch, so a
+    // non-std::exception throw would still call std::terminate. Latch failure and
+    // return an error status for those too, matching step()'s catch (...).
+    set_exit(ExitReason::INTERRUPTED, current_time_.load(std::memory_order_acquire),
+             "component startup failed with a non-standard exception", /*code=*/1);
+    latch_startup(/*failed=*/true);
+    return exit_status_;
+  }
   running_ = true;
+  // Publish readiness only after every component's startup() has run, so an
+  // embedding that launched run() on a background thread (the LD_PRELOAD
+  // interposer's local VM) does not expose a half-started device.
+  latch_startup(/*failed=*/false);
   pacer_.anchor(0);
 
   if (config_.max_ticks > 0 && num_threads == 1) {
@@ -127,13 +155,28 @@ ExitStatus SimulationEngine::run() {
   return exit_status_;
 }
 
+bool SimulationEngine::wait_until_started() const {
+  while (!startup_complete_.load(std::memory_order_acquire))
+    startup_complete_.wait(false, std::memory_order_acquire);
+  return !startup_failed_.load(std::memory_order_acquire);
+}
+
 bool SimulationEngine::step() {
   assert(created_ && "step() called before create()");
   assert(config_.num_threads == 1 && "step() requires single-threaded mode");
 
   if (!running_) {
-    startup_components();
+    // step() runs on the foreground caller, so a startup throw can propagate
+    // normally; still latch readiness+failure first so any thread blocked in
+    // wait_until_started() wakes and observes the failure instead of hanging.
+    try {
+      startup_components();
+    } catch (...) {
+      latch_startup(/*failed=*/true);
+      throw;
+    }
     running_ = true;
+    latch_startup(/*failed=*/false);
 
     if (config_.max_ticks > 0) {
       max_ticks_event_.set_handler([this](Tick ts, Message *) {
@@ -516,17 +559,35 @@ void SimulationEngine::initialize_components() {
 }
 
 void SimulationEngine::startup_components() {
+  // Track how many components have completed startup(), in topology order, so a
+  // throw partway leaves started_component_count_ pointing just past the last
+  // fully-started component. shutdown_components() then shuts down only those.
+  started_component_count_ = 0;
   for (auto &part : topology_.partitions()) {
-    for (auto *comp : part.components)
+    for (auto *comp : part.components) {
       comp->startup();
+      ++started_component_count_;
+    }
   }
 }
 
 void SimulationEngine::shutdown_components() {
+  // Only shut down components whose startup() actually completed, in reverse
+  // topology order. A partial startup (some component threw) must not call
+  // shutdown() on a component that never started.
+  std::vector<Component *> started;
+  started.reserve(started_component_count_);
   for (auto &part : topology_.partitions()) {
-    for (auto *comp : part.components)
-      comp->shutdown();
+    for (auto *comp : part.components) {
+      if (started.size() >= started_component_count_)
+        break;
+      started.push_back(comp);
+    }
+    if (started.size() >= started_component_count_)
+      break;
   }
+  for (auto it = started.rbegin(); it != started.rend(); ++it)
+    (*it)->shutdown();
 }
 
 Tick SimulationEngine::compute_async_floor(const PartitionContext &ctx) const {

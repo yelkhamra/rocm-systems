@@ -694,6 +694,26 @@ bool GuestKfd::retain_local_open() {
   return false;
 }
 
+uint32_t GuestKfd::local_open_ref_count() const {
+  std::lock_guard lock(mutex_);
+  return open_refs_;
+}
+
+void GuestKfd::begin_local_shutdown() {
+  // Forward the wake to the simulator execution backend so its parked WAIT_EVENTS
+  // returns. Snapshot the pointer under mutex_, then call with the lock released:
+  // execution_driver_->begin_local_shutdown() takes the simulator's own process
+  // mutex, and holding GuestKfd::mutex_ across it is unnecessary. Hardware-backed
+  // guests have no execution_driver_ and forward to the kernel, so this is a no-op.
+  LinuxKfd *execution_driver = nullptr;
+  {
+    std::lock_guard lock(mutex_);
+    execution_driver = execution_driver_;
+  }
+  if (execution_driver)
+    execution_driver->begin_local_shutdown();
+}
+
 LinuxKfd::PrimaryInvalidation GuestKfd::invalidate_primary_fd(int fd) {
   if (fd < 0)
     return PrimaryInvalidation::kNotPrimary;

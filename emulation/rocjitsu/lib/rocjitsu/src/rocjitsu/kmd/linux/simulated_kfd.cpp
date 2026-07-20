@@ -484,6 +484,27 @@ uint32_t SimulatedKfd::local_open_ref_count() const {
   return it != processes_.end() ? it->second->open_ref_count() : 0;
 }
 
+void SimulatedKfd::begin_local_shutdown() {
+  // Wake an indefinite-timeout WAIT_EVENTS on the local process so it returns and
+  // drops its lifetime pin before the interposer takes the exclusive latch. Snapshot
+  // the process under process_mutex_, then fire the wake with the lock released:
+  // notify_closing() takes the process's own event mutex, and WAIT_EVENTS does not
+  // take process_mutex_, so the parked thread can make progress. This does NOT erase
+  // the process or free state — close() still performs the real teardown.
+  std::shared_ptr<KfdProcess> proc;
+  {
+    std::lock_guard<std::mutex> lk(process_mutex_);
+    if (local_process_id_ == 0)
+      return;
+    auto it = processes_.find(local_process_id_);
+    if (it == processes_.end())
+      return;
+    proc = it->second;
+  }
+  proc->event_state_.notify_closing();
+  proc->event_state_.signal_page_shutdown();
+}
+
 int SimulatedKfd::close() { return close(local_process_id_); }
 
 void SimulatedKfd::close_all_processes() {
