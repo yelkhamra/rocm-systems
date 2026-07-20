@@ -861,9 +861,11 @@ VMfmaF3216x16x128F8f6f4Vop3pMfma::VMfmaF3216x16x128F8f6f4Vop3pMfma(const Machine
   num_src_ = 3;
   num_dst_ = 1;
   flags_ |= MFMA;
-  size_ = 16;
-  raw_words_ = {inst[-2], inst[-1], inst[0], inst[1]};
-  raw_encoding_ = raw_words_.data();
+  if (inst_.abid & 1u) {
+    size_ = 16;
+    raw_words_ = {inst[-2], inst[-1], inst[0], inst[1]};
+    raw_encoding_ = raw_words_.data();
+  }
 }
 
 void VMfmaF3216x16x128F8f6f4Vop3pMfma::execute_impl(amdgpu::Wavefront &wf) {
@@ -925,9 +927,11 @@ VMfmaF3232x32x64F8f6f4Vop3pMfma::VMfmaF3232x32x64F8f6f4Vop3pMfma(const MachineIn
   num_src_ = 3;
   num_dst_ = 1;
   flags_ |= MFMA;
-  size_ = 16;
-  raw_words_ = {inst[-2], inst[-1], inst[0], inst[1]};
-  raw_encoding_ = raw_words_.data();
+  if (inst_.abid & 1u) {
+    size_ = 16;
+    raw_words_ = {inst[-2], inst[-1], inst[0], inst[1]};
+    raw_encoding_ = raw_words_.data();
+  }
 }
 
 void VMfmaF3232x32x64F8f6f4Vop3pMfma::execute_impl(amdgpu::Wavefront &wf) {

@@ -6637,13 +6637,18 @@ class CodeGenerator:
                         ctor_body_parts.append('flags_ |= ACCVGPR;')
 
                     # Per-instruction size overrides (e.g., VOP3PX2 128-bit
-                    # instructions decoded under 64-bit VOP3P_MFMA).
+                    # instructions decoded under 64-bit VOP3P_MFMA). The
+                    # CDNA4 scaled MFMA aliases share their opcode with an
+                    # ordinary 64-bit instruction and use ABID[0] to select
+                    # the extended encoding.
                     _size_overrides = self.isa_spec.profile.inst_size_overrides
                     if inst.name in _size_overrides:
-                        ctor_body_parts.append(f'size_ = {_size_overrides[inst.name]};')
                         ctor_body_parts.append(
+                            'if (inst_.abid & 1u) {'
+                            f'size_ = {_size_overrides[inst.name]};'
                             'raw_words_ = {inst[-2], inst[-1], inst[0], inst[1]};'
                             'raw_encoding_ = raw_words_.data();'
+                            '}'
                         )
                         private_members.append(
                             cgen.Statement('std::array<uint32_t, 4> raw_words_{}')
@@ -9570,13 +9575,6 @@ inline void unpack_6bit(const uint32_t dwords[6], uint8_t vals[32]) {{
                     ):
                         _pfx = 'decodeVop3pX2Prefix'
                         _dte.sub_decode_funcs[_vop3px2_opcode] = _pfx
-                        for ie in self.isa_spec.inst_encodings:
-                            for inst in ie.insts:
-                                if (
-                                    inst.name
-                                    in self.isa_spec.profile.inst_size_overrides
-                                ):
-                                    _dte.sub_decode_funcs[inst.opcode] = 'decodeInvalid'
                         _custom_decode_bodies[_pfx] = cgen.Block(
                             [
                                 cgen.Statement(

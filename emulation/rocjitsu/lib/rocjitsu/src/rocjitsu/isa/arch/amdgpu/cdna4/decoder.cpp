@@ -4714,6 +4714,16 @@ std::unique_ptr<Instruction> Decoder::decodeVop3pX2Prefix(const MachineInst *opc
   return sub_decode_vop3p[op.op](opcode + 2);
 }
 
+std::unique_ptr<Instruction>
+Decoder::decodeVMfmaF3216x16x128F8f6f4Vop3pMfma(const MachineInst *opcode) {
+  return std::make_unique<VMfmaF3216x16x128F8f6f4Vop3pMfma>(opcode);
+}
+
+std::unique_ptr<Instruction>
+Decoder::decodeVMfmaF3232x32x64F8f6f4Vop3pMfma(const MachineInst *opcode) {
+  return std::make_unique<VMfmaF3232x32x64F8f6f4Vop3pMfma>(opcode);
+}
+
 std::unique_ptr<Instruction> Decoder::decodeVPkFmaF32Vop3p(const MachineInst *opcode) {
   return std::make_unique<VPkFmaF32Vop3p>(opcode);
 }
@@ -8868,8 +8878,8 @@ const std::array<Decoder::DecodeFunc, 128> Decoder::sub_decode_vop3p = {
     &Decoder::decodeVDot8I32I4Vop3p,
     &Decoder::decodeVDot8U32U4Vop3p,
     &Decoder::decodeVop3pX2Prefix,
-    &Decoder::decodeInvalid,
-    &Decoder::decodeInvalid,
+    &Decoder::decodeVMfmaF3216x16x128F8f6f4Vop3pMfma,
+    &Decoder::decodeVMfmaF3232x32x64F8f6f4Vop3pMfma,
     &Decoder::decodeInvalid,
     &Decoder::decodeVPkFmaF32Vop3p,
     &Decoder::decodeVPkMulF32Vop3p,

@@ -861,6 +861,38 @@ TEST(Cdna3DecodeTest, MfmaAccCdPreservesInlineConstantSrc2) {
   EXPECT_EQ(inst->disassemble(), "v_mfma_f32_32x32x8_bf16 acc[136:151], acc[84:85], acc[82:83], 0");
 }
 
+TEST(Cdna4DecodeTest, F8f6f4MfmaSupportsOrdinaryAndScaledEncodings) {
+  // Ordinary v_mfma_f32_16x16x128_f8f6f4 uses the two-dword VOP3P_MFMA
+  // encoding with ABID[0] clear.
+  const std::array<uint32_t, 4> ordinary_words = {
+      0xD3AD0030u,
+      0x04C2F572u,
+      0,
+      0,
+  };
+  // v_mfma_scale_f32_16x16x128_f8f6f4 is a four-dword VOP3PX2 alias: the
+  // first two dwords carry the scale operands and the body has ABID[0] set.
+  const std::array<uint32_t, 4> scaled_words = {
+      0xD3AC0000u,
+      0x0002DD5Fu,
+      0xD3AD0C20u,
+      0x8482F114u,
+  };
+
+  auto decoder = Decoder::create(ROCJITSU_CODE_ARCH_CDNA4);
+  ASSERT_NE(decoder, nullptr);
+
+  std::unique_ptr<Instruction> ordinary(decoder->decode(ordinary_words.data()));
+  ASSERT_NE(ordinary, nullptr);
+  EXPECT_EQ(ordinary->mnemonic(), "v_mfma_f32_16x16x128_f8f6f4");
+  EXPECT_EQ(ordinary->size(), 8);
+
+  std::unique_ptr<Instruction> scaled(decoder->decode(scaled_words.data()));
+  ASSERT_NE(scaled, nullptr);
+  EXPECT_EQ(scaled->mnemonic(), "v_mfma_f32_16x16x128_f8f6f4");
+  EXPECT_EQ(scaled->size(), 16);
+}
+
 TEST(Cdna2DecodeTest, MemoryAccBitSelectsAccumulatorDestination) {
   struct TestCase {
     const char *mnemonic;

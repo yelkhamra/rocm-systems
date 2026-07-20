@@ -999,9 +999,9 @@ class CdnaProfile(_AmdgpuProfileBase):
 
     @property
     def inst_size_overrides(self) -> dict[str, int]:
-        # VOP3PX2 instructions are 128-bit (16 bytes) but decoded under
-        # the 64-bit VOP3P_MFMA encoding. Override their size so the PC
-        # advances correctly past the 128-bit instruction.
+        # The scaled VOP3PX2 aliases are 128-bit (16 bytes) but decoded under
+        # the same opcode as ordinary 64-bit VOP3P_MFMA instructions. ABID[0]
+        # selects the scaled form; codegen applies this size only in that case.
         return {
             'V_MFMA_F32_16X16X128_F8F6F4': 16,
             'V_MFMA_F32_32X32X64_F8F6F4': 16,
