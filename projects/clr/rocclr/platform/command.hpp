@@ -327,6 +327,7 @@ class Command : public Event {
 
   bool packetCapturing_ = false;       //!< Flag to enable/disable graph gpu packet capture
   std::vector<uint8_t*>* gpuPackets_;  //!< GPU packets captured when graph capturing is enabled
+  std::vector<uint8_t*>* gpuMetadataPackets_ = nullptr;  //!< Metadata packets (parallel to gpuPackets_)
   GraphKernelArgManager* graphKernArgMgr_ = nullptr;  //!< KernelMgr for graph
   address kernArgOffset_ = nullptr;  //!< KernelArg buffer to used when graph capturing is enabled
   const std::string** capturedKernelName_ = nullptr;  //!< Kernel under capture
@@ -377,9 +378,11 @@ class Command : public Event {
   //! Sets AQL capture state, aql packet to capture and where to copy kernArgs
   void setPktCapturingState(bool state, std::vector<uint8_t*>* packet,
                             amd::GraphKernelArgManager* graphKernArgMgr,
-                            const std::string** capturedKernelName) {
+                            const std::string** capturedKernelName,
+                            std::vector<uint8_t*>* metadataPackets = nullptr) {
     packetCapturing_ = state;
     gpuPackets_ = packet;
+    gpuMetadataPackets_ = metadataPackets;
     graphKernArgMgr_ = graphKernArgMgr;
     capturedKernelName_ = capturedKernelName;
   }
@@ -395,6 +398,23 @@ class Command : public Event {
   const uint8_t* getAqlPacket() const {
     uint8_t* packet = new uint8_t[64];
     gpuPackets_->push_back(packet);
+    return packet;
+  }
+
+  //! Allocates and returns a metadata packet buffer for graph capture.
+  //! Returns nullptr if metadata capture is not enabled.
+  //! The buffer is initialized with HSA_PACKET_TYPE_INVALID
+  uint8_t* getMetadataPacket() const {
+    if (gpuMetadataPackets_ == nullptr) {
+      return nullptr;
+    }
+    uint8_t* packet = new uint8_t[256]();
+    static constexpr size_t kHdrOff[4] = {0, 64, 128, 192};
+    static constexpr uint32_t kInvalidMetadataHeader = 1;  // HSA_PACKET_TYPE_INVALID
+    for (size_t h = 0; h < 4; ++h) {
+      memcpy(packet + kHdrOff[h], &kInvalidMetadataHeader, sizeof(kInvalidMetadataHeader));
+    }
+    gpuMetadataPackets_->push_back(packet);
     return packet;
   }
 
@@ -1171,6 +1191,42 @@ struct BatchCopyOp {
         dstOffset(dstOff), size(sz), metadata(meta) {}
 };
 
+//! Structure to hold pageable host-to-device write operation info for batch
+//! writes
+struct BatchWriteMemoryOp {
+  const void* src_host;   //!< Source host pointer
+  Memory* dst_memory;     //!< Destination memory object
+  size_t dst_offset;      //!< Offset in destination buffer
+  size_t size;            //!< Size of the copy in bytes
+  CopyMetadata metadata;  //!< Copy metadata for this operation
+
+  BatchWriteMemoryOp(const void* src_host_arg, Memory* dst_memory_arg, size_t dst_offset_arg,
+                     size_t size_arg, CopyMetadata metadata_arg = CopyMetadata())
+      : src_host(src_host_arg),
+        dst_memory(dst_memory_arg),
+        dst_offset(dst_offset_arg),
+        size(size_arg),
+        metadata(metadata_arg) {}
+};
+
+//! Structure to hold device-to-pageable-host read operation info for batch
+//! reads
+struct BatchReadMemoryOp {
+  Memory* src_memory;     //!< Source memory object
+  void* dst_host;         //!< Destination host pointer
+  size_t src_offset;      //!< Offset in source buffer
+  size_t size;            //!< Size of the copy in bytes
+  CopyMetadata metadata;  //!< Copy metadata for this operation
+
+  BatchReadMemoryOp(Memory* src_memory_arg, void* dst_host_arg, size_t src_offset_arg,
+                    size_t size_arg, CopyMetadata metadata_arg = CopyMetadata())
+      : src_memory(src_memory_arg),
+        dst_host(dst_host_arg),
+        src_offset(src_offset_arg),
+        size(size_arg),
+        metadata(metadata_arg) {}
+};
+
 /*! \brief  A batch copy memory command for multiple buffer-to-buffer copies
  *
  *  \details Executes multiple copy operations as a batch. Copies within
@@ -1211,6 +1267,86 @@ class BatchCopyMemoryCommand : public Command {
     }
     return true;
   }
+};
+
+/*! \brief  A batch write memory command for multiple pageable host-to-device
+ * writes
+ *
+ *  \details Copies pageable host sources through the backend's batch write path.
+ */
+class BatchWriteMemoryCommand : public Command {
+ public:
+  BatchWriteMemoryCommand(HostQueue& queue, cl_command_type cmd_type,
+                          const EventWaitList& event_wait_list,
+                          std::vector<BatchWriteMemoryOp>&& write_ops,
+                          std::vector<std::vector<char>>&& host_snapshots = {})
+      : Command(queue, cmd_type, event_wait_list),
+        write_ops_(std::move(write_ops)),
+        host_snapshots_(std::move(host_snapshots)) {}
+
+  void submit(device::VirtualDevice& device) override { device.SubmitBatchWriteMemory(*this); }
+
+  void ReleasePinnedMemory() override {
+    for (Memory* pinned_memory : pinned_memory_) {
+      pinned_memory->release();
+    }
+    pinned_memory_.clear();
+  }
+
+  bool IsMemoryPinned() const override { return !pinned_memory_.empty(); }
+
+  void AddPinnedMemory(Memory* pinned_memory) override { pinned_memory_.push_back(pinned_memory); }
+
+  std::vector<Memory*> TakePinnedMemory() {
+    std::vector<Memory*> pinned_memory;
+    pinned_memory.swap(pinned_memory_);
+    return pinned_memory;
+  }
+
+  const std::vector<BatchWriteMemoryOp>& WriteOps() const { return write_ops_; }
+
+ private:
+  std::vector<BatchWriteMemoryOp> write_ops_;      //!< Vector of write operations
+  std::vector<Memory*> pinned_memory_;             //!< Pinned memory used by the batch
+  std::vector<std::vector<char>> host_snapshots_;  //!< DuringApiCall source snapshots
+};
+
+/*! \brief  A batch read memory command for multiple device-to-pageable-host
+ * reads
+ *
+ *  \details Copies pageable host destinations through the backend's batch read path.
+ */
+class BatchReadMemoryCommand : public Command {
+ public:
+  BatchReadMemoryCommand(HostQueue& queue, cl_command_type cmd_type,
+                         const EventWaitList& event_wait_list,
+                         std::vector<BatchReadMemoryOp>&& read_ops)
+      : Command(queue, cmd_type, event_wait_list), read_ops_(std::move(read_ops)) {}
+
+  void submit(device::VirtualDevice& device) override { device.SubmitBatchReadMemory(*this); }
+
+  void ReleasePinnedMemory() override {
+    for (Memory* pinned_memory : pinned_memory_) {
+      pinned_memory->release();
+    }
+    pinned_memory_.clear();
+  }
+
+  bool IsMemoryPinned() const override { return !pinned_memory_.empty(); }
+
+  void AddPinnedMemory(Memory* pinned_memory) override { pinned_memory_.push_back(pinned_memory); }
+
+  std::vector<Memory*> TakePinnedMemory() {
+    std::vector<Memory*> pinned_memory;
+    pinned_memory.swap(pinned_memory_);
+    return pinned_memory;
+  }
+
+  const std::vector<BatchReadMemoryOp>& ReadOps() const { return read_ops_; }
+
+ private:
+  std::vector<BatchReadMemoryOp> read_ops_;  //!< Vector of read operations
+  std::vector<Memory*> pinned_memory_;       //!< Pinned memory used by the batch
 };
 
 /*! \brief  A generic map memory command. Makes a memory object accessible to the host.
@@ -1547,7 +1683,22 @@ class AccumulateCommand : public Command {
   //! ties the strings' lifetime to the consumer (this command) rather than to
   //! the graph launch, with no string copies. Set via the constructor.
   ReferenceCountedObject* kernelNamesOwner_ = nullptr;
-  std::vector<std::pair<uint64_t, uint64_t>> tsList_;
+
+ public:
+  //! Sentinel queue index meaning "unknown; fall back to the command's queue".
+  static constexpr uint32_t kInvalidQueueIndex = 0xFFFFFFFFu;
+
+  //! One kernel dispatch's GPU timing plus the queue (vGPU index) it ran on.
+  //! Graphs span multiple streams under one command, so the queue is tracked
+  //! per timestamp rather than taken from the command's queue.
+  struct KernelTimestamp {
+    uint64_t start;
+    uint64_t end;
+    uint32_t queue_index;
+  };
+
+ private:
+  std::vector<KernelTimestamp> tsList_;
   //! HW events that need to be released when this command is destroyed
   std::unordered_map<Device*, std::vector<void*>> hw_events_;
   //! When false, the destructor does not destroy hw_events_ (an external owner,
@@ -1612,9 +1763,11 @@ class AccumulateCommand : public Command {
     kernelNamesRef_ = kernelNames;
   }
 
-  //! Add kernel timestamp to the list if available
-  void addTimestamps(uint64_t startTs, uint64_t endTs) {
-    tsList_.push_back(std::make_pair(startTs, endTs));
+  //! Add kernel timestamp to the list if available. queue_index is the vGPU
+  //! index of the stream the kernel ran on (kInvalidQueueIndex when unknown).
+  void addTimestamps(uint64_t startTs, uint64_t endTs,
+                     uint32_t queue_index = kInvalidQueueIndex) {
+    tsList_.push_back(KernelTimestamp{startTs, endTs, queue_index});
   }
 
   //! Return the kernel names (pointers to stable strings, no copies)
@@ -1623,7 +1776,7 @@ class AccumulateCommand : public Command {
   }
 
   //! Return the kernel timestamps
-  const std::vector<std::pair<uint64_t, uint64_t>>& getTimestamps() const { return tsList_; }
+  const std::vector<KernelTimestamp>& getTimestamps() const { return tsList_; }
 
   //! The command implementation
   virtual void submit(device::VirtualDevice& device) { device.submitAccumulate(*this); }
