@@ -10899,6 +10899,12 @@ VWritelaneB32Vop3::VWritelaneB32Vop3(const MachineInst *inst)
   num_dst_ = 1;
 }
 
+void VWritelaneB32Vop3::implicit_uses(RegisterSet &uses) const {
+  Vop3::implicit_uses(uses);
+  if (auto r = vdst.to_register_ref())
+    uses.expand(*r);
+}
+
 void VWritelaneB32Vop3::execute_impl(amdgpu::Wavefront &wf) {
   uint32_t val = amdgpu::RegisterAccess(wf).read_scalar(src0);
   uint32_t lane = amdgpu::RegisterAccess(wf).read_scalar(src1);

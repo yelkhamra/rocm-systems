@@ -1533,5 +1533,32 @@ TEST(GeneratedInstDefUse, Vop3SdstEncDppPartialRowMaskReadsOnlyVgprResult) {
   EXPECT_FALSE(idu.uses.contains({RegClass::SGPR, 8, 2}));
 }
 
+// v_writelane_b32 writes one lane and preserves the rest of vdst, so it reads
+// the old value. On CDNA4/gfx1250 (XML marks vdst output-only) that read is
+// surfaced via implicit_uses. word0 = VOP3 writelane opcode, vdst=5; word1 =
+// src0=s4, src1=s2 (2 << 9).
+TEST(GeneratedInstDefUse, WritelaneReadsDestinationCdna4) {
+  auto inst = decode_cdna4({0xD28A0005U, 0x00000404U}); // v_writelane_b32 v5, s4, s2
+  ASSERT_NE(inst, nullptr);
+  ASSERT_EQ(std::string_view(inst->mnemonic()), "v_writelane_b32");
+
+  InstDefUse idu(*inst);
+  EXPECT_TRUE(idu.defs.contains({RegClass::VGPR, 5, 1}));
+  EXPECT_TRUE(idu.uses.contains({RegClass::VGPR, 5, 1}));
+}
+
+TEST(GeneratedInstDefUse, WritelaneReadsDestinationGfx1250) {
+  auto decoder = Decoder::create(ROCJITSU_CODE_ARCH_GFX1250);
+  ASSERT_NE(decoder, nullptr);
+  std::array<uint32_t, 4> words{0xD7610005U, 0x00000404U, 0U, 0U};
+  std::unique_ptr<Instruction> inst(decoder->decode(words.data()));
+  ASSERT_NE(inst, nullptr);
+  ASSERT_EQ(std::string_view(inst->mnemonic()), "v_writelane_b32");
+
+  InstDefUse idu(*inst);
+  EXPECT_TRUE(idu.defs.contains({RegClass::VGPR, 5, 1}));
+  EXPECT_TRUE(idu.uses.contains({RegClass::VGPR, 5, 1}));
+}
+
 } // namespace
 } // namespace rocjitsu

@@ -6114,7 +6114,31 @@ class CodeGenerator:
                             for tag in ('IMM', 'LABEL', 'CONST')
                         )
                     ]
+                    # v_writelane preserves the other lanes of vdst, so it reads
+                    # the old value: a lane-partial def, distinct from the
+                    # sub-dword partial defs above. Surface it only where the XML
+                    # marks vdst output-only (e.g. CDNA4, gfx1250); elsewhere
+                    # vdst is already a source. implicit_uses keeps it out of the
+                    # printed operand list.
+                    _writelane_implicit_use_opnd = None
+                    if inst_sem and inst_sem.semantic_class == 'vector_writelane':
+                        _writelane_implicit_use_opnd = next(
+                            (
+                                o.name
+                                for o in inst.operands
+                                if o.is_output
+                                and not o.is_input
+                                and o.name in ('vdst', 'sdst')
+                            ),
+                            None,
+                        )
                     if _partial_def_outputs:
+                        public_members.append(
+                            cgen.Statement(
+                                'void implicit_uses(RegisterSet &uses) const override'
+                            )
+                        )
+                    elif _writelane_implicit_use_opnd:
                         public_members.append(
                             cgen.Statement(
                                 'void implicit_uses(RegisterSet &uses) const override'
@@ -7006,6 +7030,18 @@ class CodeGenerator:
                                 f'(RegisterSet &uses) const {{\n'
                                 f'  {inst.fmt_true_enc_name}::implicit_uses(uses);\n'
                                 f'{_pd_body}'
+                                f'}}'
+                            )
+                        )
+                    elif _writelane_implicit_use_opnd:
+                        inst_impls.append(
+                            cgen.Line(
+                                f'void {inst.fmt_name}::implicit_uses'
+                                f'(RegisterSet &uses) const {{\n'
+                                f'  {inst.fmt_true_enc_name}::implicit_uses(uses);\n'
+                                f'  if (auto r = '
+                                f'{_writelane_implicit_use_opnd}.to_register_ref())\n'
+                                f'    uses.expand(*r);\n'
                                 f'}}'
                             )
                         )
