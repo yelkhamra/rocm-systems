@@ -3068,6 +3068,9 @@ amdsmi_status_t amdsmi_get_link_topology(amdsmi_processor_handle processor_handl
   r = get_gpu_device_from_handle(processor_handle_dst, &dst_device);
   if (r != AMDSMI_STATUS_SUCCESS) return r;
 
+  // Fully initialize the output up front so any early return below leaves the
+  // caller with a well-defined, zero-initialized topology (sane defaults)
+  // rather than a partially populated structure.
   *topology_info = {};
   topology_info->link_type = AMDSMI_LINK_TYPE_UNKNOWN;
   topology_info->link_status = AMDSMI_LINK_STATUS_DISABLED;
@@ -3081,33 +3084,37 @@ amdsmi_status_t amdsmi_get_link_topology(amdsmi_processor_handle processor_handl
   amdsmi_status_t status = amd::smi::rsmi_to_amdsmi_status(rsmi_topo_get_link_type(
       src_id, dst_id, &hops, reinterpret_cast<RSMI_IO_LINK_TYPE*>(&link_type)));
   if (status != AMDSMI_STATUS_SUCCESS) return status;
-  topology_info->link_type = link_type;
-  topology_info->num_hops = static_cast<uint8_t>(hops);
 
   // Link weight.
   uint64_t weight = 0;
   status = amd::smi::rsmi_to_amdsmi_status(rsmi_topo_get_link_weight(src_id, dst_id, &weight));
   if (status != AMDSMI_STATUS_SUCCESS) return status;
-  topology_info->weight = weight;
-
-  // A link is only reported as enabled/active on baremetal when it resolves to
-  // a concrete link type. NOT_APPLICABLE (no link) and UNKNOWN (type could not
-  // be determined) are both reported as disabled so we never imply an active
-  // link that cannot be characterized.
-  topology_info->link_status =
-      (link_type == AMDSMI_LINK_TYPE_NOT_APPLICABLE || link_type == AMDSMI_LINK_TYPE_UNKNOWN)
-          ? AMDSMI_LINK_STATUS_DISABLED
-          : AMDSMI_LINK_STATUS_ENABLED;
 
   // Framebuffer sharing: on baremetal two GPUs can share framebuffer memory
   // when they are directly accessible to each other over P2P (e.g. same xGMI
   // hive). Treat this as best-effort: absence of P2P support must not fail the
   // unified query.
+  uint8_t fb_sharing = 0;
   bool accessible = false;
   if (amd::smi::rsmi_to_amdsmi_status(rsmi_is_P2P_accessible(src_id, dst_id, &accessible)) ==
       AMDSMI_STATUS_SUCCESS) {
-    topology_info->fb_sharing = accessible ? 1 : 0;
+    fb_sharing = accessible ? 1 : 0;
   }
+
+  // All fallible queries succeeded; commit the results to the caller's struct
+  // together so a partially filled topology is never observable. A link is only
+  // reported as enabled/active on baremetal when it resolves to a concrete link
+  // type. NOT_APPLICABLE (no link) and UNKNOWN (type could not be determined)
+  // are both reported as disabled so we never imply an active link that cannot
+  // be characterized.
+  topology_info->link_type = link_type;
+  topology_info->num_hops = static_cast<uint8_t>(hops);
+  topology_info->weight = weight;
+  topology_info->link_status =
+      (link_type == AMDSMI_LINK_TYPE_NOT_APPLICABLE || link_type == AMDSMI_LINK_TYPE_UNKNOWN)
+          ? AMDSMI_LINK_STATUS_DISABLED
+          : AMDSMI_LINK_STATUS_ENABLED;
+  topology_info->fb_sharing = fb_sharing;
 
   return AMDSMI_STATUS_SUCCESS;
 }

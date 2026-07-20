@@ -1292,7 +1292,7 @@ typedef struct {
   amdsmi_link_status_t link_status;  //!< HW status of the link
   amdsmi_link_type_t link_type;      //!< type of the link
   uint8_t num_hops;                  //!< number of hops
-  uint8_t fb_sharing;                //!< framebuffer sharing flag
+  uint8_t fb_sharing;                //!< 1 if P2P framebuffer access is available, 0 otherwise
   uint32_t reserved[10];
 } amdsmi_link_topology_t;
 
