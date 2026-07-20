@@ -797,6 +797,7 @@ class Graph {
   //! Schedules all nodes in the graph into different streams
   hipError_t ScheduleNodes();
 
+  int Xwait_count = 0;
   //! Runs one node on the assigned stream
   bool RunOneNode(Node node);  //!< Node for the execution on GPU
 
@@ -826,17 +827,6 @@ class Graph {
 
   //! Calculate dependency levels for segments using topological sort
   void CalculateSegmentTopoDependencyLevels();
-
-  int wait_count_ = 0;
-  //! Runs one node on the assigned stream
-  bool RunOneNode(Node node);  //!< Node for the execution on GPU
-
-  //! Runs all nodes from the execution graph on the assigned streams
-  bool RunNodes(
-      int32_t base_stream = 0,                             //!< The base stream to run the graph on
-      const std::vector<hip::Stream*>* streams = nullptr,  //!< Streams to run the graph
-      const amd::Command::EventWaitList* parent_waitlist = nullptr  //!< Parent Graph waitlist
-  );
 
   bool TopologicalOrder(std::vector<Node>& TopoOrder);
 

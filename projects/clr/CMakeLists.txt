@@ -48,8 +48,12 @@ if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
 endif()
 
-# Add a directory to the global include directories for all projects
-include_directories(/tf/rocr-runtime-install/include)
+# Optional custom HSA runtime (rocr-runtime) install prefix. When set, its
+# include directory is added globally for all projects.
+set(CUSTOM_HSA_RUNTIME_PATH "" CACHE PATH "Path to a custom rocr-runtime install prefix")
+if(CUSTOM_HSA_RUNTIME_PATH)
+    include_directories(${CUSTOM_HSA_RUNTIME_PATH}/include)
+endif()
 
 
 #############
