@@ -46,7 +46,7 @@ from utils.utils_common import (
     resolve_rocm_library_path,
     validate_roofline_csv,
 )
-from utils.utils_exceptions import WorkloadCommandError
+from utils.utils_exceptions import IncompatibleRocmStackError, WorkloadCommandError
 from utils.utils_profile import get_submodules
 
 
@@ -583,7 +583,10 @@ class RocProfCompute:
         # enable file-based logging
         setup_file_handler(self.__args.loglevel, self.__args.output_directory)
 
-        profiler.pre_processing()
+        try:
+            profiler.pre_processing()
+        except IncompatibleRocmStackError as e:
+            console_error(str(e))
 
         console_debug('starting "run_profiling" and about to start rocprof\'s workload')
 
