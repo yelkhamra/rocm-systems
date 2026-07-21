@@ -426,6 +426,26 @@ TEST_F(BatchTest, GetStatusNoOutstandingReturnsZero)
     ASSERT_EQ(nr, 0);
 }
 
+TEST_F(BatchTest, GetStatusMinNrLargerThanSubmittedReturnsCompletedOps)
+{
+    const auto input = pattern(op_size, 0x27);
+    write_all(tmpfile.fd, input, 0);
+
+    setupBatch(op_count);
+    auto op = makeOp(0, hipFileBatchRead);
+    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, 1, &op, 0), HIPFILE_SUCCESS);
+
+    // Ask for more events than were submitted; the wait is bounded to the outstanding ops.
+    std::vector<hipFileIOEvents_t> events(op_count);
+    unsigned                       nr = op_count;
+    ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, op_count, &nr, events.data(), nullptr),
+              HIPFILE_SUCCESS);
+    ASSERT_EQ(nr, 1u);
+
+    events.resize(nr);
+    expectCompleteEvents(events, 1);
+}
+
 TEST_F(BatchTest, CancelEmptyBatchSucceeds)
 {
     setupBatch(1);
