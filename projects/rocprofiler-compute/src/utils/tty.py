@@ -833,11 +833,13 @@ def format_table_output(
         else:
             content += (
                 mem_chart_gfx9.plot_mem_chart(
+                    args.normal_unit,
                     mem_data,
                     chart_title=_mem_chart_heading(
                         int(table_config["id"]),
                         args.normal_unit,
                     ),
+                    gpu_arch=gpu_arch,
                 )
                 + "\n"
             )

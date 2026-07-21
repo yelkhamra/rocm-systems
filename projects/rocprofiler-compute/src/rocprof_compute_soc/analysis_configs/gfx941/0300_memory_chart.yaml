@@ -47,6 +47,18 @@ Panel Config:
           value: ROUND(AVG(SPI_CSN_WAVE), 0)
         Workgroups:
           value: ROUND(AVG(SPI_CSN_NUM_THREADGROUPS), 0)
+        Flat Read:
+          value: ROUND(SUM(TA_FLAT_READ_WAVEFRONTS_sum) / SUM($denom), 0)
+        Flat Write:
+          value: ROUND(SUM(TA_FLAT_WRITE_WAVEFRONTS_sum) / SUM($denom), 0)
+        Flat Atomic:
+          value: ROUND(SUM(TA_FLAT_ATOMIC_WAVEFRONTS_sum) / SUM($denom), 0)
+        Buffer Read:
+          value: ROUND(SUM(TA_BUFFER_READ_WAVEFRONTS_sum) / SUM($denom), 0)
+        Buffer Write:
+          value: ROUND(SUM(TA_BUFFER_WRITE_WAVEFRONTS_sum) / SUM($denom), 0)
+        Buffer Atomic:
+          value: ROUND(SUM(TA_BUFFER_ATOMIC_WAVEFRONTS_sum) / SUM($denom), 0)
         LDS Req:
           value: ROUND(SUM(SQ_INSTS_LDS) / SUM($denom), 0)
         LDS Util:
@@ -105,6 +117,12 @@ Panel Config:
           value: ROUND(SUM(TCC_EA0_WRREQ_sum) / SUM($denom), 0)
         Fabric_L2 Atomic:
           value: ROUND(SUM(TCC_EA0_ATOMIC_sum) / SUM($denom), 0)
+        L2-Fabric Read BW:
+          value: SUM(TCC_EA0_RDREQ_32B_sum * 32 + (TCC_EA0_RDREQ_sum - TCC_EA0_RDREQ_32B_sum) * 64) / SUM(End_Timestamp - Start_Timestamp)
+          unit: Bytes/s
+        L2-Fabric Write and Atomic BW:
+          value: SUM(TCC_EA0_WRREQ_64B_sum * 64 + (TCC_EA0_WRREQ_sum - TCC_EA0_WRREQ_64B_sum) * 32) / SUM(End_Timestamp - Start_Timestamp)
+          unit: Bytes/s
         Fabric Rd Lat:
           value: ROUND(SUM(TCC_EA0_RDREQ_LEVEL_sum) / SUM(TCC_EA0_RDREQ_sum), 0)
         Fabric Wr Lat:
@@ -156,6 +174,12 @@ Panel Config:
     Wavefronts: The total number of wavefronts, summed over all workgroups, forming
       this kernel launch.
     Workgroups: The total number of workgroups forming this kernel launch.
+    Flat Read: The total number of flat read wavefronts per normalization unit.
+    Flat Write: The total number of flat write wavefronts per normalization unit.
+    Flat Atomic: The total number of flat atomic wavefronts per normalization unit.
+    Buffer Read: The total number of buffer read wavefronts per normalization unit.
+    Buffer Write: The total number of buffer write wavefronts per normalization unit.
+    Buffer Atomic: The total number of buffer atomic wavefronts per normalization unit.
     LDS Req: The total number of LDS instructions (including, but not limited to,
       read/write/atomics and HIP's __shfl instructions) executed per normalization
       unit.
@@ -217,6 +241,10 @@ Panel Config:
     Fabric_L2 Atomic: Number of L2 cache - Infinity Fabric write requests (either
       32-byte or 64-byte) that are actually atomic requests summed over TCC instances
       per normalization unit.
+    L2-Fabric Read BW: The number of bytes read by the L2 over the Infinity Fabric
+      interface per unit time.
+    L2-Fabric Write and Atomic BW: The number of bytes sent by the L2 over the Infinity
+      Fabric interface by write and atomic operations per unit time.
     Fabric Rd Lat: The time-averaged number of cycles read requests spent in Infinity
       Fabric before data was returned to the L2.
     Fabric Wr Lat: The time-averaged number of cycles write requests spent in Infinity
