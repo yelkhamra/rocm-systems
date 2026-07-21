@@ -188,6 +188,16 @@ struct BatchWriteFailureTest : public BatchTest {
     }
 };
 
+struct BatchCancelTest : public BatchTest {
+    void SetUp() override
+    {
+        op_count           = 128;
+        file_size          = op_size * op_count;
+        device_buffer_size = file_size;
+        BatchTest::SetUp();
+    }
+};
+
 struct ScopedSignalAction {
     int ignore(int signal_number_)
     {
@@ -232,7 +242,7 @@ struct ScopedFileSizeLimit {
         }
     }
 
-    struct rlimit old_limit{};
+    struct rlimit old_limit {};
     bool          active{};
 };
 
@@ -379,7 +389,9 @@ TEST_F(BatchTest, GetStatusNoOutstandingReturnsZero)
     setupBatch(1);
     hipFileIOEvents_t event{};
     unsigned          nr = 1;
-    struct timespec   timeout{1, 0};
+    struct timespec   timeout {
+        1, 0
+    };
 
     ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, 1, &nr, &event, &timeout), HIPFILE_SUCCESS);
     ASSERT_EQ(nr, 0);
@@ -394,6 +406,37 @@ TEST_F(BatchTest, CancelEmptyBatchSucceeds)
     unsigned          nr = 1;
     ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, 0, &nr, &event, nullptr), HIPFILE_SUCCESS);
     ASSERT_EQ(nr, 0);
+}
+
+TEST_F(BatchCancelTest, CancelFullBatchReportsTerminalStatus)
+{
+    const auto input = pattern(file_size, 0x19);
+    write_all(tmpfile.fd, input, 0);
+
+    setupBatch(op_count);
+    std::vector<hipFileIOParams_t> ops(op_count);
+    for (size_t i = 0; i < ops.size(); ++i) {
+        ops[i] = makeOp(i, hipFileBatchRead);
+    }
+    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, static_cast<unsigned>(ops.size()), ops.data(), 0),
+              HIPFILE_SUCCESS);
+
+    ASSERT_EQ(hipFileBatchIOCancel(batch_handle), HIPFILE_SUCCESS);
+
+    const auto events = waitForEvents(op_count);
+    ASSERT_EQ(events.size(), op_count);
+    std::vector<size_t> seen;
+    seen.reserve(events.size());
+    for (const auto &event : events) {
+        ASSERT_NE(event.cookie, nullptr);
+        const auto *cookie = static_cast<const BatchOpCookie *>(event.cookie);
+        EXPECT_LT(cookie->index, op_count);
+        seen.push_back(cookie->index);
+        EXPECT_TRUE(event.status == hipFileCanceled || event.status == hipFileComplete)
+            << "unexpected status " << event.status;
+    }
+    std::sort(seen.begin(), seen.end());
+    ASSERT_EQ(std::adjacent_find(seen.begin(), seen.end()), seen.end());
 }
 
 TEST_F(BatchTest, DestroyEmptyBatchDoesNotCrash)
