@@ -2286,14 +2286,24 @@ public:
       return;
 
     const uint64_t packet_id = static_cast<uint64_t>(value);
-    if (state.queue->type == HSA_QUEUE_TYPE_SINGLE && packet_id >= state.next_packet_id &&
-        packet_id - state.next_packet_id < state.queue->size) {
+    // A producer (single- OR multi-producer) can reserve and publish several
+    // consecutive packets and then ring once with the final packet ID. Rewriting
+    // only the doorbell-named packet would let an earlier still-unrewritten
+    // predecessor (e.g. a virtual-LDS dispatch at next_packet_id) reach the CP
+    // unrevised, and advancing next_packet_id past it would make the scanner skip
+    // it too. So rewrite the whole newly-published range [next_packet_id,
+    // packet_id]. note_packet_ready only advances the contiguous frontier across
+    // packets that were actually ready in order, so an out-of-order producer that
+    // leaves an unready hole does not advance the cursor past it -- the scanner
+    // still covers the hole later. The range must fit the ring to bound the scan.
+    if (packet_id >= state.next_packet_id && packet_id - state.next_packet_id < state.queue->size) {
       rewrite_packet_range(state, state.next_packet_id, packet_id + 1, true);
       return;
     }
 
-    // Multi queues may ring arbitrary packet IDs. Also handle unusual single
-    // queue jumps by at least rewriting the packet named by the doorbell value.
+    // Doorbell ID below the frontier (a lagging out-of-order ring) or a jump
+    // larger than the ring: rewrite at least the named packet. The background
+    // scanner covers any packets between the frontier and this one.
     const bool ready = rewrite_packet(state, packet_id);
     if (ready && packet_id >= state.next_packet_id)
       state.next_packet_id = packet_id + 1;
@@ -3811,7 +3821,7 @@ hsa_status_t HSA_API rj_executable_load_agent_code_object(
         original_load(executable, load_agent, code_object_reader, options, loaded_code_object);
     log_message(kLogVerbose, "load_agent_code_object already-target status=%d",
                 static_cast<int>(status));
-    if (status == HSA_STATUS_SUCCESS && guest_load)
+    if (status == HSA_STATUS_SUCCESS)
       ExecutableAgentRegistry::instance().record(executable, agent, load_agent);
     if (status == HSA_STATUS_SUCCESS) {
       const hsa_loaded_code_object_t loaded =
@@ -3902,7 +3912,7 @@ hsa_status_t HSA_API rj_executable_load_agent_code_object(
   if (status != HSA_STATUS_SUCCESS) {
     std::fprintf(stderr, "[rocjitsu-hooks] translated code-object load failed: %d\n",
                  static_cast<int>(status));
-  } else if (guest_load) {
+  } else {
     ExecutableAgentRegistry::instance().record(executable, agent, load_agent);
   }
   if (status == HSA_STATUS_SUCCESS) {
