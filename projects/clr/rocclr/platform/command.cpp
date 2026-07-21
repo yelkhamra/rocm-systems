@@ -342,7 +342,7 @@ void Command::operator delete(void* ptr) {
   if (DEBUG_CLR_SYSMEM_POOL) {
     command_pool_->Free(ptr);
   } else {
-    ::operator delete(ptr, std::align_val_t(alignof(Command)));
+    ::operator delete(ptr);
   }
 }
 
@@ -351,7 +351,7 @@ void* Command::operator new(size_t size) {
   if (DEBUG_CLR_SYSMEM_POOL) {
     return command_pool_->Alloc(size);
   } else {
-    return ::operator new(size, std::align_val_t(alignof(Command)));
+    return ::operator new(size);
   }
 }
 
