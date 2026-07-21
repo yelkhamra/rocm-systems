@@ -342,8 +342,8 @@ class GpuAgent : public GpuAgentInt {
                            uint32_t private_segment_size, uint32_t group_segment_size,
                            bool metadata_queue, core::Queue** queue) override;
 
-  // @brief Decrement GWS ref count.
-  void GWSRelease();
+  // @brief Decrement GWS ref count for the pool entry backing queue @p q.
+  void GWSRelease(core::Queue* q);
 
   // @brief Override from AMD::GpuAgentInt.
   void AcquireQueueMainScratch(ScratchInfo& scratch) override;
@@ -779,8 +779,11 @@ class GpuAgent : public GpuAgentInt {
   // @brief Create internal queues and blits.
   void InitDma();
 
-  // @brief Setup GWS accessing queue.
+  // @brief Setup GWS accessing queues (whole pool).
   void InitGWS();
+
+  // @brief (Re)initialize a single GWS pool entry.
+  void InitGWSQueue(uint32_t idx);
 
   // @brief Set-up memory allocators
   void InitAllocators();
@@ -890,12 +893,20 @@ class GpuAgent : public GpuAgentInt {
   // @brief Alternative aperture base address. Only on KV.
   uintptr_t ape1_base_;
 
-  // @brief Queue with GWS access.
-  struct {
+  // @brief Pool of cooperative (GWS) queues. Each entry owns a distinct GWS
+  // barrier slot (EnableGWS(1)), so independent cooperative grids that fit
+  // concurrently can run on separate queues instead of serializing on a single
+  // shared queue. Entries are handed out (least-loaded) to cooperative queue
+  // creation requests. The GWS resource index is queue-relative (resolved from
+  // each queue's KFD-assigned base), so device code keeps using resource 0.
+  static constexpr uint32_t kGwsQueuePoolCap = 8;
+  struct GwsQueueEntry {
     lazy_ptr<core::Queue> queue_;
-    int ref_ct_;
-    std::mutex lock_;
-  } gws_queue_;
+    int ref_ct_ = 0;
+  };
+  GwsQueueEntry gws_queue_pool_[kGwsQueuePoolCap];
+  uint32_t gws_queue_pool_size_ = 0;  // usable entries = min(cap, NumGws)
+  std::mutex gws_queue_lock_;         // protects pool bookkeeping
 
   // @brief list of AQL queues owned by this agent. Indexed by queue pointer
   std::vector<core::Queue*> aql_queues_;

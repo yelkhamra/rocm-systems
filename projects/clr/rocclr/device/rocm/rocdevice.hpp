@@ -595,6 +595,26 @@ class Device : public NullDevice {
 
   VirtualGPU* xferQueue() const;
 
+  //! Number of cooperative-launch queues available for concurrent coop grids.
+  //! Defaults to 1 (single shared coop queue, i.e. current behavior). Opt-in to
+  //! the pool via HIP_COOP_QUEUE_POOL=N; only useful with a KFD that permits
+  //! more than one GWS-allocated queue per process (stock KFD returns EBUSY).
+  uint32_t coopQueueCount() const {
+    static const uint32_t n = []() {
+      const char* e = getenv("HIP_COOP_QUEUE_POOL");
+      uint32_t v = e ? static_cast<uint32_t>(atoi(e)) : 1;
+      if (v < 1) v = 1;
+      if (v > kCoopQueuePoolCap) v = kCoopQueuePoolCap;
+      return v;
+    }();
+    return n;
+  }
+
+  //! Returns a cooperative-launch queue from the device coop pool. Index 0 maps
+  //! to the shared device transfer/coop queue; higher indices are dedicated
+  //! cooperative queues created on demand so independent coop grids overlap.
+  VirtualGPU* coopQueue(uint32_t index) const;
+
   //! Acquire HSA queue. This method can create a new HSA queue or
   hsa_queue_t* acquireQueue(
       uint32_t queue_size_hint, bool coop_queue = false, const std::vector<uint32_t>& cuMask = {},
@@ -741,6 +761,12 @@ class Device : public NullDevice {
   static constexpr bool offlineDevice_ = false;
   VirtualGPU* xferQueue_;  //!< Transfer queue, created on demand
   mutable std::once_flag xferQueueOnce_;  //!< Serialises lazy creation of xferQueue_
+
+  //! Pool of cooperative-launch queues for concurrent coop grids. Index 0 is
+  //! the shared xferQueue_; indices >=1 are dedicated coop queues.
+  static constexpr uint32_t kCoopQueuePoolCap = 2;
+  mutable VirtualGPU* coopQueues_[kCoopQueuePoolCap] = {};
+  mutable std::once_flag coopQueuesOnce_;  //!< Serialises lazy coop pool creation
 
   std::atomic<size_t> freeMem_;       //!< Total of free memory available
   mutable std::recursive_mutex vgpusAccess_;  //!< Lock to serialise virtual gpu list access

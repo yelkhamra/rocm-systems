@@ -410,7 +410,7 @@ AqlQueue::~AqlQueue() {
 
 void AqlQueue::Destroy() {
   if (amd_queue_.hsa_queue.type == HSA_QUEUE_TYPE_COOPERATIVE) {
-    agent_->GWSRelease();
+    agent_->GWSRelease(this);
     return;
   }
   delete this;

@@ -1012,7 +1012,29 @@ void GpuAgent::InitDma() {
 }
 
 void GpuAgent::InitGWS() {
-  gws_queue_.queue_.reset([this]() {
+  // Number of cooperative (GWS) queues to expose. Defaults to 1, i.e. a single
+  // shared cooperative queue -- identical to legacy behavior. Opt-in to a pool
+  // via HSA_COOP_QUEUE_POOL=N to let independent cooperative grids run on
+  // distinct queues. This requires a KFD that permits more than one
+  // GWS-allocated queue per process; the stock KFD returns EBUSY on the 2nd.
+  uint32_t requested = 1;
+  std::string env = os::GetEnvVar("HSA_COOP_QUEUE_POOL");
+  if (!env.empty()) {
+    int v = atoi(env.c_str());
+    if (v > 0) requested = static_cast<uint32_t>(v);
+  }
+  const uint32_t cap = kGwsQueuePoolCap;
+  gws_queue_pool_size_ =
+      std::min(cap, std::min(requested, static_cast<uint32_t>(properties_.NumGws)));
+  for (uint32_t i = 0; i < gws_queue_pool_size_; ++i) {
+    InitGWSQueue(i);
+  }
+}
+
+void GpuAgent::InitGWSQueue(uint32_t idx) {
+  GwsQueueEntry& entry = gws_queue_pool_[idx];
+  entry.ref_ct_ = 0;
+  entry.queue_.reset([this]() {
     if (properties_.NumGws == 0) return (core::Queue*)nullptr;
     const uint32_t defaultGWSQueueSize = 0x4000; // 16KB
     std::unique_ptr<core::Queue> queue(CreateInterceptibleQueue(true, defaultGWSQueueSize));
@@ -1020,19 +1042,25 @@ void GpuAgent::InitGWS() {
       throw AMD::hsa_exception(HSA_STATUS_ERROR_OUT_OF_RESOURCES,
                                "Internal queue creation failed.");
 
+    // Each pool queue grabs a single GWS barrier slot. KFD returns a distinct
+    // base per queue; device code addresses it as queue-relative resource 0.
     auto err = static_cast<AqlQueue*>(queue.get())->EnableGWS(1);
     if (err != HSA_STATUS_SUCCESS) throw AMD::hsa_exception(err, "GWS allocation failed.");
 
-    gws_queue_.ref_ct_ = 0;
     return queue.release();
   });
 }
 
-void GpuAgent::GWSRelease() {
-  std::lock_guard<std::mutex> lock(gws_queue_.lock_);
-  gws_queue_.ref_ct_--;
-  if (gws_queue_.ref_ct_ != 0) return;
-  InitGWS();
+void GpuAgent::GWSRelease(core::Queue* q) {
+  std::lock_guard<std::mutex> lock(gws_queue_lock_);
+  for (uint32_t i = 0; i < gws_queue_pool_size_; ++i) {
+    // Compare without forcing lazy construction of unused entries.
+    if (gws_queue_pool_[i].queue_ != q) continue;
+    if (--gws_queue_pool_[i].ref_ct_ != 0) return;
+    // Last user released: recreate the slot so it is ready for reuse.
+    InitGWSQueue(i);
+    return;
+  }
 }
 
 void GpuAgent::PreloadBlits() {
@@ -2634,12 +2662,19 @@ hsa_status_t GpuAgent::QueueCreate(size_t size, hsa_queue_type32_t queue_type, u
                                    core::HsaEventCallback event_callback, void* data,
                                    uint32_t private_segment_size, uint32_t group_segment_size,
                                    bool metadata_queue, core::Queue** queue) {
-  // Handle GWS queues.
+  // Handle GWS queues. Hand out the least-loaded pool entry so independent
+  // cooperative launches land on distinct queues (each with its own GWS slot)
+  // and can execute concurrently when they fit.
   if (queue_type == HSA_QUEUE_TYPE_COOPERATIVE) {
-    std::lock_guard<std::mutex> lock(gws_queue_.lock_);
-    auto ret = (*gws_queue_.queue_).get();
+    std::lock_guard<std::mutex> lock(gws_queue_lock_);
+    if (gws_queue_pool_size_ == 0) return HSA_STATUS_ERROR_INVALID_QUEUE_CREATION;
+    uint32_t best = 0;
+    for (uint32_t i = 1; i < gws_queue_pool_size_; ++i) {
+      if (gws_queue_pool_[i].ref_ct_ < gws_queue_pool_[best].ref_ct_) best = i;
+    }
+    auto ret = (*gws_queue_pool_[best].queue_).get();
     if (ret != nullptr) {
-      gws_queue_.ref_ct_++;
+      gws_queue_pool_[best].ref_ct_++;
       *queue = ret;
       return HSA_STATUS_SUCCESS;
     }

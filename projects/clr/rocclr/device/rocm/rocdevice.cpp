@@ -231,6 +231,12 @@ Device::~Device() {
   delete xferQueue_;
   xferQueue_ = nullptr;
 
+  // Destroy dedicated cooperative pool queues (index 0 aliases xferQueue_).
+  for (uint32_t i = 1; i < kCoopQueuePoolCap; ++i) {
+    delete coopQueues_[i];
+    coopQueues_[i] = nullptr;
+  }
+
   // Final drain of deferred destroys on the main thread before hsa_shut_down.
   DrainDeferredQueueDestroys();
 
@@ -3173,6 +3179,44 @@ VirtualGPU* Device::xferQueue() const {
   }
   xferQueue_->enableSyncBlit();
   return xferQueue_;
+}
+
+// ================================================================================================
+VirtualGPU* Device::coopQueue(uint32_t index) const {
+  index %= kCoopQueuePoolCap;
+  // Index 0 reuses the shared device transfer/cooperative queue.
+  if (index == 0) {
+    return xferQueue();
+  }
+
+  Device* thisDevice = const_cast<Device*>(this);
+  std::call_once(coopQueuesOnce_, [thisDevice]() {
+    // Create the dedicated cooperative queues (indices >= 1). Each cooperative
+    // VirtualGPU acquires its own HSA cooperative queue, which the runtime backs
+    // with a distinct GWS barrier slot, allowing concurrent grid.sync() grids.
+    for (uint32_t i = 1; i < kCoopQueuePoolCap; ++i) {
+      auto* vgpu = reinterpret_cast<VirtualGPU*>(thisDevice->createVirtualDevice());
+      if (vgpu == nullptr) {
+        LogError("Couldn't create a cooperative pool queue!");
+        continue;
+      }
+      if (vgpu->gpu_queue() == nullptr) {
+        void* md_rb = nullptr;
+        auto* queue = thisDevice->AcquireActiveQueue(amd::CommandQueue::Priority::Normal,
+                                                     nullptr, nullptr, &md_rb);
+        vgpu->SetGpuQueue(queue, md_rb);
+      }
+      thisDevice->coopQueues_[i] = vgpu;
+    }
+  });
+
+  VirtualGPU* vgpu = coopQueues_[index];
+  if (vgpu == nullptr) {
+    // Fall back to the shared queue if the dedicated one couldn't be created.
+    return xferQueue();
+  }
+  vgpu->enableSyncBlit();
+  return vgpu;
 }
 
 // ================================================================================================

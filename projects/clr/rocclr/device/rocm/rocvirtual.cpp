@@ -4887,8 +4887,13 @@ void VirtualGPU::submitKernel(amd::NDRangeKernelCommand& vcmd) {
     // Wait for the execution on the current queue, since the coop groups will use the device queue
     releaseGpuMemoryFence(kSkipCpuWait);
 
-    // Get device queue for exclusive GPU access
-    VirtualGPU* queue = dev().xferQueue();
+    // Route independent cooperative launches across a small pool of coop queues
+    // so grids that fit concurrently can overlap. Per-stream ordering is still
+    // preserved by the calling-stream dependency added below (the calling stream
+    // waits on each coop result before proceeding).
+    static std::atomic<uint32_t> coopRR{0};
+    uint32_t coopIdx = coopRR++ % dev().coopQueueCount();
+    VirtualGPU* queue = dev().coopQueue(coopIdx);
     if (!queue) {
       LogError("Runtime failed to acquire a cooperative queue!");
       vcmd.setStatus(CL_INVALID_OPERATION);
