@@ -1629,18 +1629,23 @@ class SetValueCommands:
                     self.logger.clear_multiple_devices_output()
                     return
                 clk_tuple = amdsmi_interface.amdsmi_get_clock_info(args.gpu, amdsmi_clk_type)
-                if clk_tuple["max_clk"] == "N/A" or clk_tuple["min_clk"] == "N/A":
-                    self.logger.store_output(
-                        args.gpu,
-                        "clk_limit",
-                        f"Unable to retrieve clock limits for {args.clk_limit.clk_type} for limit comparison",
-                    )
-                    self.logger.print_output()
-                    self.logger.clear_multiple_devices_output()
-                    return
 
+                # Only the bound relevant to the requested limit is required: a
+                # min-set is validated against max_clk, a max-set against
+                # min_clk. Guarding per limit type keeps the still-available
+                # bound settable when a clock only reports one of the two.
                 if lim_type == "min":
-                    if isinstance(clk_tuple["max_clk"], int) and val > clk_tuple["max_clk"]:
+                    if clk_tuple["max_clk"] == "N/A":
+                        self.logger.store_output(
+                            args.gpu,
+                            "clk_limit",
+                            f"Unable to retrieve max clock limit for {args.clk_limit.clk_type} for limit comparison",
+                        )
+                        self.logger.print_output()
+                        self.logger.clear_multiple_devices_output()
+                        return
+
+                    if val > clk_tuple["max_clk"]:
                         self.logger.store_output(
                             args.gpu,
                             "clk_limit",
@@ -1653,7 +1658,17 @@ class SetValueCommands:
                     if val == clk_tuple["min_clk"]:
                         val_changed = False  # Clock limit value did not changed
                 elif lim_type == "max":
-                    if isinstance(clk_tuple["min_clk"], int) and val < clk_tuple["min_clk"]:
+                    if clk_tuple["min_clk"] == "N/A":
+                        self.logger.store_output(
+                            args.gpu,
+                            "clk_limit",
+                            f"Unable to retrieve min clock limit for {args.clk_limit.clk_type} for limit comparison",
+                        )
+                        self.logger.print_output()
+                        self.logger.clear_multiple_devices_output()
+                        return
+
+                    if val < clk_tuple["min_clk"]:
                         self.logger.store_output(
                             args.gpu,
                             "clk_limit",
