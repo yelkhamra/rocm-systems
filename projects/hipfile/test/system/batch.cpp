@@ -495,6 +495,51 @@ TEST_F(BatchTest, SubmitRejectsInvalidArguments)
     ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, ops.size(), ops.data(), 0), invalid_submit_capacity_error);
 }
 
+TEST_F(BatchTest, SubmitRejectsInvalidSizeInNonFirstOperation)
+{
+    setupBatch(op_count);
+
+    std::vector<hipFileIOParams_t> ops(op_count);
+    for (size_t i = 0; i < ops.size(); ++i) {
+        ops[i] = makeOp(i, hipFileBatchRead);
+    }
+    // Give a non-first op a size that overruns the registered device buffer so validation must
+    // inspect ops beyond the first to catch it.
+    ops[1].u.batch.devPtr_offset = static_cast<int64_t>(op_size);
+    ops[1].u.batch.size          = device_buffer_size;
+
+#if defined(__HIP_PLATFORM_NVIDIA__)
+    // cuFile accepts the batch and reports the offending op per-op at status time.
+    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, static_cast<unsigned>(ops.size()), ops.data(), 0),
+              HIPFILE_SUCCESS);
+    const auto events = waitForEvents(static_cast<unsigned>(ops.size()));
+    ASSERT_EQ(events.size(), ops.size());
+    bool saw_bad_op = false;
+    for (const auto &event : events) {
+        ASSERT_NE(event.cookie, nullptr);
+        const auto *cookie = static_cast<const BatchOpCookie *>(event.cookie);
+        if (cookie->index == 1) {
+            saw_bad_op = true;
+            EXPECT_TRUE(event.status == hipFileInvalid || event.status == hipFileFailed)
+                << "unexpected status " << event.status;
+        }
+    }
+    EXPECT_TRUE(saw_bad_op);
+#else
+    // AMD validates every op at submit time and rejects the whole batch, queuing nothing.
+    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, static_cast<unsigned>(ops.size()), ops.data(), 0),
+              HipFileOpError(hipFileInvalidValue));
+
+    hipFileIOEvents_t event{};
+    unsigned          nr = 1;
+    struct timespec   timeout {
+        1, 0
+    };
+    ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, 0, &nr, &event, &timeout), HIPFILE_SUCCESS);
+    ASSERT_EQ(nr, 0);
+#endif
+}
+
 TEST_F(BatchTest, GetStatusRejectsInvalidArguments)
 {
     setupBatch(1);
