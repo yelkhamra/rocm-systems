@@ -328,6 +328,35 @@ TEST_F(BatchTest, BatchWriteMultipleOperations)
     ASSERT_EQ(read_all(tmpfile.fd, file_size, 0), input);
 }
 
+TEST_F(BatchTest, ReusedBatchHandleAcceptsSequentialFullBatches)
+{
+    const auto input = pattern(file_size, 0x35);
+    write_all(tmpfile.fd, input, 0);
+
+    setupBatch(op_count);
+
+    for (int round = 0; round < 2; ++round) {
+        ASSERT_EQ(hipMemset(device_buffer, 0, device_buffer_size), hipSuccess);
+        ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+
+        std::vector<hipFileIOParams_t> ops(op_count);
+        for (size_t i = 0; i < ops.size(); ++i) {
+            ops[i] = makeOp(i, hipFileBatchRead);
+        }
+        ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, static_cast<unsigned>(ops.size()), ops.data(), 0),
+                  HIPFILE_SUCCESS)
+            << "submit failed on round " << round;
+
+        const auto events = waitForEvents(static_cast<unsigned>(ops.size()));
+        expectCompleteEvents(events, static_cast<unsigned>(ops.size()));
+
+        std::vector<uint8_t> output(file_size);
+        ASSERT_EQ(hipMemcpy(output.data(), device_buffer, output.size(), hipMemcpyDeviceToHost), hipSuccess);
+        ASSERT_EQ(hipDeviceSynchronize(), hipSuccess);
+        ASSERT_EQ(output, input) << "data mismatch on round " << round;
+    }
+}
+
 TEST_F(BatchWriteFailureTest, FailedBatchWriteReportsErrorInEventRet)
 {
     ScopedSignalAction xfsz;
