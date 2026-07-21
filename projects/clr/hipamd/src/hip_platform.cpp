@@ -320,6 +320,10 @@ void __hipUnregisterFatBinary(void** modules) {
   if (synced) {
     hipError_t err = PlatformState::Instance().StatCO().RemoveFatBinary(fat_binary_modules);
     guarantee((err == hipSuccess), "Cannot Unregister Fat Binary, error:%d", err);
+  } else {
+    LogPrintfWarning("GPU is in error state; intentionally leaking fat binary 0x%p to avoid "
+                     "tearing down in-flight static code object kernels (use-after-free).",
+                     fat_binary_modules);
   }
 }
 
