@@ -1731,16 +1731,23 @@ static void SetSvmGpuAccess(void *addr, HSAuint64 size, int gpuNode) {
  * svm_api_range_get/put). On a dGPU with SVM API support, hsaKmtRegisterMemory
  * on system memory tracks the page-rounded range so hsaKmtDeregisterMemory can
  * revoke GPU access (NO_ACCESS) for exactly the sub-ranges that no surviving
- * registration still covers. Three edge cases are exercised:
+ * registration still covers. Four edge cases are exercised:
  *
- *   1. Reject - a base re-registered with a different page-rounded size is
- *      rejected (HSAKMT_STATUS_INVALID_PARAMETER): deregister is keyed only by
- *      base address and could not tell the two extents apart.
+ *   1. Mixed span - the same base registered with two different page-rounded
+ *      sizes is accepted (not rejected): the larger extent survives until every
+ *      registration on the base is gone, and the trailing page is revoked when
+ *      only the smaller registration remains.
  *   2. Refcount - identical (base, size) registrations are refcounted; access
  *      is revoked only on the last deregister.
  *   3. Overlap - two registrations whose page-rounded ranges share a page keep
  *      that page accessible until the last owner is deregistered, instead of
  *      over-revoking a neighbor's page.
+ *   4. Sub-page sharing - several small buffers packed into one page (one of
+ *      them straddling into the next page) register and deregister cleanly; the
+ *      shared page stays accessible until its last owner is dropped, and the
+ *      straddler's trailing page is revoked independently. This is the common
+ *      hipHostRegister pattern and the case the page-base-keyed tracker used to
+ *      reject.
  *
  * Access state is read back per page with hsaKmtSVMGetAttr, making the
  * assertions deterministic without relying on a GPU fault.
@@ -1763,30 +1770,36 @@ void KFDSVMRangeTest::SVMApiDeregisterTest(int gpuNode) {
 
     const HSAuint64 PG = PAGE_SIZE;
 
-    /* ---- 1. Reject same-base re-register with a different size ---- */
-    LOG() << "Phase 1: reject same-base / different-size re-register" << std::endl;
+    /* ---- 1. Mixed span at the same base is accepted, not rejected ---- */
+    LOG() << "Phase 1: same-base / different-size registrations coexist" << std::endl;
     {
-        void *buf = mmap(0, 2 * PG, PROT_READ | PROT_WRITE,
-                         MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        char *buf = (char *)mmap(0, 2 * PG, PROT_READ | PROT_WRITE,
+                                 MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
         ASSERT_NE_GPU(MAP_FAILED, buf, gpuNode);
         memset(buf, 0, 2 * PG);
+        SetSvmGpuAccess(buf, 2 * PG, gpuNode);
 
-        EXPECT_SUCCESS_GPU(HSAKMT_CALL(hsaKmtRegisterMemory, m_hsakmt_current_ctx,
-                                       buf, PG), gpuNode);
-        /* PG rounds to 1 page, 2*PG to 2 pages: a different extent at the same
-         * base must be rejected.
+        /* A rounds to 1 page [0,1); B, at the same base, rounds to 2 pages
+         * [0,2). Both must be accepted - the two extents are tracked
+         * independently rather than the second being rejected.
          */
-        EXPECT_EQ_GPU(HSAKMT_STATUS_INVALID_PARAMETER,
-                      HSAKMT_CALL(hsaKmtRegisterMemory, m_hsakmt_current_ctx,
-                                  buf, 2 * PG), gpuNode);
-        /* Same (base, size) is accepted and refcounted. */
         EXPECT_SUCCESS_GPU(HSAKMT_CALL(hsaKmtRegisterMemory, m_hsakmt_current_ctx,
                                        buf, PG), gpuNode);
+        EXPECT_SUCCESS_GPU(HSAKMT_CALL(hsaKmtRegisterMemory, m_hsakmt_current_ctx,
+                                       buf, 2 * PG), gpuNode);
 
+        /* Drop B (the 2-page extent): page 0 is still owned by A, but page 1
+         * was covered only by B, so only page 1 is revoked.
+         */
         EXPECT_SUCCESS_GPU(HSAKMT_CALL(hsaKmtDeregisterMemory, m_hsakmt_current_ctx,
                                        buf), gpuNode);
+        EXPECT_EQ_GPU(HSA_SVM_ATTR_ACCESS,    GetSvmGpuAccess(buf,      PG, gpuNode), gpuNode);
+        EXPECT_EQ_GPU(HSA_SVM_ATTR_NO_ACCESS, GetSvmGpuAccess(buf + PG, PG, gpuNode), gpuNode);
+
+        /* Drop A: page 0 is now revoked too. */
         EXPECT_SUCCESS_GPU(HSAKMT_CALL(hsaKmtDeregisterMemory, m_hsakmt_current_ctx,
                                        buf), gpuNode);
+        EXPECT_EQ_GPU(HSA_SVM_ATTR_NO_ACCESS, GetSvmGpuAccess(buf, PG, gpuNode), gpuNode);
         munmap(buf, 2 * PG);
     }
 
@@ -1846,6 +1859,54 @@ void KFDSVMRangeTest::SVMApiDeregisterTest(int gpuNode) {
         EXPECT_EQ_GPU(HSA_SVM_ATTR_NO_ACCESS, GetSvmGpuAccess(buf + PG,     PG, gpuNode), gpuNode);
         EXPECT_EQ_GPU(HSA_SVM_ATTR_NO_ACCESS, GetSvmGpuAccess(buf + 2 * PG, PG, gpuNode), gpuNode);
         munmap(buf, 3 * PG);
+    }
+
+    /* ---- 4. Sub-page buffers sharing a page (the hipHostRegister pattern) ---- */
+    LOG() << "Phase 4: sub-page buffers packed into one page" << std::endl;
+    {
+        char *buf = (char *)mmap(0, 2 * PG, PROT_READ | PROT_WRITE,
+                                 MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+        ASSERT_NE_GPU(MAP_FAILED, buf, gpuNode);
+        memset(buf, 0, 2 * PG);
+        SetSvmGpuAccess(buf, 2 * PG, gpuNode);
+
+        /* Three small buffers whose bases all round down to page 0:
+         *   subA, subB  - stay within page 0        -> extent [0,1)
+         *   straddler   - crosses into page 1        -> extent [0,2)
+         * subA/subB fold into the uniform bucket; the straddler is a divergent
+         * span. Page 0 is shared by all three; page 1 belongs only to the
+         * straddler.
+         */
+        void *subA      = buf + 0x100;
+        void *subB      = buf + 0x800;
+        void *straddler = buf + (PG - 0x100);
+        const HSAuint64 SUB = 0x200;
+
+        EXPECT_SUCCESS_GPU(HSAKMT_CALL(hsaKmtRegisterMemory, m_hsakmt_current_ctx,
+                                       subA, SUB), gpuNode);
+        EXPECT_SUCCESS_GPU(HSAKMT_CALL(hsaKmtRegisterMemory, m_hsakmt_current_ctx,
+                                       subB, SUB), gpuNode);
+        EXPECT_SUCCESS_GPU(HSAKMT_CALL(hsaKmtRegisterMemory, m_hsakmt_current_ctx,
+                                       straddler, SUB), gpuNode);
+
+        /* Drop the straddler: page 0 still owned by subA/subB, page 1 was the
+         * straddler's alone and is revoked.
+         */
+        EXPECT_SUCCESS_GPU(HSAKMT_CALL(hsaKmtDeregisterMemory, m_hsakmt_current_ctx,
+                                       straddler), gpuNode);
+        EXPECT_EQ_GPU(HSA_SVM_ATTR_ACCESS,    GetSvmGpuAccess(buf,      PG, gpuNode), gpuNode);
+        EXPECT_EQ_GPU(HSA_SVM_ATTR_NO_ACCESS, GetSvmGpuAccess(buf + PG, PG, gpuNode), gpuNode);
+
+        /* Drop subA: page 0 still owned by subB, stays accessible. */
+        EXPECT_SUCCESS_GPU(HSAKMT_CALL(hsaKmtDeregisterMemory, m_hsakmt_current_ctx,
+                                       subA), gpuNode);
+        EXPECT_EQ_GPU(HSA_SVM_ATTR_ACCESS, GetSvmGpuAccess(buf, PG, gpuNode), gpuNode);
+
+        /* Drop subB: last owner of page 0 gone, now revoked. */
+        EXPECT_SUCCESS_GPU(HSAKMT_CALL(hsaKmtDeregisterMemory, m_hsakmt_current_ctx,
+                                       subB), gpuNode);
+        EXPECT_EQ_GPU(HSA_SVM_ATTR_NO_ACCESS, GetSvmGpuAccess(buf, PG, gpuNode), gpuNode);
+        munmap(buf, 2 * PG);
     }
 }
 

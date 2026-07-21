@@ -254,16 +254,38 @@ typedef struct {
  * Tracks host memory ranges registered with KFD through the SVM API
  * (fmm_register_mem_svm_api/fmm_map_mem_svm_api). These registrations only set
  * SVM attributes on the VA range and do not create a vm_object, so there is no
- * way to discover the range size at deregistration time. We keep the aligned
- * base and size here, refcounted to mirror the registration_count handling of
- * regular userptr vm_objects, so that deregistration can issue the inverse SVM
+ * way to discover the range size at deregistration time. We record the
+ * page-aligned extent here so that deregistration can issue the inverse SVM
  * SET_ATTR (NO_ACCESS + clear coherency flags) instead of being a silent no-op.
+ *
+ * The tree is keyed by page-aligned base. Registrations on a base whose
+ * page-aligned span is identical collapse into the uniform bucket
+ * {usize, ucount} - the common case of many sub-page allocations packed into
+ * one page costs a single node and a single refcount. A registration whose
+ * span differs (e.g. a sub-page buffer that straddles into the next page) is
+ * tracked per user pointer in `regs`, since deregister is keyed only by pointer
+ * (no size) and could not otherwise recover that registration's extent.
  */
+
+/* One registration under a base whose page-aligned span differs from the
+ * uniform bucket. Stored explicitly so deregister can recover its extent. */
+struct svm_api_reg {
+	void *user_ptr;			/* raw registered pointer */
+	uint64_t size;			/* page-aligned span */
+	uint32_t refcount;		/* identical same-pointer re-registrations */
+};
+typedef struct svm_api_reg svm_api_reg_t;
+
 struct svm_api_range {
-	void *start;			/* page-aligned base address */
-	uint64_t size;			/* page-aligned size */
-	uint32_t refcount;		/* number of outstanding registrations */
+	void *start;			/* page-aligned base address (tree key) */
 	rbtree_node_t node;		/* svm_api_range_tree, key addr only (size field 0) */
+
+	uint64_t usize;			/* uniform bucket page-aligned span (valid iff ucount>0) */
+	uint32_t ucount;		/* uniform bucket registration count */
+
+	svm_api_reg_t *regs;		/* divergent-span registrations; NULL until needed */
+	int nregs;
+	int cap;
 };
 typedef struct svm_api_range svm_api_range_t;
 
@@ -1146,51 +1168,111 @@ static svm_api_range_t *svm_api_range_find(struct hsa_kfd_fmm_context *fmm_ctx,
 	return rb_entry(n, svm_api_range_t, node);
 }
 
+/* Find the divergent-span registration for @user_ptr under node @r, if any. */
+static svm_api_reg_t *svm_api_find_reg(svm_api_range_t *r, void *user_ptr)
+{
+	int i;
+
+	for (i = 0; i < r->nregs; i++)
+		if (r->regs[i].user_ptr == user_ptr)
+			return &r->regs[i];
+	return NULL;
+}
+
+/* Append a divergent-span registration to node @r. Best-effort: on OOM returns
+ * false and the range simply falls back to a no-op deregister for that pointer. */
+static bool svm_api_add_reg(svm_api_range_t *r, void *user_ptr, uint64_t size)
+{
+	if (r->nregs == r->cap) {
+		int nc = r->cap ? r->cap * 2 : 4;
+		svm_api_reg_t *t = realloc(r->regs, nc * sizeof(*t));
+
+		if (!t)
+			return false;
+		r->regs = t;
+		r->cap = nc;
+	}
+	r->regs[r->nregs].user_ptr = user_ptr;
+	r->regs[r->nregs].size = size;
+	r->regs[r->nregs].refcount = 1;
+	r->nregs++;
+	return true;
+}
+
+/* Compact-remove a divergent-span registration by swapping in the last entry. */
+static void svm_api_del_reg(svm_api_range_t *r, svm_api_reg_t *reg)
+{
+	*reg = r->regs[--r->nregs];
+}
+
+/* Contiguous extent a node covers. Every registration under a node shares the
+ * same page-aligned base, so the union is [start, start + max span). */
+static uint64_t svm_api_node_span(const svm_api_range_t *r)
+{
+	uint64_t span = (r->ucount > 0) ? r->usize : 0;
+	int i;
+
+	for (i = 0; i < r->nregs; i++)
+		if (r->regs[i].size > span)
+			span = r->regs[i].size;
+	return span;
+}
+
 /*
- * Add a new SVM-API range, or bump the refcount of an existing identical one.
- *
- * A registration can only be identified at deregister time by its base address
- * (the deregister path, hsaKmtDeregisterMemory, is keyed only by the base
- * pointer and gets no size). We therefore
- * require that a given base address is always (re-)registered with the same
- * size, and reject a re-registration of the same base with a different size -
- * otherwise deregister could not tell which extent to revoke. Repeated
- * registrations of the same (base, size) are refcounted.
+ * Track a registration. Registrations on a base whose page-aligned span matches
+ * fold into the uniform bucket (fast path, no per-pointer storage). A divergent
+ * span is tracked per pointer. No same-base combination is ever rejected -
+ * distinct sub-page allocations that share a page are represented independently.
  */
 static HSAKMT_STATUS svm_api_range_get(struct hsa_kfd_fmm_context *fmm_ctx,
-				       void *aligned_addr, uint64_t aligned_size)
+				       void *user_ptr, void *aligned_addr,
+				       uint64_t aligned_size)
 {
 	svm_api_range_t *r;
+	svm_api_reg_t *reg;
 
 	pthread_mutex_lock(&fmm_ctx->svm_api_mutex);
 	r = svm_api_range_find(fmm_ctx, aligned_addr);
-	if (r) {
-		if (r->size != aligned_size) {
-			pthread_mutex_unlock(&fmm_ctx->svm_api_mutex);
-			pr_debug("SVM-API re-register of %p size 0x%" PRIx64 " != tracked 0x%" PRIx64 "; rejected\n",
-				 aligned_addr, aligned_size, r->size);
-			return HSAKMT_STATUS_INVALID_PARAMETER;
+	if (!r) {
+		r = calloc(1, sizeof(*r));
+		if (!r) {
+			/* Tracking is best-effort; failure only means
+			 * deregistration falls back to the previous no-op
+			 * behavior for this range.
+			 */
+			pr_warn("Failed to track SVM-API range %p, deregister will be a no-op\n",
+				user_ptr);
+			goto out;
 		}
-		++r->refcount;
-		pthread_mutex_unlock(&fmm_ctx->svm_api_mutex);
-		return HSAKMT_STATUS_SUCCESS;
+		r->start = aligned_addr;
+		r->usize = aligned_size;
+		r->ucount = 1;
+		r->node.key = rbtree_key((unsigned long)aligned_addr, 0);
+		hsakmt_rbtree_insert(&fmm_ctx->svm_api_range_tree, &r->node);
+		goto out;
 	}
 
-	r = calloc(1, sizeof(*r));
-	if (!r) {
-		/* Tracking is best-effort; failure only means deregistration
-		 * falls back to the previous no-op behavior for this range.
-		 */
-		pr_warn("Failed to track SVM-API range %p, deregister will be a no-op\n",
-			aligned_addr);
-		pthread_mutex_unlock(&fmm_ctx->svm_api_mutex);
-		return HSAKMT_STATUS_SUCCESS;
+	/* Uniform fast path: same span as the bucket. */
+	if (r->ucount > 0 && aligned_size == r->usize) {
+		++r->ucount;
+		goto out;
 	}
-	r->start = aligned_addr;
-	r->size = aligned_size;
-	r->refcount = 1;
-	r->node.key = rbtree_key((unsigned long)aligned_addr, 0);
-	hsakmt_rbtree_insert(&fmm_ctx->svm_api_range_tree, &r->node);
+	/* No live uniform bucket (all uniform members deregistered): adopt this
+	 * span as the new bucket span.
+	 */
+	if (r->ucount == 0) {
+		r->usize = aligned_size;
+		r->ucount = 1;
+		goto out;
+	}
+	/* Divergent span: refcount an existing per-pointer entry, else add one. */
+	reg = svm_api_find_reg(r, user_ptr);
+	if (reg && reg->size == aligned_size)
+		++reg->refcount;
+	else if (!svm_api_add_reg(r, user_ptr, aligned_size))
+		pr_warn("Failed to track SVM-API range %p, deregister may be a no-op\n",
+			user_ptr);
+out:
 	pthread_mutex_unlock(&fmm_ctx->svm_api_mutex);
 	return HSAKMT_STATUS_SUCCESS;
 }
@@ -1243,29 +1325,61 @@ static int svm_api_range_put(struct hsa_kfd_fmm_context *fmm_ctx, void *addr,
 	struct svm_revoke_range *ranges = NULL;
 	int n = 0, cap = 0;
 	HSAuint64 base, end, cur;
+	uint64_t dropped_size, self_span;
+	bool survived;
 	rbtree_key_t key;
 	rbtree_node_t *node;
 	svm_api_range_t *r;
+	svm_api_reg_t *reg;
 
 	*out = NULL;
 
 	pthread_mutex_lock(&fmm_ctx->svm_api_mutex);
 	r = svm_api_range_find(fmm_ctx, aligned_addr);
-	if (!r || --r->refcount > 0) {
+	if (!r) {
 		pthread_mutex_unlock(&fmm_ctx->svm_api_mutex);
 		return 0;
 	}
 
-	base = (HSAuint64)r->start;
-	end = base + r->size;
-	hsakmt_rbtree_delete(&fmm_ctx->svm_api_range_tree, &r->node);
-	free(r);
-
-	/* Emit the gaps in [base, end) not covered by any surviving registration.
-	 * Walk the tree in address order starting from the nearest range at or
-	 * before base (it may extend into us), else from the smallest.
+	/* Recover the deregistering registration's extent and drop its reference.
+	 * A divergent-span pointer is stored explicitly; otherwise this is a
+	 * uniform bucket member (all of which share usize).
 	 */
-	cur = base;
+	reg = svm_api_find_reg(r, addr);
+	if (reg) {
+		dropped_size = reg->size;
+		if (--reg->refcount > 0)
+			goto still_referenced;
+		svm_api_del_reg(r, reg);
+	} else if (r->ucount > 0) {
+		dropped_size = r->usize;
+		if (--r->ucount > 0)
+			goto still_referenced;	/* uniform peers still cover it */
+	} else {
+		goto still_referenced;		/* untracked / double deregister */
+	}
+
+	base = (HSAuint64)r->start;
+	end = base + dropped_size;
+
+	/* Whatever coverage this node still has after the drop is exclusive to
+	 * this base, so seed the sweep cursor past it before scanning other
+	 * nodes. Remove the node during the walk so its own (now stale) extent
+	 * cannot mask a neighbour, then reinsert it if anything survived.
+	 */
+	survived = (r->ucount > 0 || r->nregs > 0);
+	self_span = svm_api_node_span(r);
+	hsakmt_rbtree_delete(&fmm_ctx->svm_api_range_tree, &r->node);
+
+	cur = base + self_span;
+	if (cur > end)
+		cur = end;
+
+	/* Emit the gaps in [cur, end) not covered by any surviving node. Walk in
+	 * address order from the nearest node at or before base (it may extend
+	 * into us), else from the smallest. Each node covers
+	 * [start, start + svm_api_node_span(node)).
+	 */
 	key = rbtree_key(base, 0);
 	node = rbtree_lookup_nearest(&fmm_ctx->svm_api_range_tree, &key, LKP_ADDR, LEFT);
 	if (!node)
@@ -1274,7 +1388,7 @@ static int svm_api_range_put(struct hsa_kfd_fmm_context *fmm_ctx, void *addr,
 	while (node && cur < end) {
 		svm_api_range_t *o = rb_entry(node, svm_api_range_t, node);
 		HSAuint64 ostart = (HSAuint64)o->start;
-		HSAuint64 oend = ostart + o->size;
+		HSAuint64 oend = ostart + svm_api_node_span(o);
 
 		if (oend <= cur) {		/* entirely before cur */
 			node = hsakmt_rbtree_next(&fmm_ctx->svm_api_range_tree, node);
@@ -1295,9 +1409,20 @@ static int svm_api_range_put(struct hsa_kfd_fmm_context *fmm_ctx, void *addr,
 	if (cur < end)				/* uncovered tail */
 		svm_revoke_add(&ranges, &n, &cap, cur, end);
 
+	if (survived) {
+		hsakmt_rbtree_insert(&fmm_ctx->svm_api_range_tree, &r->node);
+	} else {
+		free(r->regs);
+		free(r);
+	}
+
 	pthread_mutex_unlock(&fmm_ctx->svm_api_mutex);
 	*out = ranges;
 	return n;
+
+still_referenced:
+	pthread_mutex_unlock(&fmm_ctx->svm_api_mutex);
+	return 0;
 }
 
 /*
@@ -1384,13 +1509,13 @@ static HSAKMT_STATUS fmm_register_mem_svm_api(HsaKFDContext *ctx,
 	args->attrs[1].type = flags.ui32.ExtendedCoherent ?
 							HSA_SVM_ATTR_SET_FLAGS : HSA_SVM_ATTR_CLR_FLAGS;
 	args->attrs[1].value = HSA_SVM_FLAG_EXT_COHERENT;
-	/* Validate and reserve the tracking entry before touching kernel state,
-	 * so a same-base re-registration with a mismatched size is rejected
-	 * (INVALID_PARAMETER) without issuing a stray SET_ATTR - deregister is
-	 * keyed only by base address and could not disambiguate the two extents.
-	 * Identical (base, size) registrations are refcounted.
+	/* Reserve the tracking entry before touching kernel state. Registrations
+	 * are keyed by page-aligned base, folding same-span siblings into a
+	 * uniform bucket and tracking divergent spans per pointer, so that
+	 * deregister (keyed only by base + pointer) can revoke exactly the pages
+	 * no surviving registration still covers.
 	 */
-	ret = svm_api_range_get(fmm_ctx, (void *)aligned_addr, aligned_size);
+	ret = svm_api_range_get(fmm_ctx, address, (void *)aligned_addr, aligned_size);
 	if (ret != HSAKMT_STATUS_SUCCESS)
 		return ret;
 
@@ -3503,6 +3628,7 @@ void hsakmt_fmm_destroy_process_apertures(HsaKFDContext *ctx)
 			       &fmm_ctx->svm_api_range_tree.sentinel);
 		r = rb_entry(n, svm_api_range_t, node);
 		hsakmt_rbtree_delete(&fmm_ctx->svm_api_range_tree, n);
+		free(r->regs);
 		free(r);
 	}
 	pthread_mutex_unlock(&fmm_ctx->svm_api_mutex);
@@ -4298,13 +4424,7 @@ HSAKMT_STATUS hsakmt_fmm_register_memory(HsaKFDContext *ctx,
 		/* Register a new user ptr */
 		if (ctx->hsakmt_is_svm_api_supported) {
 			ret = fmm_register_mem_svm_api(ctx, address, size_in_bytes, flags);
-			/* INVALID_PARAMETER is a deliberate rejection (e.g. a same
-			 * base re-registered with a different size); surface it
-			 * rather than silently falling back to a legacy userptr
-			 * registration.
-			 */
-			if (ret == HSAKMT_STATUS_SUCCESS ||
-			    ret == HSAKMT_STATUS_INVALID_PARAMETER)
+			if (ret == HSAKMT_STATUS_SUCCESS)
 				return ret;
 			pr_debug("SVM failed, falling back to old registration\n");
 		}
