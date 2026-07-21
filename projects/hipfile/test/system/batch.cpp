@@ -438,8 +438,7 @@ TEST_F(BatchTest, GetStatusMinNrLargerThanSubmittedReturnsCompletedOps)
     // Ask for more events than were submitted; the wait is bounded to the outstanding ops.
     std::vector<hipFileIOEvents_t> events(op_count);
     unsigned                       nr = op_count;
-    ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, op_count, &nr, events.data(), nullptr),
-              HIPFILE_SUCCESS);
+    ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, op_count, &nr, events.data(), nullptr), HIPFILE_SUCCESS);
     ASSERT_EQ(nr, 1u);
 
     events.resize(nr);
@@ -558,6 +557,45 @@ TEST_F(BatchTest, SubmitRejectsInvalidSizeInNonFirstOperation)
     ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, 0, &nr, &event, &timeout), HIPFILE_SUCCESS);
     ASSERT_EQ(nr, 0);
 #endif
+}
+
+TEST_F(BatchTest, SubmitRejectsUnregisteredFileHandle)
+{
+    setupBatch(1);
+    auto op = makeOp(0, hipFileBatchRead);
+
+    // Deregister the file handle so the op references a handle that is no longer registered.
+    hipFileHandleDeregister(file_handle);
+    file_handle = nullptr;
+
+    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, 1, &op, 0), HipFileOpError(hipFileHandleNotRegistered));
+
+    hipFileIOEvents_t event{};
+    unsigned          nr = 1;
+    struct timespec   timeout {
+        1, 0
+    };
+    ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, 0, &nr, &event, &timeout), HIPFILE_SUCCESS);
+    ASSERT_EQ(nr, 0);
+}
+
+TEST_F(BatchTest, SubmitRejectsHostMemoryBuffer)
+{
+    setupBatch(1);
+    auto op = makeOp(0, hipFileBatchRead);
+
+    // Point the op at host memory (a std::vector's data) instead of a registered device buffer.
+    op.u.batch.devPtr_base = host_buffer.data();
+
+    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, 1, &op, 0), HipFileOpError(hipFileHipMemoryTypeInvalid));
+
+    hipFileIOEvents_t event{};
+    unsigned          nr = 1;
+    struct timespec   timeout {
+        1, 0
+    };
+    ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, 0, &nr, &event, &timeout), HIPFILE_SUCCESS);
+    ASSERT_EQ(nr, 0);
 }
 
 TEST_F(BatchTest, GetStatusRejectsInvalidArguments)
