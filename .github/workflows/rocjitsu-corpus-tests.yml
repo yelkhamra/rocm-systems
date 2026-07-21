@@ -87,7 +87,7 @@ jobs:
           - name: tsan-sparse-memory
             allow_failure: false
             # Keep the race gate focused on the concurrent memory surfaces
-            # hardened by this change.
+            # shared by CPU dispatch workers.
             test_regex: '^(SparseMemory(Threading)?Test|GpuMemoryThreadingTest|L2CacheThreadingTest)\.'
             build_type: RelWithDebInfo
             enable_asan: 0
