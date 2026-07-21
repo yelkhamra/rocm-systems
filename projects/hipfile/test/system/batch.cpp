@@ -598,6 +598,21 @@ TEST_F(BatchTest, SubmitRejectsHostMemoryBuffer)
     ASSERT_EQ(nr, 0);
 }
 
+TEST_F(BatchTest, SetUpRejectsZeroCapacity)
+{
+    hipFileBatchHandle_t handle = nullptr;
+    ASSERT_EQ(hipFileBatchIOSetUp(&handle, 0), HipFileOpError(hipFileInvalidValue));
+    ASSERT_EQ(handle, nullptr);
+}
+
+TEST_F(BatchTest, SetUpRejectsCapacityAboveMaximum)
+{
+    // The batch context is limited to 128 outstanding ops; 129 must be rejected.
+    hipFileBatchHandle_t handle = nullptr;
+    ASSERT_EQ(hipFileBatchIOSetUp(&handle, 129), HipFileOpError(hipFileInvalidValue));
+    ASSERT_EQ(handle, nullptr);
+}
+
 TEST_F(BatchTest, GetStatusRejectsInvalidArguments)
 {
     setupBatch(1);
