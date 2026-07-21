@@ -109,6 +109,7 @@ set(SRC_FILES
   include/mem_manager.h
   include/allocator.h
   include/algorithms/CollCommon.h
+  include/algorithms/ll128_pack.h
   include/algorithms/all_reduce/all_reduce_dda.h
   include/algorithms/all_reduce/all_reduce_dda_ll.h
   include/algorithms/reduce_scatter/reduce_scatter_dda.h

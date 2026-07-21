@@ -19,7 +19,11 @@
 #define DDA_IPC_BUFFER_SIZE 268435456
 
 #define DDA_FABRIC_MAXBLOCKS 24
-#define DDA_FABRIC_BUFFER_SIZE 268435456
+// 288 MiB: sized so the LL128 all-gather scratch (2 banks * nRanks * per-rank
+// slot at the 128/120 wire expansion, ~= 2 * total * 16/15) fits a 128 MiB
+// total transfer. Raising DDA_ALLGATHER_LL128_THRESHOLD beyond 128 MiB also
+// needs this bumped; otherwise LL128 eligibility falls back to the VMM path.
+#define DDA_FABRIC_BUFFER_SIZE 301989888
 
 namespace nccl_dda_detail {
 

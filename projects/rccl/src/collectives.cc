@@ -125,12 +125,22 @@ static ncclResult_t rcclDirectAllGather(const void* sendbuff, void* recvbuff, si
 }
 
 RCCL_PARAM(DdaEnable, "DDA_ENABLE", 1);
-RCCL_PARAM(DdaThreshold, "DDA_THRESHOLD", (size_t)(67108864));
+// Master DDA size gate (per-collective total bytes). Raised to 128 MiB so the
+// LL128 all-gather tier below is reachable; other DDA collectives keep their
+// own sub-thresholds/eligibility. Env-tunable via DDA_THRESHOLD.
+RCCL_PARAM(DdaThreshold, "DDA_THRESHOLD", (size_t)(134217728));
 // LL-protocol DDA all-gather (fabric path).
 // threshold: LL is attempted only when the size (per-rank * nRanks)
 // is <= threshold, otherwise the copy-based DDA path handles the call.
 RCCL_PARAM(DdaAllGatherLL, "DDA_ALLGATHER_LL", 1);
 RCCL_PARAM(DdaAllGatherLLThreshold, "DDA_ALLGATHER_LL_THRESHOLD", (size_t)(131072));
+// LL128-protocol DDA all-gather (fabric path). Covers the mid/large tier above
+// the LL threshold (higher payload density, ~16/15 wire overhead). Attempted
+// when total size is <= threshold and the DDA scratch can hold the message;
+// otherwise the copy-based DDA path handles the call. Keep the option to raise
+// this by bumping the threshold (and DDA_FABRIC_BUFFER_SIZE for large totals).
+RCCL_PARAM(DdaAllGatherLL128, "DDA_ALLGATHER_LL128", 1);
+RCCL_PARAM(DdaAllGatherLL128Threshold, "DDA_ALLGATHER_LL128_THRESHOLD", (size_t)(134217728));
 // LL-protocol DDA all-reduce (fabric path).
 // threshold: LL is attempted only when the full-message size is <= threshold,
 // otherwise the copy-based DDA path handles the call.
@@ -264,6 +274,22 @@ ncclResult_t ncclAllGather_impl(const void* sendbuff, void* recvbuff, size_t sen
              "AllGather: taking DDA fabric LL path: nRanks=%d nNodes=%d sendcount=%zu datatype=%d totalBytes=%zu",
              comm->nRanks, comm->nNodes, sendcount, (int)datatype, msgSize);
         NCCLCHECK(ncclAllGatherDdaFabricLL(
+            sendbuff,
+            recvbuff,
+            sendcount,
+            datatype,
+            comm,
+            stream));
+        return ncclSuccess;
+      }
+      // Mid/large tier: LL128 protocol (denser wire than LL, still barrier-free).
+      if (rcclParamDdaAllGatherLL128() &&
+          msgSize <= (size_t)rcclParamDdaAllGatherLL128Threshold() &&
+          ncclAllGatherDdaFabricLL128Eligible(comm, sendbuff, recvbuff, sendcount, datatype)) {
+        INFO(NCCL_COLL,
+             "AllGather: taking DDA fabric LL128 path: nRanks=%d nNodes=%d sendcount=%zu datatype=%d totalBytes=%zu",
+             comm->nRanks, comm->nNodes, sendcount, (int)datatype, msgSize);
+        NCCLCHECK(ncclAllGatherDdaFabricLL128(
             sendbuff,
             recvbuff,
             sendcount,
