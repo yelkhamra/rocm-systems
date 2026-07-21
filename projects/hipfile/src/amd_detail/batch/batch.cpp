@@ -319,8 +319,8 @@ BatchContext::submitOperations(BatchOperations pending_ops)
     }
 
     for (const auto &op : pending_ops) {
-        task_group->run([op]() { op->run(); });
         op->markPending();
+        task_group->run([op]() { op->run(); });
     }
     outstanding_ops.insert(pending_ops.begin(), pending_ops.end());
 }
