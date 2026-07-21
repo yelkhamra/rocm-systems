@@ -92,7 +92,7 @@ static vhsakmt_device_handle vhsakmt_device_init(void) {
   pthread_mutex_init(&dev->vhsakmt_mutex, NULL);
   dev_list = dev;
 
-  dev->use_svm = false;
+  dev->use_svm = true;
 
   pthread_mutex_unlock(&dev_mutex);
   return dev;
