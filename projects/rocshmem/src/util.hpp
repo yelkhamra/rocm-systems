@@ -402,7 +402,7 @@ constexpr bool is_blocking(MemcpyKind k) {
 }
 
 template <int ChunkSize, CachePolicy LoadPolicy, CachePolicy StorePolicy, int Unroll>
-__device__ __forceinline__ void copy_bulk(void* dst, void* src,
+__device__ __noinline__ void copy_bulk(void* dst, void* src,
                                           int n_chunks, int tid, int stride) {
   using Acc = AsmAccess<ChunkSize, LoadPolicy, StorePolicy>;
   using T = typename Acc::type;
@@ -430,9 +430,6 @@ __device__ __forceinline__ void copy_bulk(void* dst, void* src,
   // Tail: remaining chunks that don't fill a full unrolled batch
   for (int i = offset + tid; i < n_chunks; i += stride) {
     T val = Acc::load(static_cast<uint8_t*>(src) + i * ChunkSize);
-    if constexpr (LoadPolicy != CachePolicy::Standard) {
-      wait_on_vmem_and_lds(0);
-    }
     Acc::store(static_cast<uint8_t*>(dst) + i * ChunkSize, val);
   }
 }
@@ -448,25 +445,21 @@ __device__ __forceinline__ void copy_remainder(uint8_t* dst, uint8_t* src, int s
 
     if (size >= 8 && (align & 7) == 0) {
       auto val = AsmAccess<8, LP, SP>::load(src);
-      if constexpr (LP != CachePolicy::Standard) wait_on_vmem_and_lds(0);
       AsmAccess<8, LP, SP>::store(dst, val);
       dst += 8; src += 8; size -= 8;
-    } 
+    }
     else if (size >= 4 && (align & 3) == 0) {
       auto val = AsmAccess<4, LP, SP>::load(src);
-      if constexpr (LP != CachePolicy::Standard) wait_on_vmem_and_lds(0);
       AsmAccess<4, LP, SP>::store(dst, val);
       dst += 4; src += 4; size -= 4;
-    } 
+    }
     else if (size >= 2 && (align & 1) == 0) {
       auto val = AsmAccess<2, LP, SP>::load(src);
-      if constexpr (LP != CachePolicy::Standard) wait_on_vmem_and_lds(0);
       AsmAccess<2, LP, SP>::store(dst, val);
       dst += 2; src += 2; size -= 2;
-    } 
+    }
     else {
       auto val = AsmAccess<1, LP, SP>::load(src);
-      if constexpr (LP != CachePolicy::Standard) wait_on_vmem_and_lds(0);
       AsmAccess<1, LP, SP>::store(dst, val);
       dst += 1; src += 1; size -= 1;
     }
@@ -482,9 +475,12 @@ template <MemcpyKind Kind = MemcpyKind::Put>
 [[maybe_unused]] __device__ __forceinline__ void memcpy_lane(void* dst, void* src, size_t size) {
   if (size == 0) return;
 
-  constexpr CachePolicy LP = is_put(Kind) ? CachePolicy::Standard : CachePolicy::SystemScope;
+  constexpr int ChunkSize = 16;
+  constexpr int Unroll    = 8;
+  // Compile-time bypass policy: cache-bypass in the direction of the remote side.
+  constexpr CachePolicy LP = is_put(Kind) ? CachePolicy::Standard    : CachePolicy::SystemScope;
   constexpr CachePolicy SP = is_put(Kind) ? CachePolicy::SystemScope : CachePolicy::Standard;
-  
+
   uintptr_t align = reinterpret_cast<uintptr_t>(dst) | reinterpret_cast<uintptr_t>(src);
 
   // Many threads, large transfer: use cached Standard policy + system fences
@@ -495,15 +491,15 @@ template <MemcpyKind Kind = MemcpyKind::Put>
     }
 
     if (__builtin_expect((align & 15) == 0, 1)) {
-      int n_chunks = size / 16;
-      int remainder = size % 16;
+      int n_chunks = size / ChunkSize;
+      int remainder = size % ChunkSize;
 
-      copy_bulk<16, CachePolicy::Standard, CachePolicy::Standard, 16>(
+      copy_bulk<ChunkSize, CachePolicy::Standard, CachePolicy::Standard, Unroll>(
           dst, src, n_chunks, 0, 1);
-          
+
       copy_remainder<CachePolicy::Standard, CachePolicy::Standard>(
-          static_cast<uint8_t*>(dst) + n_chunks * 16,
-          static_cast<uint8_t*>(src) + n_chunks * 16, 
+          static_cast<uint8_t*>(dst) + n_chunks * ChunkSize,
+          static_cast<uint8_t*>(src) + n_chunks * ChunkSize,
           remainder);
     } else {
       copy_remainder<CachePolicy::Standard, CachePolicy::Standard>(
@@ -514,17 +510,17 @@ template <MemcpyKind Kind = MemcpyKind::Put>
       detail::atomic::threadfence<detail::atomic::memory_scope_system,
                                   detail::atomic::memory_order_release>();
     }
-  } 
+  }
   // Normal cache-bypass path for small transfers or single-lane execution
   else {
     if (size >= 16 && __builtin_expect((align & 15) == 0, 1)) {
-      int n_chunks = size / 16;
-      int remainder = size % 16;
+      int n_chunks = size / ChunkSize;
+      int remainder = size % ChunkSize;
 
-      copy_bulk<16, LP, SP, 16>(dst, src, n_chunks, 0, 1);
-      
-      copy_remainder<LP, SP>(static_cast<uint8_t*>(dst) + n_chunks * 16,
-                              static_cast<uint8_t*>(src) + n_chunks * 16,
+      copy_bulk<ChunkSize, LP, SP, Unroll>(dst, src, n_chunks, 0, 1);
+
+      copy_remainder<LP, SP>(static_cast<uint8_t*>(dst) + n_chunks * ChunkSize,
+                              static_cast<uint8_t*>(src) + n_chunks * ChunkSize,
                               remainder);
     } else {
       copy_remainder<LP, SP>(static_cast<uint8_t*>(dst),
@@ -538,8 +534,13 @@ template <MemcpyKind Kind = MemcpyKind::Put>
 [[maybe_unused]] __device__ __forceinline__ void memcpy_wave(void* dst, void* src, size_t size) {
   if (size == 0) return;
 
-  constexpr CachePolicy LP = is_put(Kind) ? CachePolicy::Standard : CachePolicy::SystemScope;
-  constexpr CachePolicy SP = is_put(Kind) ? CachePolicy::SystemScope : CachePolicy::Standard;
+  constexpr int ChunkSize = 16;
+  constexpr int Unroll    = 8;
+
+  constexpr CachePolicy LP =
+      is_put(Kind) ? CachePolicy::Standard : CachePolicy::SystemScope;
+  constexpr CachePolicy SP =
+      is_put(Kind) ? CachePolicy::SystemScope : CachePolicy::Standard;
 
   int wave_tid = get_flat_block_id() % WF_SIZE;
   int wave_size{wave_SZ()};
@@ -548,14 +549,14 @@ template <MemcpyKind Kind = MemcpyKind::Put>
   if (size >= 16) {
     if (__builtin_expect((align & 15) == 0, 1)) {
       // Golden Path: Fast parallel 16-byte bulk
-      int n_chunks = size / 16;
-      int remainder = size % 16;
+      int n_chunks = size / ChunkSize;
+      int remainder = size % ChunkSize;
 
-      copy_bulk<16, LP, SP, 16>(dst, src, n_chunks, wave_tid, wave_size);
+      copy_bulk<ChunkSize, LP, SP, Unroll>(dst, src, n_chunks, wave_tid, wave_size);
 
       if (wave_tid == 0) {
-        copy_remainder<LP, SP>(static_cast<uint8_t*>(dst) + n_chunks * 16,
-                               static_cast<uint8_t*>(src) + n_chunks * 16,
+        copy_remainder<LP, SP>(static_cast<uint8_t*>(dst) + n_chunks * ChunkSize,
+                               static_cast<uint8_t*>(src) + n_chunks * ChunkSize,
                                remainder);
       }
     } else {
@@ -576,6 +577,9 @@ template <MemcpyKind Kind = MemcpyKind::Put>
 [[maybe_unused]] __device__ __forceinline__ void memcpy_wg(void* dst, void* src, size_t size) {
   if (size == 0) return;
 
+  constexpr int ChunkSize = 16;
+  constexpr int Unroll    = 8;
+
   constexpr CachePolicy LP = is_put(Kind) ? CachePolicy::Standard : CachePolicy::SystemScope;
   constexpr CachePolicy SP = is_put(Kind) ? CachePolicy::SystemScope : CachePolicy::Standard;
 
@@ -586,14 +590,14 @@ template <MemcpyKind Kind = MemcpyKind::Put>
   if (size >= 16) {
     if (__builtin_expect((align & 15) == 0, 1)) {
       // Aligned fast path
-      int n_chunks = size / 16;
-      int remainder = size % 16;
-      
-      copy_bulk<16, LP, SP, 16>(dst, src, n_chunks, tid, stride);
-      
+      int n_chunks = size / ChunkSize;
+      int remainder = size % ChunkSize;
+
+      copy_bulk<ChunkSize, LP, SP, Unroll>(dst, src, n_chunks, tid, stride);
+
       if (tid == 0) {
-        copy_remainder<LP, SP>(static_cast<uint8_t*>(dst) + n_chunks * 16,
-                               static_cast<uint8_t*>(src) + n_chunks * 16,
+        copy_remainder<LP, SP>(static_cast<uint8_t*>(dst) + n_chunks * ChunkSize,
+                               static_cast<uint8_t*>(src) + n_chunks * ChunkSize,
                                remainder);
       }
     } else {
