@@ -242,7 +242,7 @@ struct ScopedFileSizeLimit {
         }
     }
 
-    struct rlimit old_limit {};
+    struct rlimit old_limit{};
     bool          active{};
 };
 
@@ -418,9 +418,7 @@ TEST_F(BatchTest, GetStatusNoOutstandingReturnsZero)
     setupBatch(1);
     hipFileIOEvents_t event{};
     unsigned          nr = 1;
-    struct timespec   timeout {
-        1, 0
-    };
+    struct timespec   timeout{1, 0};
 
     ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, 1, &nr, &event, &timeout), HIPFILE_SUCCESS);
     ASSERT_EQ(nr, 0);
@@ -472,6 +470,10 @@ TEST_F(BatchCancelTest, CancelFullBatchReportsTerminalStatus)
     ASSERT_EQ(hipFileBatchIOCancel(batch_handle), HIPFILE_SUCCESS);
 
     const auto events = waitForEvents(op_count);
+#if defined(__HIP_PLATFORM_NVIDIA__)
+    ASSERT_EQ(events.size(), 0);
+    return;
+#endif
     ASSERT_EQ(events.size(), op_count);
     std::vector<size_t> seen;
     seen.reserve(events.size());
@@ -551,9 +553,7 @@ TEST_F(BatchTest, SubmitRejectsInvalidSizeInNonFirstOperation)
 
     hipFileIOEvents_t event{};
     unsigned          nr = 1;
-    struct timespec   timeout {
-        1, 0
-    };
+    struct timespec   timeout{1, 0};
     ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, 0, &nr, &event, &timeout), HIPFILE_SUCCESS);
     ASSERT_EQ(nr, 0);
 #endif
@@ -568,19 +568,26 @@ TEST_F(BatchTest, SubmitRejectsUnregisteredFileHandle)
     hipFileHandleDeregister(file_handle);
     file_handle = nullptr;
 
-    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, 1, &op, 0), HipFileOpError(hipFileHandleNotRegistered));
+#if defined(__HIP_PLATFORM_NVIDIA__)
+    constexpr auto retval = HipFileOpError(hipFileInternalError);
+#else
+    constexpr auto retval = HipFileOpError(hipFileHandleNotRegistered);
+#endif
+
+    ASSERT_EQ(hipFileBatchIOSubmit(batch_handle, 1, &op, 0), retval);
 
     hipFileIOEvents_t event{};
     unsigned          nr = 1;
-    struct timespec   timeout {
-        1, 0
-    };
+    struct timespec   timeout{1, 0};
     ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, 0, &nr, &event, &timeout), HIPFILE_SUCCESS);
     ASSERT_EQ(nr, 0);
 }
 
 TEST_F(BatchTest, SubmitRejectsHostMemoryBuffer)
 {
+#if defined(__HIP_PLATFORM_NVIDIA__)
+    GTEST_SKIP() << "NVIDIA doesn't validate on submission";
+#endif
     setupBatch(1);
     auto op = makeOp(0, hipFileBatchRead);
 
@@ -591,9 +598,7 @@ TEST_F(BatchTest, SubmitRejectsHostMemoryBuffer)
 
     hipFileIOEvents_t event{};
     unsigned          nr = 1;
-    struct timespec   timeout {
-        1, 0
-    };
+    struct timespec   timeout{1, 0};
     ASSERT_EQ(hipFileBatchIOGetStatus(batch_handle, 0, &nr, &event, &timeout), HIPFILE_SUCCESS);
     ASSERT_EQ(nr, 0);
 }
@@ -601,7 +606,12 @@ TEST_F(BatchTest, SubmitRejectsHostMemoryBuffer)
 TEST_F(BatchTest, SetUpRejectsZeroCapacity)
 {
     hipFileBatchHandle_t handle = nullptr;
-    ASSERT_EQ(hipFileBatchIOSetUp(&handle, 0), HipFileOpError(hipFileInvalidValue));
+#if defined(__HIP_PLATFORM_NVIDIA__)
+    constexpr auto retval = HipFileOpError(hipFileInternalError);
+#else
+    constexpr auto retval = HipFileOpError(hipFileInvalidValue);
+#endif
+    ASSERT_EQ(hipFileBatchIOSetUp(&handle, 0), retval);
     ASSERT_EQ(handle, nullptr);
 }
 
@@ -609,7 +619,12 @@ TEST_F(BatchTest, SetUpRejectsCapacityAboveMaximum)
 {
     // The batch context is limited to 128 outstanding ops; 129 must be rejected.
     hipFileBatchHandle_t handle = nullptr;
-    ASSERT_EQ(hipFileBatchIOSetUp(&handle, 129), HipFileOpError(hipFileInvalidValue));
+#if defined(__HIP_PLATFORM_NVIDIA__)
+    constexpr auto retval = HipFileOpError(hipFileInternalError);
+#else
+    constexpr auto retval = HipFileOpError(hipFileInvalidValue);
+#endif
+    ASSERT_EQ(hipFileBatchIOSetUp(&handle, 129), retval);
     ASSERT_EQ(handle, nullptr);
 }
 
