@@ -302,16 +302,13 @@ void __hipRegisterTexture(
 // ================================================================================================
 void __hipUnregisterFatBinary(void** modules) {
   auto* fat_binary_modules = reinterpret_cast<hip::FatBinaryInfo**>(modules);
-  static std::once_flag unregister_device_sync;
   // If SKIP ABORT is set and GPU is in error, dont need to sync streams.
   if (!HIP_SKIP_ABORT_ON_GPU_ERROR || !amd::Device::IsGPUInError()) {
-    std::call_once(unregister_device_sync, []() {
-      for (const auto& hipDevice : g_devices) {
-        // By synchronizing devices ensure that all HSA signal handlers
-        // complete before RemoveFatBinary
-        hipDevice->SyncAllStreams(true);
-      }
-    });
+    for (const auto& hipDevice : g_devices) {
+      // By synchronizing devices ensure that all HSA signal handlers
+      // complete before RemoveFatBinary
+      hipDevice->SyncAllStreams(true);
+    }
   }
   hipError_t err = PlatformState::Instance().StatCO().RemoveFatBinary(fat_binary_modules);
   guarantee((err == hipSuccess), "Cannot Unregister Fat Binary, error:%d", err);
