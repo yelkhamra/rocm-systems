@@ -802,6 +802,11 @@ class Device : public NullDevice {
                                 const std::unordered_set<uint64_t>* excluded_ids = nullptr,
                                 void** metadata_ring_buffer = nullptr);
 
+ public:
+  //! Pool share count for a HW queue in its priority pool (0 if untracked); >1 means shared.
+  int SharedHwQueueRefCount(hsa_queue_t* queue, amd::CommandQueue::Priority priority);
+
+ private:
   //! returns value for corresponding LinkAttrbutes in a vector given Memory pool.
   virtual bool findLinkInfo(const hsa_amd_memory_pool_t& pool,
                             std::vector<LinkAttrType>* link_attr);
