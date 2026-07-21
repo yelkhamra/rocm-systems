@@ -239,6 +239,8 @@ if(BUILD_TESTS)
       VersionInfoTests.cpp
       device/TestOp128.cpp
       device/GinDeviceTests.cpp
+      device/GinAnvilIpcDevice_test.cpp
+      DeviceApiTests.cpp
       common/main_fixtures.cpp
       common/EnvVars.cpp
       common/ProcessIsolatedTestRunner.cpp
@@ -260,6 +262,7 @@ if(BUILD_TESTS)
     set(TEST_FIXTURE_DEBUG_SOURCE_FILES
       AllocTests.cpp
       ParamTests.cpp
+      ParameterApiTests.cpp
       ArgCheckTests.cpp
       BootstrapBidirTests.cpp
       DdaIpcEligibilityTests.cpp
