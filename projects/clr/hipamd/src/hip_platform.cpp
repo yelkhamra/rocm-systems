@@ -303,15 +303,24 @@ void __hipRegisterTexture(
 void __hipUnregisterFatBinary(void** modules) {
   auto* fat_binary_modules = reinterpret_cast<hip::FatBinaryInfo**>(modules);
   // If SKIP ABORT is set and GPU is in error, dont need to sync streams.
-  if (!HIP_SKIP_ABORT_ON_GPU_ERROR || !amd::Device::IsGPUInError()) {
+  const bool synced = !HIP_SKIP_ABORT_ON_GPU_ERROR || !amd::Device::IsGPUInError();
+  if (synced) {
     for (const auto& hipDevice : g_devices) {
       // By synchronizing devices ensure that all HSA signal handlers
       // complete before RemoveFatBinary
       hipDevice->SyncAllStreams(true);
     }
   }
-  hipError_t err = PlatformState::Instance().StatCO().RemoveFatBinary(fat_binary_modules);
-  guarantee((err == hipSuccess), "Cannot Unregister Fat Binary, error:%d", err);
+  // RemoveFatBinary destroys the static amd::Kernel objects owned by this fat binary.
+  // Static-CO kernels skip the per-launch retain/release (see NDRangeKernelCommand), so
+  // their lifetime relies on the drain above having completed. When the GPU is in a
+  // latched error state the streams cannot be drained and in-flight commands may still
+  // reference these kernels; freeing them here would be a use-after-free. Intentionally
+  // leak the code object in that case rather than tear it down under an unrecoverable error.
+  if (synced) {
+    hipError_t err = PlatformState::Instance().StatCO().RemoveFatBinary(fat_binary_modules);
+    guarantee((err == hipSuccess), "Cannot Unregister Fat Binary, error:%d", err);
+  }
 }
 
 // ================================================================================================

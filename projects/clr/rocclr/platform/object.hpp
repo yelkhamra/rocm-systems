@@ -272,13 +272,12 @@ template <class T> class SysmemPool {
   }
 
   void Free(void* ptr) {
-#if IS_WINDOWS
-    auto obj = reinterpret_cast<MemoryObject*>(reinterpret_cast<address>(ptr) -
-                                               offsetof(MemoryObject, object_));
-#else
+    // object_ is placed at the first alignof(T)-aligned offset after base_. Compute it
+    // directly rather than via offsetof so the value is correct regardless of the objects alignment
+    constexpr size_t kObjectOffset =
+        (sizeof(AllocChunk*) + alignof(T) - 1) & ~(alignof(T) - 1);
     auto obj =
-        reinterpret_cast<MemoryObject*>(reinterpret_cast<address>(ptr) - sizeof(AllocChunk*));
-#endif
+        reinterpret_cast<MemoryObject*>(reinterpret_cast<address>(ptr) - kObjectOffset);
     auto freed = --obj->base_->free_;
     // If it's the last slot in the chunk, then release memory
     if (freed == 0) {
