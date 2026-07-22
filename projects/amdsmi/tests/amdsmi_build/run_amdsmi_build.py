@@ -148,10 +148,7 @@ def _bootstrap_python():
     if pkg_mgr == "apt":
         try:
             # Keep stdout quiet but let stderr surface install diagnostics.
-            subprocess.check_call(
-                ["apt-get", "update"],
-                stdout=subprocess.DEVNULL,
-            )
+            subprocess.check_call(["apt-get", "update"], stdout=subprocess.DEVNULL)
         except subprocess.CalledProcessError:
             pass
     for pkgs in pkg_candidates:
@@ -172,8 +169,7 @@ def _bootstrap_python():
         sys.exit("ERROR: could not find a Python 3.7+ interpreter after install")
     try:
         subprocess.check_call(
-            ["alternatives", "--set", "python3", new_py],
-            stdout=subprocess.DEVNULL,
+            ["alternatives", "--set", "python3", new_py], stdout=subprocess.DEVNULL
         )
     except (subprocess.CalledProcessError, FileNotFoundError, OSError):
         link = "/usr/bin/python3"
@@ -442,8 +438,10 @@ def install_build_prereqs(cfg: "RunnerConfig") -> None:
     ship cmake on PATH. This step installs cmake/gcc/g++/make on demand so
     the cmake-configure step doesn't die with FileNotFoundError.
     """
-    if shutil.which("cmake") and shutil.which("make") and (
-        shutil.which("gcc") or shutil.which("cc")
+    if (
+        shutil.which("cmake")
+        and shutil.which("make")
+        and (shutil.which("gcc") or shutil.which("cc"))
     ):
         return
 
@@ -490,16 +488,7 @@ def install_build_prereqs(cfg: "RunnerConfig") -> None:
         )
     elif cfg.package_manager == "zypper":
         run_command(
-            [
-                "zypper",
-                "--non-interactive",
-                "install",
-                "cmake",
-                "gcc",
-                "gcc-c++",
-                "make",
-                "git",
-            ],
+            ["zypper", "--non-interactive", "install", "cmake", "gcc", "gcc-c++", "make", "git"],
             name="zypper-install-prereqs",
             retries=cfg.retries,
             log_dir=cfg.log_dir,
@@ -562,20 +551,11 @@ def install_netlink_deps(cfg: "RunnerConfig") -> None:
             cmd += ["--noplugins", "--nogpgcheck"]
         cmd += ["libnl3-devel", "libmnl-devel"]
         run_command(
-            cmd,
-            name=f"{installer}-install-netlink",
-            retries=cfg.retries,
-            log_dir=cfg.log_dir,
+            cmd, name=f"{installer}-install-netlink", retries=cfg.retries, log_dir=cfg.log_dir
         )
     elif cfg.package_manager == "zypper":
         run_command(
-            [
-                "zypper",
-                "--non-interactive",
-                "install",
-                "libnl3-devel",
-                "libmnl-devel",
-            ],
+            ["zypper", "--non-interactive", "install", "libnl3-devel", "libmnl-devel"],
             name="zypper-install-netlink",
             retries=cfg.retries,
             log_dir=cfg.log_dir,
@@ -718,12 +698,7 @@ def build_amdsmi(cfg: "RunnerConfig") -> None:
         env["QA_RPATHS"] = str(0x0010 | 0x0002)
         print(f"QA_RPATHS set to {env['QA_RPATHS']}")
 
-    cmake_args = [
-        "cmake",
-        str(cfg.project_dir),
-        "-DBUILD_TESTS=ON",
-        "-DENABLE_ESMI_LIB=ON",
-    ]
+    cmake_args = ["cmake", str(cfg.project_dir), "-DBUILD_TESTS=ON", "-DENABLE_ESMI_LIB=ON"]
     run_command(
         cmake_args,
         name="cmake-configure",
@@ -905,10 +880,7 @@ def install_package(cfg: "RunnerConfig", package_path: Path) -> None:
         "amdsmi.amdsmi_shut_down(); "
         "print('init/shutdown ok')"
     )
-    verify_commands = [
-        [str(rocm_binary), "version"],
-        [system_python, "-c", import_smoke],
-    ]
+    verify_commands = [[str(rocm_binary), "version"], [system_python, "-c", import_smoke]]
     for idx, verify_cmd in enumerate(verify_commands, start=1):
         try:
             run_command(verify_cmd, name=f"verify-{idx}", retries=1, log_dir=cfg.log_dir)
@@ -1030,10 +1002,7 @@ def verify_dual_copy(cfg: "RunnerConfig") -> None:
 
     test_script = cfg.project_dir / "tests" / "run_amdsmi_dual_copy_test.py"
     run_command(
-        ["python3", str(test_script)],
-        name="dual-copy-guard",
-        retries=1,
-        log_dir=cfg.log_dir,
+        ["python3", str(test_script)], name="dual-copy-guard", retries=1, log_dir=cfg.log_dir
     )
 
 
@@ -1173,9 +1142,7 @@ def parse_args() -> RunnerConfig:
 
     project_dir = find_project_dir(args.project_dir)
     build_dir = args.build_dir or project_dir / "build"
-    package_manager = detect_package_manager(
-        args.package_manager or profile.get("package_manager")
-    )
+    package_manager = detect_package_manager(args.package_manager or profile.get("package_manager"))
     package_format = detect_package_format(
         package_manager, args.package_format or profile.get("package_format")
     )
@@ -1200,8 +1167,10 @@ def parse_args() -> RunnerConfig:
         os_label=os_label,
         refresh_apt=not args.no_apt_update,
         debian10_sources=args.debian10_sources or profile.get("debian10_sources", False),
-        skip_setuptools_upgrade=args.skip_setuptools_upgrade or profile.get("skip_setuptools_upgrade", False),
-        install_more_itertools=args.install_more_itertools or profile.get("install_more_itertools", False),
+        skip_setuptools_upgrade=args.skip_setuptools_upgrade
+        or profile.get("skip_setuptools_upgrade", False),
+        install_more_itertools=args.install_more_itertools
+        or profile.get("install_more_itertools", False),
         qa_rpaths=args.qa_rpaths or profile.get("qa_rpaths", False),
         skip_build=args.skip_build,
         skip_install=args.skip_install,
@@ -1265,9 +1234,7 @@ def summarize_results(results_dir: Path, os_label: str, summary_file: Optional[P
         gtest_fails = text.count("[  FAILED  ]")
         if gtest_fails > 0:
             failures.append(f"AMDSMI Tests ({gtest_fails})")
-            details.append(
-                f"#### AMDSMI Tests \u2014 {gtest_fails} failure(s)\n\n" + _fenced(text)
-            )
+            details.append(f"#### AMDSMI Tests \u2014 {gtest_fails} failure(s)\n\n" + _fenced(text))
 
     # 4. Python test outputs
     import re as _re
@@ -1287,9 +1254,7 @@ def summarize_results(results_dir: Path, os_label: str, summary_file: Optional[P
         if py_fails > 0:
             name = test_file.replace("_output.txt", "").replace("_", " ")
             failures.append(f"{name} ({py_fails})")
-            details.append(
-                f"#### {name} \u2014 {py_fails} failure(s)\n\n" + _fenced(text)
-            )
+            details.append(f"#### {name} \u2014 {py_fails} failure(s)\n\n" + _fenced(text))
 
     # 5. example test results (segfault detection)
     crash_re = _re.compile(r"segfault|SIGSEGV|abort", _re.IGNORECASE)
@@ -1308,9 +1273,7 @@ def summarize_results(results_dir: Path, os_label: str, summary_file: Optional[P
     # transient amd-smi CLI flakes do not fail the whole job.
     cmd_summary = ""
     if cmd_fails:
-        cmd_summary = (
-            f"\n\n:warning: Command tests (non-fatal): `{' '.join(cmd_fails)}`\n"
-        )
+        cmd_summary = f"\n\n:warning: Command tests (non-fatal): `{' '.join(cmd_fails)}`\n"
 
     if failures:
         header = [
