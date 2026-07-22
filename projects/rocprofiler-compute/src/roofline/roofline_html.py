@@ -25,6 +25,9 @@ from roofline.roofline_shared import (
     ALL_PEAKS_LABEL,
     ALL_PEAKS_VALUE,
     FALLBACK_COLOR,
+    FRAME_MIN_DECADES,
+    FRAME_PAD,
+    FRAME_ROOF_SEGMENT_DECADES,
     PLOT_DIM_OPACITY,
     ROOF_EXTRAP_MAX_AI,
     ROOF_SAMPLES,
@@ -35,12 +38,10 @@ PLOT_DIV_ID = "roofline-plot"
 _ASSETS_DIR = Path(__file__).parent / "assets"
 
 _PLOT_CONFIG: dict[str, Any] = {
-    "displaylogo": False,
+    "displayModeBar": False,
     "responsive": True,
     "scrollZoom": True,
-    # Double-clicking the chart resets the axes to the initial view.
-    "doubleClick": "reset",
-    "modeBarButtonsToRemove": ["autoScale2d"],
+    "doubleClick": False,
 }
 
 _PAGE_TEMPLATE = """<!DOCTYPE html>
@@ -62,13 +63,19 @@ __CSS__
     </label>
     <span class="roofline-hint">Scroll to zoom &middot; drag to pan &middot;
       double-click to reset</span>
+    <button type="button" id="roofline-reset-view"
+            class="roofline-btn roofline-btn-sm"
+            title="Frame the kernels currently shown">Reset zoom</button>
+    <button type="button" id="roofline-export-png"
+            class="roofline-btn roofline-btn-sm"
+            title="Download the current chart as a PNG image">Export PNG</button>
   </div>
   <div class="roofline-body">
     <div class="roofline-plot-col">
 __PLOT_FRAGMENT__
     </div>
     <div class="roofline-panel-wrap">
-    <aside class="roofline-panel">
+    <aside class="roofline-panel roofline-panel--kernels">
       <div class="roofline-panel-title">
         <span class="roofline-panel-title-label">Kernels
           <span id="roofline-kernel-count" class="roofline-panel-count"></span>
@@ -91,7 +98,9 @@ time reaches this percentage. 100% shows every kernel.">
                aria-label="Cumulative percent of GPU resident time to display">
       </div>
       <ul id="roofline-kernel-list" class="roofline-panel-list"></ul>
-      <div class="roofline-panel-title roofline-roof-title">
+    </aside>
+    <aside class="roofline-panel roofline-panel--roofs">
+      <div class="roofline-panel-title">
         <span class="roofline-panel-title-label">Bandwidth rooflines
           <span id="roofline-roof-count" class="roofline-panel-count"></span>
         </span>
@@ -232,5 +241,8 @@ class RooflineViewModel:
             "allPeaksLabel": ALL_PEAKS_LABEL,
             "fallbackColor": FALLBACK_COLOR,
             "plotDimOpacity": PLOT_DIM_OPACITY,
+            "framePad": FRAME_PAD,
+            "frameMinDecades": FRAME_MIN_DECADES,
+            "frameRoofSegmentDecades": FRAME_ROOF_SEGMENT_DECADES,
         }
         return json.dumps(payload, allow_nan=True).replace("</", "<\\/")

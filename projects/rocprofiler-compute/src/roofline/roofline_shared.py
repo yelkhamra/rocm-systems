@@ -30,6 +30,11 @@ PLOT_DIM_OPACITY = 0.15
 # Log-axis fallback frame (x_lo, x_hi, y_lo, y_hi) when there is no data.
 DEFAULT_AXIS_BOUNDS = (0.01, 1000.0, 1.0, 100000.0)
 
+# Initial/reset framing starts on the kernel scatter.
+FRAME_PAD = 1.6
+FRAME_MIN_DECADES = 2.5
+FRAME_ROOF_SEGMENT_DECADES = 2
+
 # Roof sampling. A log axis can never reach 0, so "toward the origin" just means
 # an arbitrarily small AI. The roofs are sampled densely across the visible
 # window (so the whole line is hoverable) plus one extreme anchor each way, so

@@ -25,6 +25,7 @@ from roofline.roofline_main import (
     get_color,
     roofline_axis_bounds,
 )
+from utils.kernel_name_shortener import format_kernel_signature
 
 
 class MockMspec:
@@ -97,6 +98,32 @@ def test_build_kernel_colors_cycles_past_palette() -> None:
 
 def test_build_kernel_colors_empty() -> None:
     assert build_kernel_colors(0) == []
+
+
+# =============================================================================
+# Kernel-name display formatting
+# =============================================================================
+
+
+def test_format_kernel_signature_trims_return_type_and_template() -> None:
+    assert (
+        format_kernel_signature("void baseline_kernel<double>(double*, double*, int)")
+        == "baseline_kernel(double*, double*, int)"
+    )
+
+
+def test_format_kernel_signature_keeps_namespace() -> None:
+    assert format_kernel_signature("void ns::foo<int>(float*)") == "ns::foo(float*)"
+
+
+def test_format_kernel_signature_no_arg_function() -> None:
+    assert format_kernel_signature("void kern()") == "kern()"
+
+
+def test_format_kernel_signature_passthrough_without_args() -> None:
+    # Tensile / plain kernel names have no argument list; leave them unchanged.
+    for name in ("Cijk_Ailk_Bjlk_SB_MT128x64x32", "sgprbound", ""):
+        assert format_kernel_signature(name) == name
 
 
 # =============================================================================
@@ -221,6 +248,9 @@ def test_view_model_to_json_round_trips() -> None:
         "computeOverlayTraces",
         "ceilingDenseHi",
         "roofSamples",
+        "framePad",
+        "frameMinDecades",
+        "frameRoofSegmentDecades",
     ):
         assert key in payload
 
@@ -256,6 +286,8 @@ def test_build_interactive_document_includes_controls_and_model() -> None:
     for marker in [
         "roofline-peak-select",
         "roofline-show-all",
+        "roofline-reset-view",
+        "roofline-export-png",
         'id="roofline-model"',
         "roofline-kernel-list",
         "roofline-roof-list",

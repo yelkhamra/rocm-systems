@@ -38,8 +38,8 @@ def build_point_hover(
     pct_runtime: Optional[float],
     ops_flops: str,
 ) -> str:
-    """Kernel-point hover: bold name header, then the achieved/peak throughput,
-    percent of roofline, limiter, dispatches, and runtime."""
+    """Kernel-point hover: the name, then the achieved/peak
+    throughput, percent of roofline, limiter, dispatches, and runtime."""
     unit = f"G{ops_flops}s/s"
     time_txt = (
         f"{_num(total_time, ',.2f')} {time_unit}".strip()
@@ -112,8 +112,8 @@ def _fmt_hover_int(value: object) -> str:
 
 
 def _hover(header: str, rows: list[str]) -> str:
-    """Assemble a Plotly hover body shared by every roofline hover."""
-    return "<br>".join([f"<b>{header}</b>", "", *rows]) + "<extra></extra>"
+    """Assemble the common Plotly hover body without bold styling."""
+    return "<br>".join([header, "", *rows]) + "<extra></extra>"
 
 
 def _format_bandwidth(gb_per_s: float) -> str:

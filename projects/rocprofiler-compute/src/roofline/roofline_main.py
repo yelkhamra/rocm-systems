@@ -31,6 +31,7 @@ from roofline.roofline_shared import (
     ROOF_SAMPLES,
     TRACE_COLORS,
 )
+from utils.kernel_name_shortener import format_kernel_signature
 from utils.logger import (
     console_debug,
     console_error,
@@ -410,8 +411,11 @@ class Roofline:
             )
             limiter = self._determine_kernel_limiter(level_ai, ceiling_data)
 
+            # Trim the demangled name for display so kernels
+            # differing only by template argument types stay distinct.
+            display_name = format_kernel_signature(kernel_name)
             # Build each point's tooltip now that the kernel-level fields exist.
-            wrapped_name = wrap_hover_name(kernel_name)
+            wrapped_name = wrap_hover_name(display_name)
             for point in points:
                 point["hover"] = build_point_hover(
                     name_html=wrapped_name,
@@ -429,9 +433,9 @@ class Roofline:
                 go.Scatter(
                     x=xs,
                     y=ys,
-                    name=kernel_name,
+                    name=display_name,
                     mode="markers",
-                    legendgroup=kernel_name,
+                    legendgroup=display_name,
                     showlegend=False,
                     marker=dict(
                         color=color,
@@ -446,7 +450,7 @@ class Roofline:
                 )
             )
             kernels_model.append({
-                "name": kernel_name,
+                "name": display_name,
                 "color": color,
                 "points": points,
                 "count": count_val,
@@ -690,7 +694,8 @@ class Roofline:
         roof_dense_lo = x_lo / ROOF_DENSE_PAD_FACTOR
         roof_dense_hi = x_hi * ROOF_DENSE_PAD_FACTOR
 
-        # Initial/reset view spans every roof and point.
+        # Draw roofs across the full extent. The browser controller applies the
+        # data-aware initial/reset frame after Plotly has created the chart.
         view_bounds = (x_lo, x_hi, y_lo, y_hi)
         if include_kernels:
             self._build_kernel_view_model(
