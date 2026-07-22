@@ -6,6 +6,7 @@
 #include "rocjitsu/code/amdgpu_code_object.h"
 #include "rocjitsu/code/amdgpu_elf.h"
 #include "rocjitsu/code/basic_block.h"
+#include "rocjitsu/code/kernel_descriptor_scan.h"
 #include "rocjitsu/code/patch/instruction_builder.h"
 #include "rocjitsu/code/patch/probe_clobber.h"
 #include "rocjitsu/code/patch/trampoline_builder.h"
@@ -2158,7 +2159,7 @@ constexpr uint32_t kMovFlatScrLoZero = 0xbee60080u; // s_mov_b32 flat_scratch_lo
 // SGPR granulation big enough for the s[30:31] link pair) plus a .text holding
 // `text_words`, entry at .text offset 0. Modeled on translate_test.cpp's
 // make_minimal_amdgpu_elf_with_descriptor_after_text so the descriptor is
-// discoverable via AmdGpuCodeObject::kernel_descriptors().
+// discoverable via scan_kernel_descriptors().
 std::vector<uint8_t> make_gfx950_kernel_elf(const std::vector<uint32_t> &text_words,
                                             uint32_t private_bytes,
                                             uint32_t granulated_sgpr_count = 3) {
@@ -2300,8 +2301,13 @@ std::vector<uint8_t> make_gfx950_kernel_elf(const std::vector<uint32_t> &text_wo
 
 // Read back the (single) kernel's scratch size from a patched ELF.
 uint32_t patched_private_segment_size(const AmdGpuCodeObject &obj) {
-  const auto kernels = obj.kernel_descriptors();
-  return kernels.size() == 1 ? kernels.front().private_segment_fixed_size : 0xFFFFFFFFu;
+  if (obj.text_sections().empty())
+    return 0xFFFFFFFFu;
+  const Section *text = obj.text_sections().front();
+  const auto kernels = scan_kernel_descriptors(
+      {reinterpret_cast<const uint8_t *>(obj.image_data()), obj.image_size()},
+      text->sectionOffset(), text->size());
+  return kernels.size() == 1 ? kernels.front().descriptor.private_segment_fixed_size : 0xFFFFFFFFu;
 }
 
 // A VGPR live at the anchor and clobbered by the probe body spills to scratch:
