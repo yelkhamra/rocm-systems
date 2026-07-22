@@ -466,6 +466,60 @@ __device__ __forceinline__ void copy_remainder(uint8_t* dst, uint8_t* src, int s
   }
 }
 
+template <int ChunkSize, CachePolicy LP, CachePolicy SP, int Unroll>
+__device__ __forceinline__ void copy_aligned_body(uint8_t* dst, uint8_t* src,
+                                                  size_t size, int tid,
+                                                  int stride) {
+  uintptr_t dst_addr = reinterpret_cast<uintptr_t>(dst);
+  size_t prefix = (-dst_addr) & (ChunkSize - 1);
+
+  if (prefix > size) {
+    prefix = size;
+  }
+
+  if (tid == 0 && prefix > 0) {
+    copy_remainder<LP, SP>(dst, src, static_cast<int>(prefix));
+  }
+
+  dst += prefix;
+  src += prefix;
+  size -= prefix;
+
+  int n_chunks = static_cast<int>(size / ChunkSize);
+  int remainder = static_cast<int>(size % ChunkSize);
+
+  copy_bulk<ChunkSize, LP, SP, Unroll>(dst, src, n_chunks, tid, stride);
+
+  if (tid == 0 && remainder > 0) {
+    copy_remainder<LP, SP>(dst + static_cast<size_t>(n_chunks) * ChunkSize,
+                           src + static_cast<size_t>(n_chunks) * ChunkSize,
+                           remainder);
+  }
+}
+
+template <CachePolicy LP, CachePolicy SP, int Unroll>
+__device__ __forceinline__ void copy_aligned_best_effort(void* dst, void* src,
+                                                         size_t size, int tid,
+                                                         int stride) {
+  auto* dst_bytes = static_cast<uint8_t*>(dst);
+  auto* src_bytes = static_cast<uint8_t*>(src);
+  uintptr_t dst_addr = reinterpret_cast<uintptr_t>(dst);
+  uintptr_t src_addr = reinterpret_cast<uintptr_t>(src);
+  uintptr_t align_diff = dst_addr ^ src_addr;
+
+  if ((align_diff & 15) == 0) {
+    copy_aligned_body<16, LP, SP, Unroll>(dst_bytes, src_bytes, size, tid, stride);
+  } else if ((align_diff & 7) == 0) {
+    copy_aligned_body<8, LP, SP, Unroll>(dst_bytes, src_bytes, size, tid, stride);
+  } else if ((align_diff & 3) == 0) {
+    copy_aligned_body<4, LP, SP, Unroll>(dst_bytes, src_bytes, size, tid, stride);
+  } else if ((align_diff & 1) == 0) {
+    copy_aligned_body<2, LP, SP, Unroll>(dst_bytes, src_bytes, size, tid, stride);
+  } else {
+    copy_bulk<1, LP, SP, Unroll>(dst, src, static_cast<int>(size), tid, stride);
+  }
+}
+
 // ==============================================================================
 // LANE, WAVE, AND WG IMPLEMENTATIONS
 // ==============================================================================
@@ -475,13 +529,10 @@ template <MemcpyKind Kind = MemcpyKind::Put>
 [[maybe_unused]] __device__ __forceinline__ void memcpy_lane(void* dst, void* src, size_t size) {
   if (size == 0) return;
 
-  constexpr int ChunkSize = 16;
-  constexpr int Unroll    = 8;
-  // Compile-time bypass policy: cache-bypass in the direction of the remote side.
+  constexpr int Unroll = 8;
+
   constexpr CachePolicy LP = is_put(Kind) ? CachePolicy::Standard    : CachePolicy::SystemScope;
   constexpr CachePolicy SP = is_put(Kind) ? CachePolicy::SystemScope : CachePolicy::Standard;
-
-  uintptr_t align = reinterpret_cast<uintptr_t>(dst) | reinterpret_cast<uintptr_t>(src);
 
   // Many threads, large transfer: use cached Standard policy + system fences
   if (size >= 16 && get_flat_block_size() > 4) {
@@ -490,21 +541,8 @@ template <MemcpyKind Kind = MemcpyKind::Put>
                                   detail::atomic::memory_order_acquire>();
     }
 
-    if (__builtin_expect((align & 15) == 0, 1)) {
-      int n_chunks = size / ChunkSize;
-      int remainder = size % ChunkSize;
-
-      copy_bulk<ChunkSize, CachePolicy::Standard, CachePolicy::Standard, Unroll>(
-          dst, src, n_chunks, 0, 1);
-
-      copy_remainder<CachePolicy::Standard, CachePolicy::Standard>(
-          static_cast<uint8_t*>(dst) + n_chunks * ChunkSize,
-          static_cast<uint8_t*>(src) + n_chunks * ChunkSize,
-          remainder);
-    } else {
-      copy_remainder<CachePolicy::Standard, CachePolicy::Standard>(
-          static_cast<uint8_t*>(dst), static_cast<uint8_t*>(src), size);
-    }
+    copy_aligned_best_effort<CachePolicy::Standard, CachePolicy::Standard, Unroll>(
+        dst, src, size, 0, 1);
 
     if constexpr (is_put(Kind)) {
       detail::atomic::threadfence<detail::atomic::memory_scope_system,
@@ -513,15 +551,8 @@ template <MemcpyKind Kind = MemcpyKind::Put>
   }
   // Normal cache-bypass path for small transfers or single-lane execution
   else {
-    if (size >= 16 && __builtin_expect((align & 15) == 0, 1)) {
-      int n_chunks = size / ChunkSize;
-      int remainder = size % ChunkSize;
-
-      copy_bulk<ChunkSize, LP, SP, Unroll>(dst, src, n_chunks, 0, 1);
-
-      copy_remainder<LP, SP>(static_cast<uint8_t*>(dst) + n_chunks * ChunkSize,
-                              static_cast<uint8_t*>(src) + n_chunks * ChunkSize,
-                              remainder);
+    if (size >= 16) {
+      copy_aligned_best_effort<LP, SP, Unroll>(dst, src, size, 0, 1);
     } else {
       copy_remainder<LP, SP>(static_cast<uint8_t*>(dst),
                              static_cast<uint8_t*>(src),
@@ -534,35 +565,16 @@ template <MemcpyKind Kind = MemcpyKind::Put>
 [[maybe_unused]] __device__ __forceinline__ void memcpy_wave(void* dst, void* src, size_t size) {
   if (size == 0) return;
 
-  constexpr int ChunkSize = 16;
-  constexpr int Unroll    = 8;
+  constexpr int Unroll = 8;
 
-  constexpr CachePolicy LP =
-      is_put(Kind) ? CachePolicy::Standard : CachePolicy::SystemScope;
-  constexpr CachePolicy SP =
-      is_put(Kind) ? CachePolicy::SystemScope : CachePolicy::Standard;
+  constexpr CachePolicy LP = is_put(Kind) ? CachePolicy::Standard : CachePolicy::SystemScope;
+  constexpr CachePolicy SP = is_put(Kind) ? CachePolicy::SystemScope : CachePolicy::Standard;
 
   int wave_tid = get_flat_block_id() % WF_SIZE;
   int wave_size{wave_SZ()};
-  uintptr_t align = reinterpret_cast<uintptr_t>(dst) | reinterpret_cast<uintptr_t>(src);
 
   if (size >= 16) {
-    if (__builtin_expect((align & 15) == 0, 1)) {
-      // Golden Path: Fast parallel 16-byte bulk
-      int n_chunks = size / ChunkSize;
-      int remainder = size % ChunkSize;
-
-      copy_bulk<ChunkSize, LP, SP, Unroll>(dst, src, n_chunks, wave_tid, wave_size);
-
-      if (wave_tid == 0) {
-        copy_remainder<LP, SP>(static_cast<uint8_t*>(dst) + n_chunks * ChunkSize,
-                               static_cast<uint8_t*>(src) + n_chunks * ChunkSize,
-                               remainder);
-      }
-    } else {
-      // Safety Net: Large unaligned transfer
-      copy_bulk<1, LP, SP, 4>(dst, src, size, wave_tid, wave_size);
-    }
+    copy_aligned_best_effort<LP, SP, Unroll>(dst, src, size, wave_tid, wave_size);
   } else {
     // The "Whatever Else" Path: Small sizes skip bulk setup entirely
     if (wave_tid == 0) {
@@ -577,33 +589,16 @@ template <MemcpyKind Kind = MemcpyKind::Put>
 [[maybe_unused]] __device__ __forceinline__ void memcpy_wg(void* dst, void* src, size_t size) {
   if (size == 0) return;
 
-  constexpr int ChunkSize = 16;
-  constexpr int Unroll    = 8;
+  constexpr int Unroll = 8;
 
   constexpr CachePolicy LP = is_put(Kind) ? CachePolicy::Standard : CachePolicy::SystemScope;
   constexpr CachePolicy SP = is_put(Kind) ? CachePolicy::SystemScope : CachePolicy::Standard;
 
   int tid = get_flat_block_id();
   int stride = get_flat_block_size();
-  uintptr_t align = reinterpret_cast<uintptr_t>(dst) | reinterpret_cast<uintptr_t>(src);
 
   if (size >= 16) {
-    if (__builtin_expect((align & 15) == 0, 1)) {
-      // Aligned fast path
-      int n_chunks = size / ChunkSize;
-      int remainder = size % ChunkSize;
-
-      copy_bulk<ChunkSize, LP, SP, Unroll>(dst, src, n_chunks, tid, stride);
-
-      if (tid == 0) {
-        copy_remainder<LP, SP>(static_cast<uint8_t*>(dst) + n_chunks * ChunkSize,
-                               static_cast<uint8_t*>(src) + n_chunks * ChunkSize,
-                               remainder);
-      }
-    } else {
-      // Large unaligned transfer
-      copy_bulk<1, LP, SP, 4>(dst, src, size, tid, stride);
-    }
+    copy_aligned_best_effort<LP, SP, Unroll>(dst, src, size, tid, stride);
   } else {
     // Small sizes skip bulk setup entirely
     if (tid == 0) {
