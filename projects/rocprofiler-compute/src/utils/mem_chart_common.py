@@ -3,6 +3,7 @@
 
 """Shared helpers for memory chart renderers (gfx9, gfx11)."""
 
+import math
 import re
 from dataclasses import dataclass
 from typing import Any, Optional, Union
@@ -28,32 +29,40 @@ COLORS = {
 def format_value(
     value: Union[int, float, str, None], unit: str = "", precision: int = 1
 ) -> str:
-    """Format a metric value with unit. Returns 'N/A' for None."""
+    """Format a metric value with unit. Returns 'N/A' for None/NaN/invalid."""
     if value is None:
         return "N/A"
-    if isinstance(value, str):
-        try:
-            value = float(value)
-        except (ValueError, TypeError):
-            return value
-    if unit == "%":
-        return f"{value:.{precision}f}%"
     if unit in ("GB/s", "Bytes/s"):
         return format_bw_human_readable(value, unit, precision)
-    return f"{value:.{precision}f}{unit}"
+    try:
+        numeric = float(value)
+    except (ValueError, TypeError):
+        return "N/A"
+    if math.isnan(numeric):
+        return "N/A"
+    if unit == "%":
+        return f"{numeric:.{precision}f}%"
+    return f"{numeric:.{precision}f}{unit}"
 
 
-def format_sci(value: Union[int, float, str, None], precision: int = 2) -> str:
-    """Format as integer (<1000) or scientific notation (>=1000)."""
+def format_scientific(value: Union[int, float, str, None], precision: int = 2) -> str:
+    """Format as rounded integer (<1000) or scientific notation (>=1000)."""
     if value is None:
         return "N/A"
     try:
-        value = float(value)
+        numeric = float(value)
     except (ValueError, TypeError):
         return "N/A"
-    if abs(value) < 1000:
-        return f"{int(value)}"
-    return f"{value:.{precision}e}"
+    if math.isnan(numeric):
+        return "N/A"
+    if abs(numeric) < 1000:
+        return str(round(numeric))
+    return f"{numeric:.{precision}e}"
+
+
+def colored(text: str, color: str) -> str:
+    """Wrap *text* in Rich color markup tags."""
+    return f"[{color}]{text}[/{color}]"
 
 
 def metric_line(
@@ -63,48 +72,52 @@ def metric_line(
     color: str = "bright_green",
 ) -> str:
     """Rich markup line: 'label value_with_unit' in *color*."""
-    return f"{label} [{color}]{format_value(value, unit)}[/{color}]"
+    return f"{label} {colored(format_value(value, unit), color)}"
 
 
-def bar(pct: Optional[float], w: int = 10) -> str:
-    """Unicode progress bar. None/invalid → empty bar."""
-    if pct is None:
-        return "░" * w
+def progress_bar(percent: Optional[float], width: int = 10) -> str:
+    """Unicode progress bar. None/NaN/invalid -> empty bar."""
+    if percent is None:
+        return "░" * width
     try:
-        pct = float(pct)
+        numeric = float(percent)
     except (ValueError, TypeError):
-        return "░" * w
-    filled = int(w * min(100, max(0, pct)) / 100)
-    return "█" * filled + "░" * (w - filled)
+        return "░" * width
+    if math.isnan(numeric):
+        return "░" * width
+    filled = int(width * min(100, max(0, numeric)) / 100)
+    return "█" * filled + "░" * (width - filled)
 
 
 def safe_float_sum(
     *values: Union[int, float, str, None],
 ) -> Optional[float]:
-    """Sum non-None numeric values. Returns None if all invalid."""
-    total = 0.0
-    any_valid = False
-    for v in values:
-        if v is not None:
-            try:
-                total += float(v)
-                any_valid = True
-            except (ValueError, TypeError):
-                pass
-    return total if any_valid else None
+    """Sum numeric values, skipping None/NaN/unparseable. None if all invalid."""
+    terms: list[float] = []
+    for value in values:
+        try:
+            numeric = float(value)  # type: ignore[arg-type]
+        except (ValueError, TypeError):
+            continue
+        if not math.isnan(numeric):
+            terms.append(numeric)
+    return sum(terms) if terms else None
 
 
 def scale_or_none(value: Any, factor: float) -> Optional[float]:  # noqa: ANN401
-    """Return ``factor * value`` if *value* is not None, else None."""
+    """Return ``factor * value`` if *value* is valid, else None."""
     if value is None:
         return None
     try:
-        return factor * float(value)
+        result = factor * float(value)
     except (ValueError, TypeError):
         return None
+    if math.isnan(result):
+        return None
+    return result
 
 
-def fmt_edge(
+def format_edge(
     label: str,
     value: Any,  # noqa: ANN401
     width: int = 7,
@@ -112,7 +125,7 @@ def fmt_edge(
     """Format edge label with optional scientific-notation value."""
     label_str = f"{label:<{width}}"
     if value is not None:
-        value_str = f": {format_sci(value):>7}"
+        value_str = f": {format_scientific(value):>7}"
     else:
         value_str = ""
     return f"{label_str}{value_str}"
@@ -143,19 +156,27 @@ def format_mem_chart_heading(
     return f"{section}. {section_label} (Normalization: {normal_unit})"
 
 
+_LEGEND_ENTRIES: tuple[tuple[str, str, str], ...] = (
+    ("<----", "Read", "read"),
+    ("---->", "Write", "write"),
+    ("<--->", "Atomic", "atomic"),
+    ("█", "Util", "util"),
+    ("█", "Hit%", "hit"),
+)
+
+_STALL_ENTRY: tuple[str, str, str] = ("█", "Stall", "stall")
+
+
 def build_legend(include_stall: bool = False) -> str:
-    """Build the color legend string."""
-    parts = [
-        f"[dim]Legend:[/dim] "
-        f"[{COLORS['read']}]<----[/{COLORS['read']}] Read  "
-        f"[{COLORS['write']}]---->[/{COLORS['write']}] Write  "
-        f"[{COLORS['atomic']}]<--->[/{COLORS['atomic']}] Atomic  "
-        f"[{COLORS['util']}]█[/{COLORS['util']}] Util  "
-        f"[{COLORS['hit']}]█[/{COLORS['hit']}] Hit%"
-    ]
+    """Build the color legend string from ``_LEGEND_ENTRIES``."""
+    entries = list(_LEGEND_ENTRIES)
     if include_stall:
-        parts.append(f"  [{COLORS['stall']}]█[/{COLORS['stall']}] Stall")
-    return "".join(parts)
+        entries.append(_STALL_ENTRY)
+    items = [
+        f"{colored(symbol, COLORS[color_key])} {label}"
+        for symbol, label, color_key in entries
+    ]
+    return f"[dim]Legend:[/dim] {'  '.join(items)}"
 
 
 # ---------------------------------------------------------------------------
@@ -180,12 +201,14 @@ def bw_color(
     peak: Optional[float],
     default: str = "white",
 ) -> str:
-    """Rich color by utilization: green(low) → yellow(mid) → red(high)."""
+    """Rich color by utilization: green(low) -> yellow(mid) -> red(high)."""
     if value is None or peak is None or peak <= 0:
         return default
     try:
         pct = 100.0 * float(value) / float(peak)
-    except (ValueError, TypeError, ZeroDivisionError):
+    except (ValueError, TypeError):
+        return default
+    if math.isnan(pct):
         return default
     if pct < 20:
         return "dim green"

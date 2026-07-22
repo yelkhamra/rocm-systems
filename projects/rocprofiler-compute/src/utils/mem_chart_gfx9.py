@@ -17,14 +17,15 @@ from rich.text import Text
 from utils.mem_chart_common import (
     COLORS,
     PeakBandwidths,
-    bar,
     build_legend,
     bw_color,
-    fmt_edge,
+    colored,
+    format_edge,
     format_mem_chart_heading,
     format_value,
     make_arrows,
     metric_line,
+    progress_bar,
     scale_or_none,
     strip_ansi,
 )
@@ -127,22 +128,6 @@ def normalize_mem_chart_metrics(metric_dict: dict[str, Any]) -> dict[str, Any]:
     return {k: metric_dict.get(k) for k in MEM_CHART_PANEL_METRIC_KEYS}
 
 
-def get_sample_metrics() -> dict[str, Any]:
-    """Return sample metrics for testing/demos."""
-    return dict(_MEM_CHART_DEFAULT_ROWS)
-
-
-def _float_or_zero(row: dict[str, Any], key: str) -> float:
-    """Extract a float from *row[key]*, defaulting to 0.0."""
-    val = row.get(key)
-    if val is None:
-        return 0.0
-    try:
-        return float(val)
-    except (ValueError, TypeError):
-        return 0.0
-
-
 def compute_peak_bw(sys_info_row: dict[str, Any]) -> PeakBandwidths:
     """Compute theoretical peak BW (GB/s) from MachineSpecs fields."""
     sclk = _float_or_zero(sys_info_row, "max_sclk")
@@ -163,6 +148,22 @@ def compute_peak_bw(sys_info_row: dict[str, Any]) -> PeakBandwidths:
 
 
 # ---------------------------------------------------------------------------
+# Private helpers
+# ---------------------------------------------------------------------------
+
+
+def _float_or_zero(row: dict[str, Any], key: str) -> float:
+    """Extract a float from *row[key]*, defaulting to 0.0."""
+    val = row.get(key)
+    if val is None:
+        return 0.0
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+# ---------------------------------------------------------------------------
 # Metric extraction
 # ---------------------------------------------------------------------------
 
@@ -170,51 +171,51 @@ def compute_peak_bw(sys_info_row: dict[str, Any]) -> PeakBandwidths:
 def _extract_metrics(metric_dict: dict[str, Any]) -> dict[str, Any]:
     """Extract rendered metrics from the flat dict. Missing keys → None."""
     get = metric_dict.get
-    m: dict[str, Any] = {}
+    metrics: dict[str, Any] = {}
 
     # Kernel→L1 request edges
-    m["flat_read"] = get("Flat Read")
-    m["flat_write"] = get("Flat Write")
-    m["flat_atomic"] = get("Flat Atomic")
-    m["buffer_read"] = get("Buffer Read")
-    m["buffer_write"] = get("Buffer Write")
-    m["buffer_atomic"] = get("Buffer Atomic")
-    m["lds_req"] = get("LDS Req")
-    m["lds_util"] = get("LDS Util")
-    m["lds_read"] = get("LDS Read")
-    m["lds_write"] = get("LDS Write")
-    m["lds_atomic"] = get("LDS Atomic")
-    m["smem_rd"] = get("sL1D Rd")
-    m["icache_rd"] = get("IL1 Fetch")
+    metrics["flat_read"] = get("Flat Read")
+    metrics["flat_write"] = get("Flat Write")
+    metrics["flat_atomic"] = get("Flat Atomic")
+    metrics["buffer_read"] = get("Buffer Read")
+    metrics["buffer_write"] = get("Buffer Write")
+    metrics["buffer_atomic"] = get("Buffer Atomic")
+    metrics["lds_req"] = get("LDS Req")
+    metrics["lds_util"] = get("LDS Util")
+    metrics["lds_read"] = get("LDS Read")
+    metrics["lds_write"] = get("LDS Write")
+    metrics["lds_atomic"] = get("LDS Atomic")
+    metrics["smem_rd"] = get("sL1D Rd")
+    metrics["icache_rd"] = get("IL1 Fetch")
 
     # L1 cache panels
-    m["vl1_hit"] = get("VL1 Hit")
-    m["sl1d_hit"] = get("sL1D Hit")
-    m["il1_hit"] = get("IL1 Hit")
+    metrics["vl1_hit"] = get("VL1 Hit")
+    metrics["sl1d_hit"] = get("sL1D Hit")
+    metrics["il1_hit"] = get("IL1 Hit")
 
     # L1→L2 bytes moved (128B/read, 64B/write, 64B/atomic)
-    m["vl1_l2_rd_bytes"] = scale_or_none(get("VL1_L2 Rd"), 128)
-    m["vl1_l2_wr_bytes"] = scale_or_none(get("VL1_L2 Wr"), 64)
-    m["vl1_l2_atomic_bytes"] = scale_or_none(get("VL1_L2 Atomic"), 64)
-    m["sl1d_l2_rd_bytes"] = scale_or_none(get("sL1D_L2 Rd"), 64)
-    m["il1_l2_rd_bytes"] = scale_or_none(get("IL1_L2 Rd"), 64)
+    metrics["vl1_l2_rd_bytes"] = scale_or_none(get("VL1_L2 Rd"), 128)
+    metrics["vl1_l2_wr_bytes"] = scale_or_none(get("VL1_L2 Wr"), 64)
+    metrics["vl1_l2_atomic_bytes"] = scale_or_none(get("VL1_L2 Atomic"), 64)
+    metrics["sl1d_l2_rd_bytes"] = scale_or_none(get("sL1D_L2 Rd"), 64)
+    metrics["il1_l2_rd_bytes"] = scale_or_none(get("IL1_L2 Rd"), 64)
 
     # L2 panel
-    m["l2_hit"] = get("L2 Hit")
+    metrics["l2_hit"] = get("L2 Hit")
 
     # L2→Fabric BW (Bytes/s)
-    m["l2_fabric_read_bw"] = get("L2-Fabric Read BW")
-    m["l2_fabric_wr_at_bw"] = get("L2-Fabric Write and Atomic BW")
+    metrics["l2_fabric_read_bw"] = get("L2-Fabric Read BW")
+    metrics["l2_fabric_wr_at_bw"] = get("L2-Fabric Write and Atomic BW")
 
     # xGMI / PCIe BW (gfx950 only)
-    m["xgmi_read_bw"] = get("xGMI Read BW")
-    m["xgmi_write_bw"] = get("xGMI Write BW")
-    m["xgmi_atomic_bw"] = get("xGMI Atomic BW")
-    m["pcie_read_bw"] = get("PCIe Read BW")
-    m["pcie_write_bw"] = get("PCIe Write BW")
-    m["pcie_atomic_bw"] = get("PCIe Atomic BW")
+    metrics["xgmi_read_bw"] = get("xGMI Read BW")
+    metrics["xgmi_write_bw"] = get("xGMI Write BW")
+    metrics["xgmi_atomic_bw"] = get("xGMI Atomic BW")
+    metrics["pcie_read_bw"] = get("PCIe Read BW")
+    metrics["pcie_write_bw"] = get("PCIe Write BW")
+    metrics["pcie_atomic_bw"] = get("PCIe Atomic BW")
 
-    return m
+    return metrics
 
 
 # ---------------------------------------------------------------------------
@@ -234,13 +235,13 @@ _TOTAL_H = _VL1D_H + _LDS_H + _SL1D_H + _L1I_H  # 30
 
 
 def _pad_to(lines: list[str], target: int) -> list[str]:
-    """Pad or truncate *lines* to exactly *target* rows."""
-    if len(lines) < target:
-        lines += [""] * (target - len(lines))
-    return lines[:target]
+    """Pad or truncate *lines* to exactly *target* rows (returns new list)."""
+    padded = lines + [""] * max(0, target - len(lines))
+    return padded[:target]
 
 
 def _build_kernel_panel() -> Panel:
+    """Build the Kernel (shader core) panel at full diagram height."""
     return Panel(
         "\n" * 6 + "[dim]Shader Core[/dim]\n[dim]Wave Execution[/dim]",
         title=f"[bold {COLORS['kernel']}]Kernel[/bold {COLORS['kernel']}]",
@@ -251,7 +252,7 @@ def _build_kernel_panel() -> Panel:
 
 
 def _build_request_edges(
-    m: dict[str, Any],
+    metrics: dict[str, Any],
     arrows: dict[str, str],
 ) -> Text:
     """Edges from Kernel to L1 caches, aligned to panel heights."""
@@ -263,52 +264,61 @@ def _build_request_edges(
     arrow_both = arrows["both"]
 
     # VL1D scope — Non-buffer + Buffer requests
+    flat_rd = format_edge("Read", metrics["flat_read"])
+    flat_wr = format_edge("Write", metrics["flat_write"])
+    flat_at = format_edge("Atomic", metrics["flat_atomic"])
+    buf_rd = format_edge("Read", metrics["buffer_read"])
+    buf_wr = format_edge("Write", metrics["buffer_write"])
     vl1d_lines = [
         "[white]Non-buffer Request[/white]",
-        f"[{color_read}]{fmt_edge('Read', m['flat_read'])}[/{color_read}]",
-        f"[{color_read}]{arrow_left}[/{color_read}]",
-        f"[{color_write}]{fmt_edge('Write', m['flat_write'])}[/{color_write}]",
-        f"[{color_write}]{arrow_right}[/{color_write}]",
-        f"[{color_atomic}]{fmt_edge('Atomic', m['flat_atomic'])}[/{color_atomic}]",
-        f"[{color_atomic}]{arrow_both}[/{color_atomic}]",
+        colored(flat_rd, color_read),
+        colored(arrow_left, color_read),
+        colored(flat_wr, color_write),
+        colored(arrow_right, color_write),
+        colored(flat_at, color_atomic),
+        colored(arrow_both, color_atomic),
         "[white]Buffer Request[/white]",
-        f"[{color_read}]{fmt_edge('Read', m['buffer_read'])}[/{color_read}]",
-        f"[{color_read}]{arrow_left}[/{color_read}]",
-        f"[{color_write}]{fmt_edge('Write', m['buffer_write'])}[/{color_write}]",
-        f"[{color_write}]{arrow_right}[/{color_write}]",
+        colored(buf_rd, color_read),
+        colored(arrow_left, color_read),
+        colored(buf_wr, color_write),
+        colored(arrow_right, color_write),
     ]
 
     # LDS scope
-    if m["lds_read"] is not None:
+    if metrics["lds_read"] is not None:
+        lds_rd = format_edge("Read", metrics["lds_read"])
+        lds_wr = format_edge("Write", metrics["lds_write"])
+        lds_at = format_edge("Atomic", metrics["lds_atomic"])
+        lds_instr = format_edge("Instr", metrics["lds_req"])
         lds_lines = [
             "[white]LDS[/white]",
-            f"[{color_read}]{fmt_edge('Read', m['lds_read'])}[/{color_read}]",
-            f"[{color_read}]{arrow_left}[/{color_read}]",
-            f"[{color_write}]{fmt_edge('Write', m['lds_write'])}[/{color_write}]",
-            f"[{color_write}]{arrow_right}[/{color_write}]",
-            f"[{color_atomic}]{fmt_edge('Atomic', m['lds_atomic'])}[/{color_atomic}]",
-            f"[{color_atomic}]{arrow_both}[/{color_atomic}]",
-            f"[{color_read}]{fmt_edge('Instr', m['lds_req'])}[/{color_read}]",
-            f"[{color_read}]{arrow_both}[/{color_read}]",
+            colored(lds_rd, color_read),
+            colored(arrow_left, color_read),
+            colored(lds_wr, color_write),
+            colored(arrow_right, color_write),
+            colored(lds_at, color_atomic),
+            colored(arrow_both, color_atomic),
+            colored(lds_instr, color_read),
+            colored(arrow_both, color_read),
         ]
     else:
         lds_lines = [
             "[white]LDS[/white]",
-            f"[{color_read}]{fmt_edge('Instr', m['lds_req'])}[/{color_read}]",
+            f"[{color_read}]{format_edge('Instr', metrics['lds_req'])}[/{color_read}]",
             f"[{color_read}]{arrow_both}[/{color_read}]",
         ]
 
     # sL1D scope — SMEM
     sl1d_lines = [
         "[white]SMEM[/white]",
-        f"[{color_read}]{fmt_edge('Read', m['smem_rd'])}[/{color_read}]",
+        f"[{color_read}]{format_edge('Read', metrics['smem_rd'])}[/{color_read}]",
         f"[{color_read}]{arrow_left}[/{color_read}]",
     ]
 
     # L1I scope — ICACHE
     l1i_lines = [
         "[white]ICACHE[/white]",
-        f"[{color_read}]{fmt_edge('Read', m['icache_rd'])}[/{color_read}]",
+        f"[{color_read}]{format_edge('Read', metrics['icache_rd'])}[/{color_read}]",
         f"[{color_read}]{arrow_left}[/{color_read}]",
     ]
 
@@ -321,13 +331,13 @@ def _build_request_edges(
     return Text.from_markup("\n".join(lines))
 
 
-def _build_l1_stack(m: dict[str, Any]) -> Table:
+def _build_l1_stack(metrics: dict[str, Any]) -> Table:
     """Build vertically stacked L1 cache panels: VL1D, LDS, sL1D, L1I."""
     color_block = COLORS["block"]
 
     vl1_panel = Panel(
-        f"{metric_line('Hit', m['vl1_hit'], '%', COLORS['hit'])}\n"
-        f"[dim]{bar(m['vl1_hit'])}[/dim]",
+        f"{metric_line('Hit', metrics['vl1_hit'], '%', COLORS['hit'])}\n"
+        f"[dim]{progress_bar(metrics['vl1_hit'])}[/dim]",
         title=f"[bold {color_block}]VL1D[/bold {color_block}]",
         border_style=color_block,
         width=20,
@@ -335,8 +345,8 @@ def _build_l1_stack(m: dict[str, Any]) -> Table:
     )
 
     lds_panel = Panel(
-        f"{metric_line('Util', m['lds_util'], '%', COLORS['util'])}\n"
-        f"[dim]{bar(m['lds_util'])}[/dim]",
+        f"{metric_line('Util', metrics['lds_util'], '%', COLORS['util'])}\n"
+        f"[dim]{progress_bar(metrics['lds_util'])}[/dim]",
         title=f"[bold {COLORS['lds']}]LDS[/bold {COLORS['lds']}]",
         border_style=COLORS["lds"],
         width=20,
@@ -344,8 +354,8 @@ def _build_l1_stack(m: dict[str, Any]) -> Table:
     )
 
     sl1d_panel = Panel(
-        f"{metric_line('Hit', m['sl1d_hit'], '%', COLORS['hit'])}\n"
-        f"[dim]{bar(m['sl1d_hit'])}[/dim]",
+        f"{metric_line('Hit', metrics['sl1d_hit'], '%', COLORS['hit'])}\n"
+        f"[dim]{progress_bar(metrics['sl1d_hit'])}[/dim]",
         title=f"[bold {color_block}]sL1D[/bold {color_block}]",
         border_style=color_block,
         width=20,
@@ -353,8 +363,8 @@ def _build_l1_stack(m: dict[str, Any]) -> Table:
     )
 
     l1i_panel = Panel(
-        f"{metric_line('Hit', m['il1_hit'], '%', COLORS['hit'])}\n"
-        f"[dim]{bar(m['il1_hit'])}[/dim]",
+        f"{metric_line('Hit', metrics['il1_hit'], '%', COLORS['hit'])}\n"
+        f"[dim]{progress_bar(metrics['il1_hit'])}[/dim]",
         title=f"[bold {color_block}]L1I[/bold {color_block}]",
         border_style=color_block,
         width=20,
@@ -371,7 +381,7 @@ def _build_l1_stack(m: dict[str, Any]) -> Table:
 
 
 def _build_l1_l2_edges(
-    m: dict[str, Any],
+    metrics: dict[str, Any],
     arrows: dict[str, str],
     peak_bw: Optional[PeakBandwidths] = None,
 ) -> Text:
@@ -379,19 +389,21 @@ def _build_l1_l2_edges(
     vl1_peak = peak_bw.vl1d if peak_bw else None
     sl1d_peak = peak_bw.sl1d if peak_bw else None
     l1i_peak = peak_bw.l1i if peak_bw else None
-    color_read = bw_color(m.get("vl1_l2_rd_bytes"), vl1_peak, COLORS["read"])
-    color_write = bw_color(m.get("vl1_l2_wr_bytes"), vl1_peak, COLORS["write"])
-    color_atomic = bw_color(m.get("vl1_l2_atomic_bytes"), vl1_peak, COLORS["atomic"])
+    color_read = bw_color(metrics.get("vl1_l2_rd_bytes"), vl1_peak, COLORS["read"])
+    color_write = bw_color(metrics.get("vl1_l2_wr_bytes"), vl1_peak, COLORS["write"])
+    color_atomic = bw_color(
+        metrics.get("vl1_l2_atomic_bytes"), vl1_peak, COLORS["atomic"]
+    )
     arrow_left = arrows["left"]
     arrow_right = arrows["right"]
 
-    vl1_rd_bw = format_value(m["vl1_l2_rd_bytes"], "Bytes/s", 1)
-    vl1_wr_bw = format_value(m["vl1_l2_wr_bytes"], "Bytes/s", 1)
-    vl1_at_bw = format_value(m["vl1_l2_atomic_bytes"], "Bytes/s", 1)
-    sl1d_rd_bw = format_value(m["sl1d_l2_rd_bytes"], "Bytes/s", 1)
-    il1_rd_bw = format_value(m["il1_l2_rd_bytes"], "Bytes/s", 1)
-    color_sl1d = bw_color(m.get("sl1d_l2_rd_bytes"), sl1d_peak, COLORS["read"])
-    color_l1i = bw_color(m.get("il1_l2_rd_bytes"), l1i_peak, COLORS["read"])
+    vl1_rd_bw = format_value(metrics["vl1_l2_rd_bytes"], "Bytes/s", 1)
+    vl1_wr_bw = format_value(metrics["vl1_l2_wr_bytes"], "Bytes/s", 1)
+    vl1_at_bw = format_value(metrics["vl1_l2_atomic_bytes"], "Bytes/s", 1)
+    sl1d_rd_bw = format_value(metrics["sl1d_l2_rd_bytes"], "Bytes/s", 1)
+    il1_rd_bw = format_value(metrics["il1_l2_rd_bytes"], "Bytes/s", 1)
+    color_sl1d = bw_color(metrics.get("sl1d_l2_rd_bytes"), sl1d_peak, COLORS["read"])
+    color_l1i = bw_color(metrics.get("il1_l2_rd_bytes"), l1i_peak, COLORS["read"])
 
     vl1d_lines = [
         f"[{color_read}]Read BW[/{color_read}]",
@@ -426,11 +438,11 @@ def _build_l1_l2_edges(
     return Text.from_markup("\n".join(lines))
 
 
-def _build_l2_panel(m: dict[str, Any]) -> Panel:
+def _build_l2_panel(metrics: dict[str, Any]) -> Panel:
     color_block = COLORS["block"]
     return Panel(
-        f"{metric_line('Hit', m['l2_hit'], '%', COLORS['hit'])}\n"
-        f"[dim]{bar(m['l2_hit'])}[/dim]",
+        f"{metric_line('Hit', metrics['l2_hit'], '%', COLORS['hit'])}\n"
+        f"[dim]{progress_bar(metrics['l2_hit'])}[/dim]",
         title=f"[bold {color_block}]L2[/bold {color_block}]",
         border_style=color_block,
         width=18,
@@ -439,19 +451,19 @@ def _build_l2_panel(m: dict[str, Any]) -> Panel:
 
 
 def _build_l2_fabric_edges(
-    m: dict[str, Any],
+    metrics: dict[str, Any],
     arrows: dict[str, str],
     peak_bw: Optional[PeakBandwidths] = None,
 ) -> Text:
     """L2→Fabric edges: Read BW and Write/Atomic BW."""
     l2_peak = peak_bw.l2 if peak_bw else None
-    color_read = bw_color(m.get("l2_fabric_read_bw"), l2_peak, COLORS["read"])
-    color_write = bw_color(m.get("l2_fabric_wr_at_bw"), l2_peak, COLORS["write"])
+    color_read = bw_color(metrics.get("l2_fabric_read_bw"), l2_peak, COLORS["read"])
+    color_write = bw_color(metrics.get("l2_fabric_wr_at_bw"), l2_peak, COLORS["write"])
     arrow_left = arrows["left"]
     arrow_right = arrows["right"]
 
-    rd_bw = format_value(m["l2_fabric_read_bw"], "Bytes/s", 1)
-    wr_at_bw = format_value(m["l2_fabric_wr_at_bw"], "Bytes/s", 1)
+    rd_bw = format_value(metrics["l2_fabric_read_bw"], "Bytes/s", 1)
+    wr_at_bw = format_value(metrics["l2_fabric_wr_at_bw"], "Bytes/s", 1)
 
     content = [
         f"[{color_read}]Read BW[/{color_read}]",
@@ -475,24 +487,23 @@ def _ip_block(
     content: str = "",
 ) -> Panel:
     """Create an IP block panel with standard height."""
-    c = border_style
     return Panel(
         content,
-        title=f"[bold {c}]{title}[/bold {c}]",
-        border_style=c,
+        title=f"[bold {border_style}]{title}[/bold {border_style}]",
+        border_style=border_style,
         width=width,
         height=_TOTAL_H,
     )
 
 
-def _build_xgmi_row(console: Console, m: dict[str, Any]) -> None:
+def _build_xgmi_row(console: Console, metrics: dict[str, Any]) -> None:
     """Render the xGMI block above the main diagram with BW metrics."""
     color_read = COLORS["read"]
     color_write = COLORS["write"]
     color_atomic = COLORS["atomic"]
-    rd = format_value(m.get("xgmi_read_bw"), "Bytes/s", 1)
-    wr = format_value(m.get("xgmi_write_bw"), "Bytes/s", 1)
-    at = format_value(m.get("xgmi_atomic_bw"), "Bytes/s", 1)
+    read_bw = format_value(metrics.get("xgmi_read_bw"), "Bytes/s", 1)
+    write_bw = format_value(metrics.get("xgmi_write_bw"), "Bytes/s", 1)
+    atomic_bw = format_value(metrics.get("xgmi_atomic_bw"), "Bytes/s", 1)
 
     xgmi_panel = Panel(
         "[dim]XGMI (to Peer GPU)[/dim]",
@@ -508,27 +519,27 @@ def _build_xgmi_row(console: Console, m: dict[str, Any]) -> None:
 
     pad = " " * 100
     arrow_lines = Text.from_markup(
-        f"{pad}[{color_read}]|^  Read BW    {rd}[/{color_read}]\n"
-        f"{pad}[{color_write}]||  Write BW   {wr}[/{color_write}]\n"
-        f"{pad}[{color_atomic}]||  Atomic BW  {at}[/{color_atomic}]"
+        f"{pad}[{color_read}]|^  Read BW    {read_bw}[/{color_read}]\n"
+        f"{pad}[{color_write}]||  Write BW   {write_bw}[/{color_write}]\n"
+        f"{pad}[{color_atomic}]||  Atomic BW  {atomic_bw}[/{color_atomic}]"
     )
     console.print(arrow_lines)
 
 
-def _build_pcie_row(console: Console, m: dict[str, Any]) -> None:
+def _build_pcie_row(console: Console, metrics: dict[str, Any]) -> None:
     """Render the PCIe block below the main diagram with BW metrics."""
     color_read = COLORS["read"]
     color_write = COLORS["write"]
     color_atomic = COLORS["atomic"]
-    rd = format_value(m.get("pcie_read_bw"), "Bytes/s", 1)
-    wr = format_value(m.get("pcie_write_bw"), "Bytes/s", 1)
-    at = format_value(m.get("pcie_atomic_bw"), "Bytes/s", 1)
+    read_bw = format_value(metrics.get("pcie_read_bw"), "Bytes/s", 1)
+    write_bw = format_value(metrics.get("pcie_write_bw"), "Bytes/s", 1)
+    atomic_bw = format_value(metrics.get("pcie_atomic_bw"), "Bytes/s", 1)
 
     pad = " " * 100
     arrow_lines = Text.from_markup(
-        f"{pad}[{color_read}]||  Read BW    {rd}[/{color_read}]\n"
-        f"{pad}[{color_write}]||  Write BW   {wr}[/{color_write}]\n"
-        f"{pad}[{color_atomic}]V|  Atomic BW  {at}[/{color_atomic}]"
+        f"{pad}[{color_read}]||  Read BW    {read_bw}[/{color_read}]\n"
+        f"{pad}[{color_write}]||  Write BW   {write_bw}[/{color_write}]\n"
+        f"{pad}[{color_atomic}]V|  Atomic BW  {atomic_bw}[/{color_atomic}]"
     )
     console.print(arrow_lines)
 
@@ -596,18 +607,18 @@ def create_mem_chart_diagram(
     peak_bw: Optional[PeakBandwidths] = None,
 ) -> None:
     """Create the CDNA memory diagram matching the reference PNG layout."""
-    m = _extract_metrics(metric_dict)
+    metrics = _extract_metrics(metric_dict)
     kernel_arrows = make_arrows(_KERNEL_ARROW_LEN)
     std_arrows = make_arrows(_STD_ARROW_LEN)
     is_gfx950 = gpu_arch is not None and gpu_arch.startswith("gfx950")
 
     # Build main diagram grid first (needed to measure width for scope bar)
     kernel = _build_kernel_panel()
-    req_edges = _build_request_edges(m, kernel_arrows)
-    l1_stack = _build_l1_stack(m)
-    l1_l2_edges = _build_l1_l2_edges(m, std_arrows, peak_bw)
-    l2 = _build_l2_panel(m)
-    l2_fab_edges = _build_l2_fabric_edges(m, std_arrows, peak_bw)
+    req_edges = _build_request_edges(metrics, kernel_arrows)
+    l1_stack = _build_l1_stack(metrics)
+    l1_l2_edges = _build_l1_l2_edges(metrics, std_arrows, peak_bw)
+    l2 = _build_l2_panel(metrics)
+    l2_fab_edges = _build_l2_fabric_edges(metrics, std_arrows, peak_bw)
     fabric = _ip_block("Data Fabric", 22, "bright_magenta")
     mall = _ip_block("MALL", 18, "indian_red")
     umc = _ip_block("UMC", 8)
@@ -637,7 +648,7 @@ def create_mem_chart_diagram(
         console.print(f"[bold]{chart_title}[/bold]")
 
     if is_gfx950:
-        _build_xgmi_row(console, m)
+        _build_xgmi_row(console, metrics)
         console.print()
     _print_scope_bar(console, chart_width, fabric_col)
     console.print()
@@ -646,7 +657,7 @@ def create_mem_chart_diagram(
     console.print()
 
     if is_gfx950:
-        _build_pcie_row(console, m)
+        _build_pcie_row(console, metrics)
         console.print()
 
     console.print(build_legend())
@@ -763,7 +774,7 @@ def main() -> None:
         with pathlib.Path(args.data).open(encoding="utf-8") as f:
             metrics = json.load(f)
     else:
-        metrics = get_sample_metrics()
+        metrics = dict(DEFAULT_SAMPLE_METRICS)
 
     heading = format_mem_chart_heading(args.norm)
 

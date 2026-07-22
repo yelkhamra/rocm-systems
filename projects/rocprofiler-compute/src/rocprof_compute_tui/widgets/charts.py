@@ -327,7 +327,7 @@ class MemoryChart(Static):
                 with StringIO() as string_buffer:
                     sys.stdout = string_buffer
                     if is_gfx115x(gpu_arch):
-                        result = plot_func("per_kernel", metric_dict)
+                        result = plot_func(metric_dict, chart_title="per_kernel")
                     else:
                         result = plot_func("per_kernel", metric_dict, gpu_arch=gpu_arch)
                     stdout_output = string_buffer.getvalue()

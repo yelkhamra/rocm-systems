@@ -48,6 +48,9 @@ class TestFormatBwHumanReadable:
 # =============================================================================
 
 
+_NAN = float("nan")
+
+
 class TestFormatValue:
     @pytest.mark.parametrize(
         "value, unit, prec, expected",
@@ -55,7 +58,8 @@ class TestFormatValue:
             (85.5, "%", 1, "85.5%"),
             (None, "%", 1, "N/A"),
             ("50.5", "%", 1, "50.5%"),
-            ("invalid", "%", 1, "invalid"),
+            ("invalid", "%", 1, "N/A"),
+            (_NAN, "%", 1, "N/A"),
         ],
     )
     def test_format(self, value, unit, prec, expected):
@@ -65,28 +69,47 @@ class TestFormatValue:
         assert "GB/s" in mem_chart_common.format_value(100e9, "Bytes/s", 1)
 
 
-class TestFormatSci:
+class TestFormatScientific:
     @pytest.mark.parametrize(
         "value, expected_contains",
-        [(100, "100"), (999, "999"), (1_000_000, "e"), (None, "N/A"), (-500, "-500")],
+        [
+            (100, "100"),
+            (999, "999"),
+            (1_000_000, "e"),
+            (None, "N/A"),
+            (-500, "-500"),
+            (_NAN, "N/A"),
+        ],
     )
     def test_format(self, value, expected_contains):
-        assert expected_contains in mem_chart_common.format_sci(value)
+        assert expected_contains in mem_chart_common.format_scientific(value)
 
 
-class TestBar:
+class TestProgressBar:
     @pytest.mark.parametrize(
         "pct, filled, empty",
-        [(100, 10, 0), (0, 0, 10), (50, 5, 5), (None, 0, 10), (150, 10, 0)],
+        [
+            (100, 10, 0),
+            (0, 0, 10),
+            (50, 5, 5),
+            (None, 0, 10),
+            (150, 10, 0),
+            (_NAN, 0, 10),
+        ],
     )
     def test_bar(self, pct, filled, empty):
-        assert mem_chart_common.bar(pct, 10) == "█" * filled + "░" * empty
+        assert mem_chart_common.progress_bar(pct, 10) == "█" * filled + "░" * empty
 
 
 class TestSafeFloatSum:
     @pytest.mark.parametrize(
         "args, expected",
-        [((1.5, None, 2.5), 4.0), ((None, None), None), (("10", 5), 15.0)],
+        [
+            ((1.5, None, 2.5), 4.0),
+            ((None, None), None),
+            (("10", 5), 15.0),
+            ((_NAN, 5), 5.0),
+        ],
     )
     def test_sum(self, args, expected):
         assert mem_chart_common.safe_float_sum(*args) == expected
@@ -95,19 +118,24 @@ class TestSafeFloatSum:
 class TestScaleOrNone:
     @pytest.mark.parametrize(
         "value, factor, expected",
-        [(10, 128, 1280.0), (None, 128, None), ("5", 64, 320.0)],
+        [
+            (10, 128, 1280.0),
+            (None, 128, None),
+            ("5", 64, 320.0),
+            (_NAN, 128, None),
+        ],
     )
     def test_scale(self, value, factor, expected):
         assert mem_chart_common.scale_or_none(value, factor) == expected
 
 
-class TestFmtEdge:
+class TestFormatEdge:
     @pytest.mark.parametrize(
         "label, value, check_in, check_not_in",
         [("Read", 1_500_000, "1.50e+06", None), ("Write", None, "Write", ":")],
     )
     def test_edge(self, label, value, check_in, check_not_in):
-        result = mem_chart_common.fmt_edge(label, value)
+        result = mem_chart_common.format_edge(label, value)
         assert check_in in result
         if check_not_in is not None:
             assert check_not_in not in result
@@ -123,6 +151,8 @@ class TestBwColor:
             (None, 100, "white", "white"),
             (50, None, "white", "white"),
             (50, 0, "white", "white"),
+            (_NAN, 100, "white", "white"),
+            (50, _NAN, "white", "white"),
         ],
     )
     def test_color(self, value, peak, default, expected):
@@ -163,7 +193,7 @@ _GFX11_TITLE = "3. Memory Chart (Normalization: per_kernel)"
 class TestPlotMemChartGfx11:
     def test_full_chart(self):
         result = mem_chart_gfx11.plot_mem_chart(
-            mem_chart_gfx11.get_sample_metrics(), chart_title=_GFX11_TITLE
+            dict(mem_chart_gfx11.DEFAULT_SAMPLE_METRICS), chart_title=_GFX11_TITLE
         )
         clean = strip_ansi(result)
         assert len(result) > 100
@@ -173,7 +203,7 @@ class TestPlotMemChartGfx11:
     @pytest.mark.parametrize("block", ["TCP", "GL1 Cache", "GL2 Cache", "GCEA", "DRAM"])
     def test_contains_arch_element(self, block):
         result = mem_chart_gfx11.plot_mem_chart(
-            mem_chart_gfx11.get_sample_metrics(), chart_title=_GFX11_TITLE
+            dict(mem_chart_gfx11.DEFAULT_SAMPLE_METRICS), chart_title=_GFX11_TITLE
         )
         assert block in result
 
@@ -208,7 +238,7 @@ class TestDefaultSampleMetricsGfx11:
 class TestPlotMemChartGfx9:
     def test_full_chart(self):
         result = mem_chart_gfx9.plot_mem_chart(
-            "per_kernel", mem_chart_gfx9.get_sample_metrics()
+            "per_kernel", dict(mem_chart_gfx9.DEFAULT_SAMPLE_METRICS)
         )
         clean = strip_ansi(result)
         assert len(result) > 100
@@ -220,7 +250,7 @@ class TestPlotMemChartGfx9:
     )
     def test_contains_arch_element(self, block):
         result = mem_chart_gfx9.plot_mem_chart(
-            "per_kernel", mem_chart_gfx9.get_sample_metrics()
+            "per_kernel", dict(mem_chart_gfx9.DEFAULT_SAMPLE_METRICS)
         )
         assert block in strip_ansi(result)
 
@@ -231,7 +261,7 @@ class TestPlotMemChartGfx9:
     def test_chart_title_override(self):
         title = "Custom Title"
         result = mem_chart_gfx9.plot_mem_chart(
-            "per_kernel", mem_chart_gfx9.get_sample_metrics(), chart_title=title
+            "per_kernel", dict(mem_chart_gfx9.DEFAULT_SAMPLE_METRICS), chart_title=title
         )
         assert title in strip_ansi(result)
 
@@ -243,7 +273,7 @@ class TestGfx9GpuArch:
     )
     def test_xgmi_pcie_gating(self, arch, expect_xgmi):
         result = mem_chart_gfx9.plot_mem_chart(
-            "per_kernel", mem_chart_gfx9.get_sample_metrics(), gpu_arch=arch
+            "per_kernel", dict(mem_chart_gfx9.DEFAULT_SAMPLE_METRICS), gpu_arch=arch
         )
         clean = strip_ansi(result)
         assert ("XGMI" in clean) == expect_xgmi
@@ -288,9 +318,3 @@ class TestNormalizeAndSampleGfx9:
     @pytest.mark.parametrize("prefix", ["VL1", "sL1D", "IL1", "L2", "Fabric", "HBM"])
     def test_hierarchy_level_present(self, prefix):
         assert any(prefix in k for k in mem_chart_gfx9.DEFAULT_SAMPLE_METRICS)
-
-    def test_returns_copy(self):
-        a = mem_chart_gfx9.get_sample_metrics()
-        b = mem_chart_gfx9.get_sample_metrics()
-        a["VL1 Hit"] = -999
-        assert b["VL1 Hit"] != -999
