@@ -1,0 +1,90 @@
+# ---------------------------------------------------------------------------
+# AMD SMI SLES / openSUSE packaging check.
+#
+# The RPM the packaging rework builds declares a versioned interpreter
+# dependency that differs by distro family: `python(abi) = X.Y` on RHEL, but
+# `pythonXY` (no dot, e.g. python311) on SLES/openSUSE. That SLES form is not
+# exercised by the GPU build matrix (which runs on self-hosted runners), so a
+# broken dependency token could ship unnoticed. This job builds the RPM in an
+# openSUSE Leap container and asserts the pythonXY requirement resolves to a
+# real package, without needing a GPU.
+# ---------------------------------------------------------------------------
+
+name: AMDSMI SLES Packaging
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'projects/amdsmi/CMakeLists.txt'
+      - 'projects/amdsmi/py-interface/**'
+      - 'projects/amdsmi/RPM/**'
+      - '.github/workflows/amdsmi-sles-packaging.yml'
+  push:
+    branches: [develop]
+    paths:
+      - 'projects/amdsmi/CMakeLists.txt'
+      - 'projects/amdsmi/py-interface/**'
+      - 'projects/amdsmi/RPM/**'
+      - '.github/workflows/amdsmi-sles-packaging.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sles-packaging:
+    name: SLES RPM packaging (openSUSE Leap 15.6)
+    runs-on: ubuntu-22.04
+    container:
+      image: opensuse/leap:15.6
+
+    steps:
+      - name: Install build prerequisites
+        run: |
+          set -euo pipefail
+          zypper --non-interactive refresh
+          zypper --non-interactive install -y \
+            git gcc gcc-c++ cmake make rpm-build \
+            libdrm-devel libnl3-devel libmnl-devel \
+            python3 python3-devel
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Mark workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Configure and build the RPM
+        working-directory: projects/amdsmi
+        run: |
+          set -euo pipefail
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DENABLE_ESMI_LIB=ON
+          cmake --build build -j"$(nproc)"
+          cd build && cpack -G RPM
+
+      - name: Assert the pythonXY dependency resolves
+        working-directory: projects/amdsmi/build
+        run: |
+          set -euo pipefail
+          RPM=$(ls amd-smi-lib-*.rpm | grep -v tests | head -1)
+          echo "Inspecting: $RPM"
+          REQ=$(rpm -qp --requires "$RPM" | grep -E '^python[0-9]+' || true)
+          echo "python requirement: '$REQ'"
+          if [ -z "$REQ" ]; then
+            echo "ERROR: no pythonXY requirement found in the SLES RPM"
+            exit 1
+          fi
+          # The required package must exist in the SLES repositories.
+          PKG=$(echo "$REQ" | awk '{print $1}')
+          if ! zypper --non-interactive search --match-exact "$PKG" >/dev/null 2>&1; then
+            echo "ERROR: required package '$PKG' is not available in zypper"
+            exit 1
+          fi
+          echo "PASS: $PKG is a real, installable package"
+
+      - name: Assert the module ships on an import path
+        working-directory: projects/amdsmi
+        run: |
+          set -euo pipefail
+          RPM=$(ls build/amd-smi-lib-*.rpm | grep -v tests | head -1)
+          python3 tests/run_amdsmi_cpack_path_test.py "$RPM"
