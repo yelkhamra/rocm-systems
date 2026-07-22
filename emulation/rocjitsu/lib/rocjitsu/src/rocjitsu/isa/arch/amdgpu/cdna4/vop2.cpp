@@ -4970,7 +4970,8 @@ void VMadmkF16Vop2::execute_impl(amdgpu::Wavefront &wf) {
     float k = util::f16_to_f32(static_cast<uint16_t>(simm32_));
     float s2 =
         util::f16_to_f32(static_cast<uint16_t>(amdgpu::RegisterAccess(wf).read_lane(vsrc1, lane)));
-    amdgpu::RegisterAccess(wf).write_lane(vdst, lane, util::f32_to_f16(std::fma(s0, k, s2)));
+    amdgpu::RegisterAccess(wf).write_lane(
+        vdst, lane, util::f32_to_f16_mode(std::fma(s0, k, s2), wf.fp16_ovfl()));
   }
   if (inst_.src0 == amdgpu::SRC_DPP) {
     uint64_t dpp_write_mask = amdgpu::dpp::dpp_write_mask(wf.wf_size(), dpp_ctrl_, dpp_row_mask_,
@@ -5129,7 +5130,8 @@ void VMadakF16Vop2::execute_impl(amdgpu::Wavefront &wf) {
     float s1 =
         util::f16_to_f32(static_cast<uint16_t>(amdgpu::RegisterAccess(wf).read_lane(vsrc1, lane)));
     float k = util::f16_to_f32(static_cast<uint16_t>(simm32_));
-    amdgpu::RegisterAccess(wf).write_lane(vdst, lane, util::f32_to_f16(std::fma(s0, s1, k)));
+    amdgpu::RegisterAccess(wf).write_lane(
+        vdst, lane, util::f32_to_f16_mode(std::fma(s0, s1, k), wf.fp16_ovfl()));
   }
   if (inst_.src0 == amdgpu::SRC_DPP) {
     uint64_t dpp_write_mask = amdgpu::dpp::dpp_write_mask(wf.wf_size(), dpp_ctrl_, dpp_row_mask_,
