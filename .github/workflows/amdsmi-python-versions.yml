@@ -1,0 +1,58 @@
+# ---------------------------------------------------------------------------
+# AMD SMI Python-version loader tests.
+#
+# The amdsmi loader and wrapper must behave identically across every CPython
+# version AMD SMI supports (3.6.8 through the latest release). This job runs the
+# version-independent loader contract tests under a matrix of interpreters so a
+# change that only breaks on a specific version is caught. No GPU required.
+# ---------------------------------------------------------------------------
+
+name: AMDSMI Python Version Tests
+
+on:
+  pull_request:
+    branches: [develop]
+    paths:
+      - 'projects/amdsmi/py-interface/**'
+      - 'projects/amdsmi/tools/generator.py'
+      - 'projects/amdsmi/tools/disable_system_fallback.py'
+      - 'projects/amdsmi/tests/python/**'
+      - 'projects/amdsmi/tests/run_amdsmi_python_versions_test.py'
+      - '.github/workflows/amdsmi-python-versions.yml'
+  push:
+    branches: [develop]
+    paths:
+      - 'projects/amdsmi/py-interface/**'
+      - 'projects/amdsmi/tools/generator.py'
+      - 'projects/amdsmi/tools/disable_system_fallback.py'
+      - 'projects/amdsmi/tests/python/**'
+      - 'projects/amdsmi/tests/run_amdsmi_python_versions_test.py'
+      - '.github/workflows/amdsmi-python-versions.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  python-version-tests:
+    name: Python ${{matrix.python-version}}
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.6.8 is the supported floor; the rest cover each later minor up to
+        # the current release. setup-python resolves each to its latest patch.
+        python-version: ['3.6', '3.7', '3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Python ${{matrix.python-version}}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{matrix.python-version}}
+
+      - name: Run loader tests under this interpreter
+        run: |
+          python3 projects/amdsmi/tests/run_amdsmi_python_versions_test.py \
+            --interpreters "$(command -v python3)"

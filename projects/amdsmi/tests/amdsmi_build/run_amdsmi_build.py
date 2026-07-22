@@ -1037,6 +1037,49 @@ def verify_dual_copy(cfg: "RunnerConfig") -> None:
     )
 
 
+def verify_cpack_paths(cfg: "RunnerConfig", artifact: Path) -> None:
+    """Assert the built package ships the amdsmi module on an import path."""
+    test_script = cfg.project_dir / "tests" / "run_amdsmi_cpack_path_test.py"
+    run_command(
+        ["python3", str(test_script), str(artifact)],
+        name="cpack-path-check",
+        retries=1,
+        log_dir=cfg.log_dir,
+    )
+
+
+def verify_python_versions(cfg: "RunnerConfig") -> None:
+    """Run the loader contract tests under multiple Python interpreters."""
+    test_script = cfg.project_dir / "tests" / "run_amdsmi_python_versions_test.py"
+    cmd = ["python3", str(test_script)]
+    if cfg.python_interpreters:
+        cmd += ["--interpreters"] + cfg.python_interpreters.split(",")
+    run_command(cmd, name="python-versions", retries=1, log_dir=cfg.log_dir)
+
+
+def verify_upgrade_downgrade(cfg: "RunnerConfig", new_artifact: Path) -> None:
+    """Exercise the deb/rpm upgrade and downgrade path from a prior package."""
+    if not cfg.upgrade_from:
+        print("Skipping upgrade/downgrade check: no --upgrade-from package given")
+        return
+    test_script = cfg.project_dir / "tests" / "run_amdsmi_upgrade_downgrade_test.py"
+    run_command(
+        [
+            "python3",
+            str(test_script),
+            "--old-package",
+            str(cfg.upgrade_from),
+            "--new-package",
+            str(new_artifact),
+            "--package-manager",
+            cfg.package_manager,
+        ],
+        name="upgrade-downgrade",
+        retries=1,
+        log_dir=cfg.log_dir,
+    )
+
+
 @dataclass
 class RunnerConfig:
     project_dir: Path
@@ -1056,6 +1099,8 @@ class RunnerConfig:
     qa_rpaths: bool
     skip_build: bool
     skip_install: bool
+    upgrade_from: "Optional[Path]"
+    python_interpreters: "Optional[str]"
 
 
 def parse_args() -> RunnerConfig:
@@ -1104,6 +1149,18 @@ def parse_args() -> RunnerConfig:
     )
     parser.add_argument("--skip-install", action="store_true", help="Skip package installation")
     parser.add_argument(
+        "--upgrade-from",
+        type=Path,
+        default=None,
+        help="Prior-version .deb/.rpm to test the upgrade/downgrade path against",
+    )
+    parser.add_argument(
+        "--python-interpreters",
+        default=None,
+        help="Comma-separated interpreters for the Python-version loader tests "
+        "(default: discovered python3.6..3.13)",
+    )
+    parser.add_argument(
         "--no-autodetect",
         action="store_true",
         help="Disable auto-detection of OS profile from /etc/os-release",
@@ -1148,6 +1205,8 @@ def parse_args() -> RunnerConfig:
         qa_rpaths=args.qa_rpaths or profile.get("qa_rpaths", False),
         skip_build=args.skip_build,
         skip_install=args.skip_install,
+        upgrade_from=args.upgrade_from,
+        python_interpreters=args.python_interpreters,
     )
 
 
@@ -1364,6 +1423,32 @@ def main() -> None:
     print(f"Build artifact: {artifact}")
     _write_result(cfg.test_results_dir, "build_result.txt", f"BUILD PASSED\nArtifact: {artifact}")
 
+    # 5b. Package ships the module on an import path (no install needed)
+    try:
+        verify_cpack_paths(cfg, artifact)
+    except CommandError as exc:
+        _write_result(
+            cfg.test_results_dir,
+            "cpack_path_result.txt",
+            f"CPACK PATH CHECK FAILED: {exc.name} exited {exc.code}\n\n"
+            f"Log ({exc.log_path}):\n{read_log(exc.log_path)}",
+        )
+        report_and_raise("CPACK PATH CHECK", exc)
+    _write_result(cfg.test_results_dir, "cpack_path_result.txt", "CPACK PATH CHECK PASSED")
+
+    # 5c. Loader behaves identically across supported Python versions
+    try:
+        verify_python_versions(cfg)
+    except CommandError as exc:
+        _write_result(
+            cfg.test_results_dir,
+            "python_versions_result.txt",
+            f"PYTHON VERSIONS FAILED: {exc.name} exited {exc.code}\n\n"
+            f"Log ({exc.log_path}):\n{read_log(exc.log_path)}",
+        )
+        report_and_raise("PYTHON VERSIONS", exc)
+    _write_result(cfg.test_results_dir, "python_versions_result.txt", "PYTHON VERSIONS PASSED")
+
     # 6. Install
     if not cfg.skip_install:
         try:
@@ -1421,6 +1506,22 @@ def main() -> None:
             )
             report_and_raise("DUAL COPY CHECK", exc)
         _write_result(cfg.test_results_dir, "dual_copy_result.txt", "DUAL COPY CHECK PASSED")
+
+    # 10. Upgrade/downgrade from a prior package (only when one is provided)
+    if not cfg.skip_install and cfg.upgrade_from:
+        try:
+            verify_upgrade_downgrade(cfg, artifact)
+        except CommandError as exc:
+            _write_result(
+                cfg.test_results_dir,
+                "upgrade_downgrade_result.txt",
+                f"UPGRADE/DOWNGRADE FAILED: {exc.name} exited {exc.code}\n\n"
+                f"Log ({exc.log_path}):\n{read_log(exc.log_path)}",
+            )
+            report_and_raise("UPGRADE/DOWNGRADE", exc)
+        _write_result(
+            cfg.test_results_dir, "upgrade_downgrade_result.txt", "UPGRADE/DOWNGRADE PASSED"
+        )
 
     print("AMDSMI workflow complete")
 
