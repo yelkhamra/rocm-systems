@@ -107,7 +107,7 @@ TEST(EnvPluginTests, PluginInitialized_ReportsTrue) {
 //   3. Calls ncclGetEnv() to drive ncclInitEnv() -> ncclEnvPluginInit()
 //      -> ncclEnvPluginLoad() and verify the returned value.
 //
-// Tests are skipped (not failed) when BUILD_EXT_EXAMPLES=ON was not used.
+// Tests are skipped (not failed) when BUILD_PLUGIN_EXAMPLES=ON was not used.
 // ---------------------------------------------------------------------------
 
 // Verifies that libnccl-env-example.so is dlopened successfully and that
@@ -119,7 +119,7 @@ TEST(EnvPluginTests, ExternalPlugin_ExamplePlugin_Loaded) {
         std::string pluginPath = getTestPluginPath("libnccl-env-example.so");
         if (!std::filesystem::exists(pluginPath)) {
           GTEST_SKIP() << "libnccl-env-example.so not found at " << pluginPath
-                       << " — rebuild with -DBUILD_EXT_EXAMPLES=ON";
+                       << " — rebuild with -DBUILD_PLUGIN_EXAMPLES=ON";
         }
 
         setenv("NCCL_ENV_PLUGIN", pluginPath.c_str(), 1);
@@ -148,7 +148,7 @@ TEST(EnvPluginTests, ExternalPlugin_JsonPlugin_OverridesGetenv) {
         std::string pluginPath = getTestPluginPath("librccl-env-json.so");
         if (!std::filesystem::exists(pluginPath)) {
           GTEST_SKIP() << "librccl-env-json.so not found at " << pluginPath
-                       << " — rebuild with -DBUILD_EXT_EXAMPLES=ON";
+                       << " — rebuild with -DBUILD_PLUGIN_EXAMPLES=ON";
         }
 
         std::string jsonPath = std::string("/tmp/rccl_test_json_override_") +
@@ -184,7 +184,7 @@ TEST(EnvPluginTests, ExternalPlugin_JsonPlugin_FallsBackToGetenv) {
         std::string pluginPath = getTestPluginPath("librccl-env-json.so");
         if (!std::filesystem::exists(pluginPath)) {
           GTEST_SKIP() << "librccl-env-json.so not found at " << pluginPath
-                       << " — rebuild with -DBUILD_EXT_EXAMPLES=ON";
+                       << " — rebuild with -DBUILD_PLUGIN_EXAMPLES=ON";
         }
 
         std::string jsonPath = std::string("/tmp/rccl_test_json_fallback_") +
@@ -219,7 +219,7 @@ TEST(EnvPluginTests, ExternalPlugin_JsonPlugin_UnsetKeyReturnsNull) {
         std::string pluginPath = getTestPluginPath("librccl-env-json.so");
         if (!std::filesystem::exists(pluginPath)) {
           GTEST_SKIP() << "librccl-env-json.so not found at " << pluginPath
-                       << " — rebuild with -DBUILD_EXT_EXAMPLES=ON";
+                       << " — rebuild with -DBUILD_PLUGIN_EXAMPLES=ON";
         }
 
         std::string jsonPath = std::string("/tmp/rccl_test_json_null_") +
@@ -252,7 +252,7 @@ TEST(EnvPluginTests, ExternalPlugin_JsonPlugin_MalformedJson_FallsBackToGetenv) 
         std::string pluginPath = getTestPluginPath("librccl-env-json.so");
         if (!std::filesystem::exists(pluginPath)) {
           GTEST_SKIP() << "librccl-env-json.so not found at " << pluginPath
-                       << " — rebuild with -DBUILD_EXT_EXAMPLES=ON";
+                       << " — rebuild with -DBUILD_PLUGIN_EXAMPLES=ON";
         }
 
         std::string jsonPath = std::string("/tmp/rccl_test_json_malformed_") +
@@ -288,7 +288,7 @@ TEST(EnvPluginTests, ExternalPlugin_JsonPlugin_NotAnObject_FallsBackToGetenv) {
         std::string pluginPath = getTestPluginPath("librccl-env-json.so");
         if (!std::filesystem::exists(pluginPath)) {
           GTEST_SKIP() << "librccl-env-json.so not found at " << pluginPath
-                       << " — rebuild with -DBUILD_EXT_EXAMPLES=ON";
+                       << " — rebuild with -DBUILD_PLUGIN_EXAMPLES=ON";
         }
 
         std::string jsonPath = std::string("/tmp/rccl_test_json_notobj_") +
@@ -322,7 +322,7 @@ TEST(EnvPluginTests, ExternalPlugin_JsonPlugin_UnreadableFile_FallsBackToGetenv)
         std::string pluginPath = getTestPluginPath("librccl-env-json.so");
         if (!std::filesystem::exists(pluginPath)) {
           GTEST_SKIP() << "librccl-env-json.so not found at " << pluginPath
-                       << " — rebuild with -DBUILD_EXT_EXAMPLES=ON";
+                       << " — rebuild with -DBUILD_PLUGIN_EXAMPLES=ON";
         }
 
         std::string jsonPath = std::string("/tmp/rccl_test_json_noperm_") +

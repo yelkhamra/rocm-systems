@@ -174,11 +174,11 @@ values:
 Usage
 -----
 
-#. Build the JSON plugin by configuring RCCL with ``-DBUILD_TESTS=ON -DBUILD_EXT_EXAMPLES=ON``:
+#. Build the JSON plugin by configuring RCCL with ``-DBUILD_TESTS=ON -DBUILD_PLUGIN_EXAMPLES=ON``:
 
    .. code-block:: shell
 
-      cmake /path/to/rccl -DBUILD_TESTS=ON -DBUILD_EXT_EXAMPLES=ON
+      cmake /path/to/rccl -DBUILD_TESTS=ON -DBUILD_PLUGIN_EXAMPLES=ON
       make rccl-env-json
 
    The plugin is built as ``librccl-env-json.so`` in the build output under
