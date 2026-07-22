@@ -13,19 +13,6 @@ set(RJ_OBJECT_LIBS
     rocjitsu_code
     rocjitsu_isa
     rocjitsu_isa_registry
-    rocjitsu_isa_cdna1
-    rocjitsu_isa_cdna2
-    rocjitsu_isa_cdna3
-    rocjitsu_isa_cdna4
-    rocjitsu_isa_rdna1
-    rocjitsu_isa_rdna2
-    rocjitsu_isa_rdna3
-    rocjitsu_isa_rdna3_5
-    rocjitsu_isa_rdna4
-    rocjitsu_isa_gfx1250
-    # \NPI new ISA family: link its rocjitsu_isa_<isa> object library here, and \
-    # wire any new *_sim_test.cpp and kernels/ coverage into this file.
-    rocjitsu_isa_risc_v
     simdojo
     rocjitsu_kmd
     rocjitsu_vm
@@ -371,6 +358,7 @@ add_executable(
     waitcnt_counter_test.cpp
     register_access_test.cpp
     instruction_execution_harness_test.cpp
+    isa_target_registry_test.cpp
     scalar_scc_test.cpp
     cdna3_predicate_mask_test.cpp
     decode_execute_benchmark.cpp
@@ -461,6 +449,11 @@ rj_add_gtest_tests(rocjitsu_tests TEST_FILTER -*Benchmark*)
 
 # Exercise the Linux-only model ISA contract in a decoder-only final link.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    rj_add_isa_target_registry(
+        rocjitsu_gfx1250_model_registry
+        ACCESSOR rj_get_gfx1250_model_targets
+        PROVIDERS rocjitsu_isa_gfx1250_model_provider
+    )
     add_executable(rocjitsu_model_only_test model_only_isa_test.cpp)
     target_include_directories(
         rocjitsu_model_only_test
@@ -470,7 +463,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         rocjitsu_model_only_test
         PRIVATE
             rocjitsu_dbt_internal
-            rocjitsu_isa_gfx1250_model
+            rocjitsu_gfx1250_model_registry
             simdojo_headers
             GTest::gtest_main
     )
@@ -482,6 +475,68 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
             ${CMAKE_COMMAND} -DNM=${CMAKE_NM}
             -DMODEL_BINARY=$<TARGET_FILE:rocjitsu_model_only_test> -P
             ${CMAKE_CURRENT_SOURCE_DIR}/check_model_only_symbols.cmake
+    )
+
+    # A downstream-style header-only ISA is deliberately unknown to the core
+    # provider list. Its target-owned contribution is included only by the
+    # consumer-specific registry below.
+    add_library(rocjitsu_downstream_isa_fixture INTERFACE)
+    target_include_directories(
+        rocjitsu_downstream_isa_fixture
+        INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/fixtures
+    )
+    rj_add_isa_target_provider(
+        rocjitsu_downstream_isa_provider_fixture
+        SOURCE fixtures/downstream_isa_target_provider.cpp
+        HEADER downstream_isa_target_provider.h
+        IMPLEMENTATION rocjitsu_downstream_isa_fixture
+    )
+    rj_add_isa_target_registry(
+        rocjitsu_downstream_registry_fixture
+        ACCESSOR rj_get_downstream_fixture_targets
+        PROVIDERS rocjitsu_downstream_isa_provider_fixture
+    )
+
+    # This shared object models a narrow errata-patching component. The driver
+    # links the ordinary all-target registry at the same time, proving that the
+    # two independently composed registries do not union inside one process.
+    add_library(
+        rocjitsu_narrow_isa_registry_fixture
+        SHARED
+        fixtures/narrow_isa_registry_fixture.cpp
+    )
+    target_link_libraries(
+        rocjitsu_narrow_isa_registry_fixture
+        PRIVATE
+            rocjitsu_dbt_internal
+            rocjitsu_gfx1250_model_registry
+            simdojo_headers
+    )
+    rj_configure_target(rocjitsu_narrow_isa_registry_fixture LIB)
+
+    add_executable(
+        isa_registry_composition_test
+        isa_registry_composition_test.cpp
+    )
+    target_link_libraries(
+        isa_registry_composition_test
+        PRIVATE
+            ${RJ_OBJECT_LIBS}
+            rocjitsu_downstream_registry_fixture
+            rocjitsu_narrow_isa_registry_fixture
+            util
+            flatbuffers
+            Threads::Threads
+            GTest::gtest_main
+    )
+    rj_configure_target(isa_registry_composition_test TEST)
+    rj_add_gtest_tests(isa_registry_composition_test)
+    add_test(
+        NAME IsaRegistryCompositionTest.NarrowSymbolBoundary
+        COMMAND
+            ${CMAKE_COMMAND} -DNM=${CMAKE_NM}
+            -DNARROW_LIBRARY=$<TARGET_FILE:rocjitsu_narrow_isa_registry_fixture>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_narrow_registry_symbols.cmake
     )
 endif()
 

@@ -45,14 +45,21 @@ typedef enum rj_code_arch_e {
   ROCJITSU_CODE_ARCH_RV64I = 10,
   /// @brief gfx1250 ISA architecture.
   ROCJITSU_CODE_ARCH_GFX1250 = 11,
-  /*
-   * \NPI a GPU that introduces a new ISA family needs a new arch id here; \
-   * give it the next value and keep NUM_ARCHS / INVALID last.
-   */
-  /// @brief Total number of supported architectures.
+  /// @brief Number of named, built-in architectures.
   ROCJITSU_CODE_ARCH_NUM_ARCHS = 12,
   /// @brief Sentinel value representing an invalid architecture.
-  ROCJITSU_CODE_ARCH_INVALID = ROCJITSU_CODE_ARCH_NUM_ARCHS
+  ROCJITSU_CODE_ARCH_INVALID = ROCJITSU_CODE_ARCH_NUM_ARCHS,
+  /// @brief Opaque slots for statically integrated downstream architectures.
+  /// @details A final component may bind each slot to one selected provider;
+  /// the public API assigns no global target names or registration semantics.
+  ROCJITSU_CODE_ARCH_RESERVED_0 = 0x100,
+  ROCJITSU_CODE_ARCH_RESERVED_1 = 0x101,
+  ROCJITSU_CODE_ARCH_RESERVED_2 = 0x102,
+  ROCJITSU_CODE_ARCH_RESERVED_3 = 0x103,
+  ROCJITSU_CODE_ARCH_RESERVED_4 = 0x104,
+  ROCJITSU_CODE_ARCH_RESERVED_5 = 0x105,
+  ROCJITSU_CODE_ARCH_RESERVED_6 = 0x106,
+  ROCJITSU_CODE_ARCH_RESERVED_7 = 0x107
 } rj_code_arch_t;
 
 /// @brief Type representing a single raw binary machine instruction word.
@@ -69,7 +76,18 @@ typedef struct rj_code_decoder_t rj_code_decoder_t;
 /// @param[out] decoder Newly created decoder handle (refcount = 0).
 /// @retval ROCJITSU_STATUS_SUCCESS Decoder was created successfully.
 /// @retval ROCJITSU_STATUS_INVALID_ARGUMENT if @p arch is invalid or @p decoder is NULL.
+/// @retval ROCJITSU_STATUS_ERROR if this component did not bind @p arch.
 RJ_API_EXPORT rj_status_t rj_code_decoder_create(rj_code_arch_t arch, rj_code_decoder_t **decoder);
+
+/// @brief Create a decoder by open-ended canonical target ID or alias.
+/// @param[in] target_id Null-terminated target identity selected in this
+/// component's statically composed registry.
+/// @param[out] decoder Newly created decoder handle (refcount = 0).
+/// @retval ROCJITSU_STATUS_SUCCESS Decoder was created successfully.
+/// @retval ROCJITSU_STATUS_INVALID_ARGUMENT if an argument is NULL or empty.
+/// @retval ROCJITSU_STATUS_ERROR if this component did not include @p target_id.
+RJ_API_EXPORT rj_status_t rj_code_decoder_create_for_target(const char *target_id,
+                                                            rj_code_decoder_t **decoder);
 
 /// @brief Increment a decoder's reference count.
 /// @param[in] decoder Decoder handle (may be NULL, in which case this is a no-op).
@@ -103,23 +121,30 @@ RJ_API_EXPORT rj_status_t rj_code_decoder_decode(rj_code_decoder_t *decoder,
 /// @brief GPU target identifiers.
 typedef enum rj_code_target_id_t {
   /// @brief gfx90a target ID (CDNA2).
-  ROCJITSU_CODE_TARGET_GFX90A,
+  ROCJITSU_CODE_TARGET_GFX90A = 0,
   /// @brief gfx942 target ID (CDNA3).
-  ROCJITSU_CODE_TARGET_GFX942,
+  ROCJITSU_CODE_TARGET_GFX942 = 1,
   /// @brief gfx950 target ID (CDNA4).
-  ROCJITSU_CODE_TARGET_GFX950,
+  ROCJITSU_CODE_TARGET_GFX950 = 2,
   /// @brief gfx1200 target ID (RDNA4).
-  ROCJITSU_CODE_TARGET_GFX1200,
+  ROCJITSU_CODE_TARGET_GFX1200 = 3,
   /// @brief gfx1201 target ID (RDNA4).
-  ROCJITSU_CODE_TARGET_GFX1201,
+  ROCJITSU_CODE_TARGET_GFX1201 = 4,
   /// @brief gfx1250 target ID.
-  ROCJITSU_CODE_TARGET_GFX1250,
-  /*
-   * \NPI every new GPU needs a target id here (one per distinct gfxNNNN \
-   * variant); keep INVALID last.
-   */
+  ROCJITSU_CODE_TARGET_GFX1250 = 5,
   /// @brief Sentinel value representing an invalid target.
-  ROCJITSU_CODE_TARGET_INVALID
+  ROCJITSU_CODE_TARGET_INVALID = 6,
+  /// @brief Opaque slots for statically integrated downstream GPU targets.
+  /// @details A final component may bind each slot to one selected provider;
+  /// the public API assigns no global target names or registration semantics.
+  ROCJITSU_CODE_TARGET_RESERVED_0 = 0x100,
+  ROCJITSU_CODE_TARGET_RESERVED_1 = 0x101,
+  ROCJITSU_CODE_TARGET_RESERVED_2 = 0x102,
+  ROCJITSU_CODE_TARGET_RESERVED_3 = 0x103,
+  ROCJITSU_CODE_TARGET_RESERVED_4 = 0x104,
+  ROCJITSU_CODE_TARGET_RESERVED_5 = 0x105,
+  ROCJITSU_CODE_TARGET_RESERVED_6 = 0x106,
+  ROCJITSU_CODE_TARGET_RESERVED_7 = 0x107
 } rj_code_target_id_t;
 
 /// @brief Instruction property flags.

@@ -19,7 +19,6 @@ public:
   SNopSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SSethaltSopp : public Sopp {
@@ -27,7 +26,6 @@ public:
   SSethaltSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SSleepSopp : public Sopp {
@@ -35,7 +33,6 @@ public:
   SSleepSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SMonitorSleepSopp : public Sopp {
@@ -43,7 +40,6 @@ public:
   SMonitorSleepSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SClauseSopp : public Sopp {
@@ -51,7 +47,6 @@ public:
   SClauseSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SSetVgprMsbSopp : public Sopp {
@@ -59,7 +54,6 @@ public:
   SSetVgprMsbSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SDelayAluSopp : public Sopp {
@@ -67,7 +61,6 @@ public:
   SDelayAluSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SWaitAluSopp : public Sopp {
@@ -75,14 +68,12 @@ public:
   SWaitAluSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SWaitIdleSopp : public Sopp {
 public:
   SWaitIdleSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
-  static const bool execute_registered_;
 };
 
 class STrapSopp : public Sopp {
@@ -90,7 +81,6 @@ public:
   STrapSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SRoundModeSopp : public Sopp {
@@ -98,7 +88,6 @@ public:
   SRoundModeSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SDenormModeSopp : public Sopp {
@@ -106,7 +95,6 @@ public:
   SDenormModeSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SBarrierWaitSopp : public Sopp {
@@ -114,21 +102,18 @@ public:
   SBarrierWaitSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SBarrierLeaveSopp : public Sopp {
 public:
   SBarrierLeaveSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
-  static const bool execute_registered_;
 };
 
 class SCodeEndSopp : public Sopp {
 public:
   SCodeEndSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
-  static const bool execute_registered_;
 };
 
 class SBranchSopp : public Sopp {
@@ -137,7 +122,6 @@ public:
   void execute_impl(amdgpu::Wavefront &wf);
   std::optional<int64_t> branch_offset_bytes() const override;
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SCbranchScc0Sopp : public Sopp {
@@ -146,7 +130,6 @@ public:
   void execute_impl(amdgpu::Wavefront &wf);
   std::optional<int64_t> branch_offset_bytes() const override;
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SCbranchScc1Sopp : public Sopp {
@@ -155,7 +138,6 @@ public:
   void execute_impl(amdgpu::Wavefront &wf);
   std::optional<int64_t> branch_offset_bytes() const override;
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SCbranchVcczSopp : public Sopp {
@@ -164,7 +146,6 @@ public:
   void execute_impl(amdgpu::Wavefront &wf);
   std::optional<int64_t> branch_offset_bytes() const override;
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SCbranchVccnzSopp : public Sopp {
@@ -173,7 +154,6 @@ public:
   void execute_impl(amdgpu::Wavefront &wf);
   std::optional<int64_t> branch_offset_bytes() const override;
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SCbranchExeczSopp : public Sopp {
@@ -182,7 +162,6 @@ public:
   void execute_impl(amdgpu::Wavefront &wf);
   std::optional<int64_t> branch_offset_bytes() const override;
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SCbranchExecnzSopp : public Sopp {
@@ -191,28 +170,24 @@ public:
   void execute_impl(amdgpu::Wavefront &wf);
   std::optional<int64_t> branch_offset_bytes() const override;
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SEndpgmSopp : public Sopp {
 public:
   SEndpgmSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
-  static const bool execute_registered_;
 };
 
 class SEndpgmSavedSopp : public Sopp {
 public:
   SEndpgmSavedSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
-  static const bool execute_registered_;
 };
 
 class SWakeupSopp : public Sopp {
 public:
   SWakeupSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
-  static const bool execute_registered_;
 };
 
 class SSetprioSopp : public Sopp {
@@ -220,7 +195,6 @@ public:
   SSetprioSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SSendmsgSopp : public Sopp {
@@ -228,7 +202,6 @@ public:
   SSendmsgSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SSendmsghaltSopp : public Sopp {
@@ -236,7 +209,6 @@ public:
   SSendmsghaltSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SIncperflevelSopp : public Sopp {
@@ -244,7 +216,6 @@ public:
   SIncperflevelSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SDecperflevelSopp : public Sopp {
@@ -252,14 +223,12 @@ public:
   SDecperflevelSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class STtracedataSopp : public Sopp {
 public:
   STtracedataSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
-  static const bool execute_registered_;
 };
 
 class STtracedataImmSopp : public Sopp {
@@ -267,14 +236,12 @@ public:
   STtracedataImmSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SIcacheInvSopp : public Sopp {
 public:
   SIcacheInvSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
-  static const bool execute_registered_;
 };
 
 class SSetprioIncWgSopp : public Sopp {
@@ -282,7 +249,6 @@ public:
   SSetprioIncWgSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SWaitLoadcntSopp : public Sopp {
@@ -290,7 +256,6 @@ public:
   SWaitLoadcntSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SWaitStorecntSopp : public Sopp {
@@ -298,7 +263,6 @@ public:
   SWaitStorecntSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SWaitXcntSopp : public Sopp {
@@ -306,7 +270,6 @@ public:
   SWaitXcntSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SWaitDscntSopp : public Sopp {
@@ -314,7 +277,6 @@ public:
   SWaitDscntSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SWaitKmcntSopp : public Sopp {
@@ -322,7 +284,6 @@ public:
   SWaitKmcntSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SWaitLoadcntDscntSopp : public Sopp {
@@ -330,7 +291,6 @@ public:
   SWaitLoadcntDscntSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SWaitStorecntDscntSopp : public Sopp {
@@ -338,7 +298,6 @@ public:
   SWaitStorecntDscntSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SWaitAsynccntSopp : public Sopp {
@@ -346,7 +305,6 @@ public:
   SWaitAsynccntSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 class SWaitTensorcntSopp : public Sopp {
@@ -354,7 +312,6 @@ public:
   SWaitTensorcntSopp(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
   Operand simm16;
-  static const bool execute_registered_;
 };
 
 } // namespace gfx1250

@@ -73,6 +73,8 @@ TEST(CodeArchApiTest, PreservesExistingPublicEnumValues) {
   EXPECT_EQ(static_cast<int>(ROCJITSU_CODE_ARCH_RV64I), 10);
   EXPECT_EQ(static_cast<int>(ROCJITSU_CODE_ARCH_GFX1250), 11);
   EXPECT_EQ(static_cast<int>(ROCJITSU_CODE_ARCH_NUM_ARCHS), 12);
+  EXPECT_EQ(static_cast<int>(ROCJITSU_CODE_ARCH_INVALID), 12);
+  EXPECT_EQ(static_cast<int>(ROCJITSU_CODE_ARCH_RESERVED_0), 0x100);
 }
 
 struct DecodeCase {

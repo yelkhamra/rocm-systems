@@ -118,6 +118,7 @@ See [docs/building.md](docs/building.md) for container setup with PyTorch.
 | [DBT Design](docs/dbt-design.md) | Binary translator architecture |
 | [DBI Design](docs/dbi-design.md) | Binary instrumentation (in progress) |
 | [Codegen](docs/codegen.md) | ISA codegen pipeline and regen commands |
+| [ISA Target Providers](docs/isa-target-providers.md) | Static target registration and per-component subsets |
 
 ### Reference
 

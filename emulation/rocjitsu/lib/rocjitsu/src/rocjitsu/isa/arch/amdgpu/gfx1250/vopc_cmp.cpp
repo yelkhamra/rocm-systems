@@ -12,8 +12,7 @@ namespace rocjitsu {
 namespace gfx1250 {
 
 VCmpLtF16Vopc::VCmpLtF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_lt_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLtF16Vopc>()),
+    : Vopc("v_cmp_lt_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(400)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -56,8 +55,7 @@ VCmpLtF16Vopc::VCmpLtF16Vopc(const MachineInst *inst)
 }
 
 VCmpEqF16Vopc::VCmpEqF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_eq_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpEqF16Vopc>()),
+    : Vopc("v_cmp_eq_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(401)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -100,8 +98,7 @@ VCmpEqF16Vopc::VCmpEqF16Vopc(const MachineInst *inst)
 }
 
 VCmpLeF16Vopc::VCmpLeF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_le_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLeF16Vopc>()),
+    : Vopc("v_cmp_le_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(402)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -144,8 +141,7 @@ VCmpLeF16Vopc::VCmpLeF16Vopc(const MachineInst *inst)
 }
 
 VCmpGtF16Vopc::VCmpGtF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_gt_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGtF16Vopc>()),
+    : Vopc("v_cmp_gt_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(403)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -188,8 +184,7 @@ VCmpGtF16Vopc::VCmpGtF16Vopc(const MachineInst *inst)
 }
 
 VCmpLgF16Vopc::VCmpLgF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_lg_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLgF16Vopc>()),
+    : Vopc("v_cmp_lg_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(404)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -232,8 +227,7 @@ VCmpLgF16Vopc::VCmpLgF16Vopc(const MachineInst *inst)
 }
 
 VCmpGeF16Vopc::VCmpGeF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ge_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGeF16Vopc>()),
+    : Vopc("v_cmp_ge_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(405)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -276,8 +270,7 @@ VCmpGeF16Vopc::VCmpGeF16Vopc(const MachineInst *inst)
 }
 
 VCmpOF16Vopc::VCmpOF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_o_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpOF16Vopc>()),
+    : Vopc("v_cmp_o_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(406)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -320,8 +313,7 @@ VCmpOF16Vopc::VCmpOF16Vopc(const MachineInst *inst)
 }
 
 VCmpUF16Vopc::VCmpUF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_u_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpUF16Vopc>()),
+    : Vopc("v_cmp_u_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(407)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -364,8 +356,7 @@ VCmpUF16Vopc::VCmpUF16Vopc(const MachineInst *inst)
 }
 
 VCmpNgeF16Vopc::VCmpNgeF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_nge_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNgeF16Vopc>()),
+    : Vopc("v_cmp_nge_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(408)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -408,8 +399,7 @@ VCmpNgeF16Vopc::VCmpNgeF16Vopc(const MachineInst *inst)
 }
 
 VCmpNlgF16Vopc::VCmpNlgF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_nlg_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNlgF16Vopc>()),
+    : Vopc("v_cmp_nlg_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(409)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -452,8 +442,7 @@ VCmpNlgF16Vopc::VCmpNlgF16Vopc(const MachineInst *inst)
 }
 
 VCmpNgtF16Vopc::VCmpNgtF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ngt_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNgtF16Vopc>()),
+    : Vopc("v_cmp_ngt_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(410)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -496,8 +485,7 @@ VCmpNgtF16Vopc::VCmpNgtF16Vopc(const MachineInst *inst)
 }
 
 VCmpNleF16Vopc::VCmpNleF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_nle_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNleF16Vopc>()),
+    : Vopc("v_cmp_nle_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(411)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -540,8 +528,7 @@ VCmpNleF16Vopc::VCmpNleF16Vopc(const MachineInst *inst)
 }
 
 VCmpNeqF16Vopc::VCmpNeqF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_neq_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNeqF16Vopc>()),
+    : Vopc("v_cmp_neq_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(412)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -584,8 +571,7 @@ VCmpNeqF16Vopc::VCmpNeqF16Vopc(const MachineInst *inst)
 }
 
 VCmpNltF16Vopc::VCmpNltF16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_nlt_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNltF16Vopc>()),
+    : Vopc("v_cmp_nlt_f16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(413)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -628,8 +614,7 @@ VCmpNltF16Vopc::VCmpNltF16Vopc(const MachineInst *inst)
 }
 
 VCmpLtF32Vopc::VCmpLtF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_lt_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLtF32Vopc>()),
+    : Vopc("v_cmp_lt_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(414)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -669,8 +654,7 @@ VCmpLtF32Vopc::VCmpLtF32Vopc(const MachineInst *inst)
 }
 
 VCmpEqF32Vopc::VCmpEqF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_eq_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpEqF32Vopc>()),
+    : Vopc("v_cmp_eq_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(415)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -710,8 +694,7 @@ VCmpEqF32Vopc::VCmpEqF32Vopc(const MachineInst *inst)
 }
 
 VCmpLeF32Vopc::VCmpLeF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_le_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLeF32Vopc>()),
+    : Vopc("v_cmp_le_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(416)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -751,8 +734,7 @@ VCmpLeF32Vopc::VCmpLeF32Vopc(const MachineInst *inst)
 }
 
 VCmpGtF32Vopc::VCmpGtF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_gt_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGtF32Vopc>()),
+    : Vopc("v_cmp_gt_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(417)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -792,8 +774,7 @@ VCmpGtF32Vopc::VCmpGtF32Vopc(const MachineInst *inst)
 }
 
 VCmpLgF32Vopc::VCmpLgF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_lg_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLgF32Vopc>()),
+    : Vopc("v_cmp_lg_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(418)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -833,8 +814,7 @@ VCmpLgF32Vopc::VCmpLgF32Vopc(const MachineInst *inst)
 }
 
 VCmpGeF32Vopc::VCmpGeF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ge_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGeF32Vopc>()),
+    : Vopc("v_cmp_ge_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(419)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -874,8 +854,7 @@ VCmpGeF32Vopc::VCmpGeF32Vopc(const MachineInst *inst)
 }
 
 VCmpOF32Vopc::VCmpOF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_o_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpOF32Vopc>()),
+    : Vopc("v_cmp_o_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(420)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -915,8 +894,7 @@ VCmpOF32Vopc::VCmpOF32Vopc(const MachineInst *inst)
 }
 
 VCmpUF32Vopc::VCmpUF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_u_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpUF32Vopc>()),
+    : Vopc("v_cmp_u_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(421)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -956,8 +934,7 @@ VCmpUF32Vopc::VCmpUF32Vopc(const MachineInst *inst)
 }
 
 VCmpNgeF32Vopc::VCmpNgeF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_nge_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNgeF32Vopc>()),
+    : Vopc("v_cmp_nge_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(422)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -997,8 +974,7 @@ VCmpNgeF32Vopc::VCmpNgeF32Vopc(const MachineInst *inst)
 }
 
 VCmpNlgF32Vopc::VCmpNlgF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_nlg_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNlgF32Vopc>()),
+    : Vopc("v_cmp_nlg_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(423)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1038,8 +1014,7 @@ VCmpNlgF32Vopc::VCmpNlgF32Vopc(const MachineInst *inst)
 }
 
 VCmpNgtF32Vopc::VCmpNgtF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ngt_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNgtF32Vopc>()),
+    : Vopc("v_cmp_ngt_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(424)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1079,8 +1054,7 @@ VCmpNgtF32Vopc::VCmpNgtF32Vopc(const MachineInst *inst)
 }
 
 VCmpNleF32Vopc::VCmpNleF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_nle_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNleF32Vopc>()),
+    : Vopc("v_cmp_nle_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(425)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1120,8 +1094,7 @@ VCmpNleF32Vopc::VCmpNleF32Vopc(const MachineInst *inst)
 }
 
 VCmpNeqF32Vopc::VCmpNeqF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_neq_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNeqF32Vopc>()),
+    : Vopc("v_cmp_neq_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(426)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1161,8 +1134,7 @@ VCmpNeqF32Vopc::VCmpNeqF32Vopc(const MachineInst *inst)
 }
 
 VCmpNltF32Vopc::VCmpNltF32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_nlt_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNltF32Vopc>()),
+    : Vopc("v_cmp_nlt_f32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(427)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1202,8 +1174,7 @@ VCmpNltF32Vopc::VCmpNltF32Vopc(const MachineInst *inst)
 }
 
 VCmpLtF64Vopc::VCmpLtF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_lt_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLtF64Vopc>()),
+    : Vopc("v_cmp_lt_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(428)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1245,8 +1216,7 @@ VCmpLtF64Vopc::VCmpLtF64Vopc(const MachineInst *inst)
 }
 
 VCmpEqF64Vopc::VCmpEqF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_eq_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpEqF64Vopc>()),
+    : Vopc("v_cmp_eq_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(429)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1288,8 +1258,7 @@ VCmpEqF64Vopc::VCmpEqF64Vopc(const MachineInst *inst)
 }
 
 VCmpLeF64Vopc::VCmpLeF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_le_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLeF64Vopc>()),
+    : Vopc("v_cmp_le_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(430)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1331,8 +1300,7 @@ VCmpLeF64Vopc::VCmpLeF64Vopc(const MachineInst *inst)
 }
 
 VCmpGtF64Vopc::VCmpGtF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_gt_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGtF64Vopc>()),
+    : Vopc("v_cmp_gt_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(431)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1374,8 +1342,7 @@ VCmpGtF64Vopc::VCmpGtF64Vopc(const MachineInst *inst)
 }
 
 VCmpLgF64Vopc::VCmpLgF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_lg_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLgF64Vopc>()),
+    : Vopc("v_cmp_lg_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(432)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1417,8 +1384,7 @@ VCmpLgF64Vopc::VCmpLgF64Vopc(const MachineInst *inst)
 }
 
 VCmpGeF64Vopc::VCmpGeF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ge_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGeF64Vopc>()),
+    : Vopc("v_cmp_ge_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(433)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1460,8 +1426,7 @@ VCmpGeF64Vopc::VCmpGeF64Vopc(const MachineInst *inst)
 }
 
 VCmpOF64Vopc::VCmpOF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_o_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpOF64Vopc>()),
+    : Vopc("v_cmp_o_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(434)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1503,8 +1468,7 @@ VCmpOF64Vopc::VCmpOF64Vopc(const MachineInst *inst)
 }
 
 VCmpUF64Vopc::VCmpUF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_u_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpUF64Vopc>()),
+    : Vopc("v_cmp_u_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(435)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1546,8 +1510,7 @@ VCmpUF64Vopc::VCmpUF64Vopc(const MachineInst *inst)
 }
 
 VCmpNgeF64Vopc::VCmpNgeF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_nge_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNgeF64Vopc>()),
+    : Vopc("v_cmp_nge_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(436)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1589,8 +1552,7 @@ VCmpNgeF64Vopc::VCmpNgeF64Vopc(const MachineInst *inst)
 }
 
 VCmpNlgF64Vopc::VCmpNlgF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_nlg_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNlgF64Vopc>()),
+    : Vopc("v_cmp_nlg_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(437)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1632,8 +1594,7 @@ VCmpNlgF64Vopc::VCmpNlgF64Vopc(const MachineInst *inst)
 }
 
 VCmpNgtF64Vopc::VCmpNgtF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ngt_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNgtF64Vopc>()),
+    : Vopc("v_cmp_ngt_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(438)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1675,8 +1636,7 @@ VCmpNgtF64Vopc::VCmpNgtF64Vopc(const MachineInst *inst)
 }
 
 VCmpNleF64Vopc::VCmpNleF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_nle_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNleF64Vopc>()),
+    : Vopc("v_cmp_nle_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(439)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1718,8 +1678,7 @@ VCmpNleF64Vopc::VCmpNleF64Vopc(const MachineInst *inst)
 }
 
 VCmpNeqF64Vopc::VCmpNeqF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_neq_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNeqF64Vopc>()),
+    : Vopc("v_cmp_neq_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(440)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1761,8 +1720,7 @@ VCmpNeqF64Vopc::VCmpNeqF64Vopc(const MachineInst *inst)
 }
 
 VCmpNltF64Vopc::VCmpNltF64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_nlt_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNltF64Vopc>()),
+    : Vopc("v_cmp_nlt_f64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(441)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -1804,8 +1762,7 @@ VCmpNltF64Vopc::VCmpNltF64Vopc(const MachineInst *inst)
 }
 
 VCmpLtI16Vopc::VCmpLtI16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_lt_i16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLtI16Vopc>()),
+    : Vopc("v_cmp_lt_i16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(442)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -1848,8 +1805,7 @@ VCmpLtI16Vopc::VCmpLtI16Vopc(const MachineInst *inst)
 }
 
 VCmpEqI16Vopc::VCmpEqI16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_eq_i16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpEqI16Vopc>()),
+    : Vopc("v_cmp_eq_i16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(443)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -1892,8 +1848,7 @@ VCmpEqI16Vopc::VCmpEqI16Vopc(const MachineInst *inst)
 }
 
 VCmpLeI16Vopc::VCmpLeI16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_le_i16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLeI16Vopc>()),
+    : Vopc("v_cmp_le_i16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(444)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -1936,8 +1891,7 @@ VCmpLeI16Vopc::VCmpLeI16Vopc(const MachineInst *inst)
 }
 
 VCmpGtI16Vopc::VCmpGtI16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_gt_i16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGtI16Vopc>()),
+    : Vopc("v_cmp_gt_i16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(445)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -1980,8 +1934,7 @@ VCmpGtI16Vopc::VCmpGtI16Vopc(const MachineInst *inst)
 }
 
 VCmpNeI16Vopc::VCmpNeI16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ne_i16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNeI16Vopc>()),
+    : Vopc("v_cmp_ne_i16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(446)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -2024,8 +1977,7 @@ VCmpNeI16Vopc::VCmpNeI16Vopc(const MachineInst *inst)
 }
 
 VCmpGeI16Vopc::VCmpGeI16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ge_i16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGeI16Vopc>()),
+    : Vopc("v_cmp_ge_i16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(447)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -2068,8 +2020,7 @@ VCmpGeI16Vopc::VCmpGeI16Vopc(const MachineInst *inst)
 }
 
 VCmpLtU16Vopc::VCmpLtU16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_lt_u16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLtU16Vopc>()),
+    : Vopc("v_cmp_lt_u16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(448)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -2112,8 +2063,7 @@ VCmpLtU16Vopc::VCmpLtU16Vopc(const MachineInst *inst)
 }
 
 VCmpEqU16Vopc::VCmpEqU16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_eq_u16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpEqU16Vopc>()),
+    : Vopc("v_cmp_eq_u16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(449)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -2156,8 +2106,7 @@ VCmpEqU16Vopc::VCmpEqU16Vopc(const MachineInst *inst)
 }
 
 VCmpLeU16Vopc::VCmpLeU16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_le_u16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLeU16Vopc>()),
+    : Vopc("v_cmp_le_u16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(450)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -2200,8 +2149,7 @@ VCmpLeU16Vopc::VCmpLeU16Vopc(const MachineInst *inst)
 }
 
 VCmpGtU16Vopc::VCmpGtU16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_gt_u16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGtU16Vopc>()),
+    : Vopc("v_cmp_gt_u16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(451)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -2244,8 +2192,7 @@ VCmpGtU16Vopc::VCmpGtU16Vopc(const MachineInst *inst)
 }
 
 VCmpNeU16Vopc::VCmpNeU16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ne_u16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNeU16Vopc>()),
+    : Vopc("v_cmp_ne_u16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(452)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -2288,8 +2235,7 @@ VCmpNeU16Vopc::VCmpNeU16Vopc(const MachineInst *inst)
 }
 
 VCmpGeU16Vopc::VCmpGeU16Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ge_u16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGeU16Vopc>()),
+    : Vopc("v_cmp_ge_u16_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(453)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -2332,8 +2278,7 @@ VCmpGeU16Vopc::VCmpGeU16Vopc(const MachineInst *inst)
 }
 
 VCmpLtI32Vopc::VCmpLtI32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_lt_i32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLtI32Vopc>()),
+    : Vopc("v_cmp_lt_i32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(454)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2373,8 +2318,7 @@ VCmpLtI32Vopc::VCmpLtI32Vopc(const MachineInst *inst)
 }
 
 VCmpEqI32Vopc::VCmpEqI32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_eq_i32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpEqI32Vopc>()),
+    : Vopc("v_cmp_eq_i32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(455)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2414,8 +2358,7 @@ VCmpEqI32Vopc::VCmpEqI32Vopc(const MachineInst *inst)
 }
 
 VCmpLeI32Vopc::VCmpLeI32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_le_i32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLeI32Vopc>()),
+    : Vopc("v_cmp_le_i32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(456)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2455,8 +2398,7 @@ VCmpLeI32Vopc::VCmpLeI32Vopc(const MachineInst *inst)
 }
 
 VCmpGtI32Vopc::VCmpGtI32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_gt_i32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGtI32Vopc>()),
+    : Vopc("v_cmp_gt_i32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(457)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2496,8 +2438,7 @@ VCmpGtI32Vopc::VCmpGtI32Vopc(const MachineInst *inst)
 }
 
 VCmpNeI32Vopc::VCmpNeI32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ne_i32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNeI32Vopc>()),
+    : Vopc("v_cmp_ne_i32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(458)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2537,8 +2478,7 @@ VCmpNeI32Vopc::VCmpNeI32Vopc(const MachineInst *inst)
 }
 
 VCmpGeI32Vopc::VCmpGeI32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ge_i32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGeI32Vopc>()),
+    : Vopc("v_cmp_ge_i32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(459)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2578,8 +2518,7 @@ VCmpGeI32Vopc::VCmpGeI32Vopc(const MachineInst *inst)
 }
 
 VCmpLtU32Vopc::VCmpLtU32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_lt_u32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLtU32Vopc>()),
+    : Vopc("v_cmp_lt_u32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(460)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2619,8 +2558,7 @@ VCmpLtU32Vopc::VCmpLtU32Vopc(const MachineInst *inst)
 }
 
 VCmpEqU32Vopc::VCmpEqU32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_eq_u32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpEqU32Vopc>()),
+    : Vopc("v_cmp_eq_u32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(461)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2660,8 +2598,7 @@ VCmpEqU32Vopc::VCmpEqU32Vopc(const MachineInst *inst)
 }
 
 VCmpLeU32Vopc::VCmpLeU32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_le_u32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLeU32Vopc>()),
+    : Vopc("v_cmp_le_u32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(462)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2701,8 +2638,7 @@ VCmpLeU32Vopc::VCmpLeU32Vopc(const MachineInst *inst)
 }
 
 VCmpGtU32Vopc::VCmpGtU32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_gt_u32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGtU32Vopc>()),
+    : Vopc("v_cmp_gt_u32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(463)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2742,8 +2678,7 @@ VCmpGtU32Vopc::VCmpGtU32Vopc(const MachineInst *inst)
 }
 
 VCmpNeU32Vopc::VCmpNeU32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ne_u32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNeU32Vopc>()),
+    : Vopc("v_cmp_ne_u32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(464)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2783,8 +2718,7 @@ VCmpNeU32Vopc::VCmpNeU32Vopc(const MachineInst *inst)
 }
 
 VCmpGeU32Vopc::VCmpGeU32Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ge_u32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGeU32Vopc>()),
+    : Vopc("v_cmp_ge_u32_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(465)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2824,8 +2758,7 @@ VCmpGeU32Vopc::VCmpGeU32Vopc(const MachineInst *inst)
 }
 
 VCmpLtI64Vopc::VCmpLtI64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_lt_i64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLtI64Vopc>()),
+    : Vopc("v_cmp_lt_i64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(466)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2865,8 +2798,7 @@ VCmpLtI64Vopc::VCmpLtI64Vopc(const MachineInst *inst)
 }
 
 VCmpEqI64Vopc::VCmpEqI64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_eq_i64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpEqI64Vopc>()),
+    : Vopc("v_cmp_eq_i64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(467)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2906,8 +2838,7 @@ VCmpEqI64Vopc::VCmpEqI64Vopc(const MachineInst *inst)
 }
 
 VCmpLeI64Vopc::VCmpLeI64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_le_i64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLeI64Vopc>()),
+    : Vopc("v_cmp_le_i64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(468)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2947,8 +2878,7 @@ VCmpLeI64Vopc::VCmpLeI64Vopc(const MachineInst *inst)
 }
 
 VCmpGtI64Vopc::VCmpGtI64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_gt_i64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGtI64Vopc>()),
+    : Vopc("v_cmp_gt_i64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(469)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -2988,8 +2918,7 @@ VCmpGtI64Vopc::VCmpGtI64Vopc(const MachineInst *inst)
 }
 
 VCmpNeI64Vopc::VCmpNeI64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ne_i64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNeI64Vopc>()),
+    : Vopc("v_cmp_ne_i64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(470)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -3029,8 +2958,7 @@ VCmpNeI64Vopc::VCmpNeI64Vopc(const MachineInst *inst)
 }
 
 VCmpGeI64Vopc::VCmpGeI64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ge_i64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGeI64Vopc>()),
+    : Vopc("v_cmp_ge_i64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(471)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -3070,8 +2998,7 @@ VCmpGeI64Vopc::VCmpGeI64Vopc(const MachineInst *inst)
 }
 
 VCmpLtU64Vopc::VCmpLtU64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_lt_u64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLtU64Vopc>()),
+    : Vopc("v_cmp_lt_u64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(472)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -3111,8 +3038,7 @@ VCmpLtU64Vopc::VCmpLtU64Vopc(const MachineInst *inst)
 }
 
 VCmpEqU64Vopc::VCmpEqU64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_eq_u64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpEqU64Vopc>()),
+    : Vopc("v_cmp_eq_u64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(473)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -3152,8 +3078,7 @@ VCmpEqU64Vopc::VCmpEqU64Vopc(const MachineInst *inst)
 }
 
 VCmpLeU64Vopc::VCmpLeU64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_le_u64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpLeU64Vopc>()),
+    : Vopc("v_cmp_le_u64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(474)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -3193,8 +3118,7 @@ VCmpLeU64Vopc::VCmpLeU64Vopc(const MachineInst *inst)
 }
 
 VCmpGtU64Vopc::VCmpGtU64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_gt_u64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGtU64Vopc>()),
+    : Vopc("v_cmp_gt_u64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(475)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -3234,8 +3158,7 @@ VCmpGtU64Vopc::VCmpGtU64Vopc(const MachineInst *inst)
 }
 
 VCmpNeU64Vopc::VCmpNeU64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ne_u64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpNeU64Vopc>()),
+    : Vopc("v_cmp_ne_u64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(476)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -3275,8 +3198,7 @@ VCmpNeU64Vopc::VCmpNeU64Vopc(const MachineInst *inst)
 }
 
 VCmpGeU64Vopc::VCmpGeU64Vopc(const MachineInst *inst)
-    : Vopc("v_cmp_ge_u64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpGeU64Vopc>()),
+    : Vopc("v_cmp_ge_u64_e32", reinterpret_cast<const OpEncoding *>(inst), selected_exec_fn(477)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(64, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -3317,7 +3239,7 @@ VCmpGeU64Vopc::VCmpGeU64Vopc(const MachineInst *inst)
 
 VCmpClassF16Vopc::VCmpClassF16Vopc(const MachineInst *inst)
     : Vopc("v_cmp_class_f16_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpClassF16Vopc>()),
+           selected_exec_fn(478)),
       src0(16, OperandType::OPR_SRC,
            static_cast<unsigned short>(reinterpret_cast<const OpEncoding *>(inst)->src0), true),
       vsrc1(16, OperandType::OPR_VGPR,
@@ -3361,7 +3283,7 @@ VCmpClassF16Vopc::VCmpClassF16Vopc(const MachineInst *inst)
 
 VCmpClassF32Vopc::VCmpClassF32Vopc(const MachineInst *inst)
     : Vopc("v_cmp_class_f32_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpClassF32Vopc>()),
+           selected_exec_fn(479)),
       src0(32, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;
@@ -3402,7 +3324,7 @@ VCmpClassF32Vopc::VCmpClassF32Vopc(const MachineInst *inst)
 
 VCmpClassF64Vopc::VCmpClassF64Vopc(const MachineInst *inst)
     : Vopc("v_cmp_class_f64_e32", reinterpret_cast<const OpEncoding *>(inst),
-           registered_exec_fn<VCmpClassF64Vopc>()),
+           selected_exec_fn(480)),
       src0(64, OperandType::OPR_SRC, reinterpret_cast<const OpEncoding *>(inst)->src0),
       vsrc1(32, OperandType::OPR_VGPR, reinterpret_cast<const OpEncoding *>(inst)->vsrc1) {
   src_operands_[0] = &src0;

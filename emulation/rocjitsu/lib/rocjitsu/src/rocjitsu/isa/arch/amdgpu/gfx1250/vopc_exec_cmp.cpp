@@ -20,8 +20,6 @@
 namespace rocjitsu {
 namespace gfx1250 {
 
-const bool VCmpLtF16Vopc::execute_registered_ = register_exec_fn<VCmpLtF16Vopc>();
-
 void VCmpLtF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -97,8 +95,6 @@ void VCmpLtF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpEqF16Vopc::execute_registered_ = register_exec_fn<VCmpEqF16Vopc>();
 
 void VCmpEqF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -176,8 +172,6 @@ void VCmpEqF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLeF16Vopc::execute_registered_ = register_exec_fn<VCmpLeF16Vopc>();
-
 void VCmpLeF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -253,8 +247,6 @@ void VCmpLeF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGtF16Vopc::execute_registered_ = register_exec_fn<VCmpGtF16Vopc>();
 
 void VCmpGtF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -332,8 +324,6 @@ void VCmpGtF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLgF16Vopc::execute_registered_ = register_exec_fn<VCmpLgF16Vopc>();
-
 void VCmpLgF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -409,8 +399,6 @@ void VCmpLgF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGeF16Vopc::execute_registered_ = register_exec_fn<VCmpGeF16Vopc>();
 
 void VCmpGeF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -488,8 +476,6 @@ void VCmpGeF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpOF16Vopc::execute_registered_ = register_exec_fn<VCmpOF16Vopc>();
-
 void VCmpOF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -565,8 +551,6 @@ void VCmpOF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpUF16Vopc::execute_registered_ = register_exec_fn<VCmpUF16Vopc>();
 
 void VCmpUF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -644,8 +628,6 @@ void VCmpUF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNgeF16Vopc::execute_registered_ = register_exec_fn<VCmpNgeF16Vopc>();
-
 void VCmpNgeF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -721,8 +703,6 @@ void VCmpNgeF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpNlgF16Vopc::execute_registered_ = register_exec_fn<VCmpNlgF16Vopc>();
 
 void VCmpNlgF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -800,8 +780,6 @@ void VCmpNlgF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNgtF16Vopc::execute_registered_ = register_exec_fn<VCmpNgtF16Vopc>();
-
 void VCmpNgtF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -877,8 +855,6 @@ void VCmpNgtF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpNleF16Vopc::execute_registered_ = register_exec_fn<VCmpNleF16Vopc>();
 
 void VCmpNleF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -956,8 +932,6 @@ void VCmpNleF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNeqF16Vopc::execute_registered_ = register_exec_fn<VCmpNeqF16Vopc>();
-
 void VCmpNeqF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -1033,8 +1007,6 @@ void VCmpNeqF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpNltF16Vopc::execute_registered_ = register_exec_fn<VCmpNltF16Vopc>();
 
 void VCmpNltF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -1112,8 +1084,6 @@ void VCmpNltF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLtF32Vopc::execute_registered_ = register_exec_fn<VCmpLtF32Vopc>();
-
 void VCmpLtF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -1189,8 +1159,6 @@ void VCmpLtF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpEqF32Vopc::execute_registered_ = register_exec_fn<VCmpEqF32Vopc>();
 
 void VCmpEqF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -1268,8 +1236,6 @@ void VCmpEqF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLeF32Vopc::execute_registered_ = register_exec_fn<VCmpLeF32Vopc>();
-
 void VCmpLeF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -1345,8 +1311,6 @@ void VCmpLeF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGtF32Vopc::execute_registered_ = register_exec_fn<VCmpGtF32Vopc>();
 
 void VCmpGtF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -1424,8 +1388,6 @@ void VCmpGtF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLgF32Vopc::execute_registered_ = register_exec_fn<VCmpLgF32Vopc>();
-
 void VCmpLgF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -1501,8 +1463,6 @@ void VCmpLgF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGeF32Vopc::execute_registered_ = register_exec_fn<VCmpGeF32Vopc>();
 
 void VCmpGeF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -1580,8 +1540,6 @@ void VCmpGeF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpOF32Vopc::execute_registered_ = register_exec_fn<VCmpOF32Vopc>();
-
 void VCmpOF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -1657,8 +1615,6 @@ void VCmpOF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpUF32Vopc::execute_registered_ = register_exec_fn<VCmpUF32Vopc>();
 
 void VCmpUF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -1736,8 +1692,6 @@ void VCmpUF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNgeF32Vopc::execute_registered_ = register_exec_fn<VCmpNgeF32Vopc>();
-
 void VCmpNgeF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -1813,8 +1767,6 @@ void VCmpNgeF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpNlgF32Vopc::execute_registered_ = register_exec_fn<VCmpNlgF32Vopc>();
 
 void VCmpNlgF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -1892,8 +1844,6 @@ void VCmpNlgF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNgtF32Vopc::execute_registered_ = register_exec_fn<VCmpNgtF32Vopc>();
-
 void VCmpNgtF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -1969,8 +1919,6 @@ void VCmpNgtF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpNleF32Vopc::execute_registered_ = register_exec_fn<VCmpNleF32Vopc>();
 
 void VCmpNleF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -2048,8 +1996,6 @@ void VCmpNleF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNeqF32Vopc::execute_registered_ = register_exec_fn<VCmpNeqF32Vopc>();
-
 void VCmpNeqF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -2125,8 +2071,6 @@ void VCmpNeqF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpNltF32Vopc::execute_registered_ = register_exec_fn<VCmpNltF32Vopc>();
 
 void VCmpNltF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -2204,8 +2148,6 @@ void VCmpNltF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLtF64Vopc::execute_registered_ = register_exec_fn<VCmpLtF64Vopc>();
-
 void VCmpLtF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -2281,8 +2223,6 @@ void VCmpLtF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpEqF64Vopc::execute_registered_ = register_exec_fn<VCmpEqF64Vopc>();
 
 void VCmpEqF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -2360,8 +2300,6 @@ void VCmpEqF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLeF64Vopc::execute_registered_ = register_exec_fn<VCmpLeF64Vopc>();
-
 void VCmpLeF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -2437,8 +2375,6 @@ void VCmpLeF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGtF64Vopc::execute_registered_ = register_exec_fn<VCmpGtF64Vopc>();
 
 void VCmpGtF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -2516,8 +2452,6 @@ void VCmpGtF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLgF64Vopc::execute_registered_ = register_exec_fn<VCmpLgF64Vopc>();
-
 void VCmpLgF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -2593,8 +2527,6 @@ void VCmpLgF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGeF64Vopc::execute_registered_ = register_exec_fn<VCmpGeF64Vopc>();
 
 void VCmpGeF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -2672,8 +2604,6 @@ void VCmpGeF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpOF64Vopc::execute_registered_ = register_exec_fn<VCmpOF64Vopc>();
-
 void VCmpOF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -2749,8 +2679,6 @@ void VCmpOF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpUF64Vopc::execute_registered_ = register_exec_fn<VCmpUF64Vopc>();
 
 void VCmpUF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -2828,8 +2756,6 @@ void VCmpUF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNgeF64Vopc::execute_registered_ = register_exec_fn<VCmpNgeF64Vopc>();
-
 void VCmpNgeF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -2905,8 +2831,6 @@ void VCmpNgeF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpNlgF64Vopc::execute_registered_ = register_exec_fn<VCmpNlgF64Vopc>();
 
 void VCmpNlgF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -2984,8 +2908,6 @@ void VCmpNlgF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNgtF64Vopc::execute_registered_ = register_exec_fn<VCmpNgtF64Vopc>();
-
 void VCmpNgtF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -3061,8 +2983,6 @@ void VCmpNgtF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpNleF64Vopc::execute_registered_ = register_exec_fn<VCmpNleF64Vopc>();
 
 void VCmpNleF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -3140,8 +3060,6 @@ void VCmpNleF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNeqF64Vopc::execute_registered_ = register_exec_fn<VCmpNeqF64Vopc>();
-
 void VCmpNeqF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -3217,8 +3135,6 @@ void VCmpNeqF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpNltF64Vopc::execute_registered_ = register_exec_fn<VCmpNltF64Vopc>();
 
 void VCmpNltF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -3296,8 +3212,6 @@ void VCmpNltF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLtI16Vopc::execute_registered_ = register_exec_fn<VCmpLtI16Vopc>();
-
 void VCmpLtI16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -3373,8 +3287,6 @@ void VCmpLtI16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpEqI16Vopc::execute_registered_ = register_exec_fn<VCmpEqI16Vopc>();
 
 void VCmpEqI16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -3452,8 +3364,6 @@ void VCmpEqI16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLeI16Vopc::execute_registered_ = register_exec_fn<VCmpLeI16Vopc>();
-
 void VCmpLeI16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -3529,8 +3439,6 @@ void VCmpLeI16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGtI16Vopc::execute_registered_ = register_exec_fn<VCmpGtI16Vopc>();
 
 void VCmpGtI16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -3608,8 +3516,6 @@ void VCmpGtI16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNeI16Vopc::execute_registered_ = register_exec_fn<VCmpNeI16Vopc>();
-
 void VCmpNeI16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -3685,8 +3591,6 @@ void VCmpNeI16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGeI16Vopc::execute_registered_ = register_exec_fn<VCmpGeI16Vopc>();
 
 void VCmpGeI16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -3764,8 +3668,6 @@ void VCmpGeI16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLtU16Vopc::execute_registered_ = register_exec_fn<VCmpLtU16Vopc>();
-
 void VCmpLtU16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -3841,8 +3743,6 @@ void VCmpLtU16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpEqU16Vopc::execute_registered_ = register_exec_fn<VCmpEqU16Vopc>();
 
 void VCmpEqU16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -3920,8 +3820,6 @@ void VCmpEqU16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLeU16Vopc::execute_registered_ = register_exec_fn<VCmpLeU16Vopc>();
-
 void VCmpLeU16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -3997,8 +3895,6 @@ void VCmpLeU16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGtU16Vopc::execute_registered_ = register_exec_fn<VCmpGtU16Vopc>();
 
 void VCmpGtU16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -4076,8 +3972,6 @@ void VCmpGtU16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNeU16Vopc::execute_registered_ = register_exec_fn<VCmpNeU16Vopc>();
-
 void VCmpNeU16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -4153,8 +4047,6 @@ void VCmpNeU16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGeU16Vopc::execute_registered_ = register_exec_fn<VCmpGeU16Vopc>();
 
 void VCmpGeU16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -4232,8 +4124,6 @@ void VCmpGeU16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLtI32Vopc::execute_registered_ = register_exec_fn<VCmpLtI32Vopc>();
-
 void VCmpLtI32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -4309,8 +4199,6 @@ void VCmpLtI32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpEqI32Vopc::execute_registered_ = register_exec_fn<VCmpEqI32Vopc>();
 
 void VCmpEqI32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -4388,8 +4276,6 @@ void VCmpEqI32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLeI32Vopc::execute_registered_ = register_exec_fn<VCmpLeI32Vopc>();
-
 void VCmpLeI32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -4465,8 +4351,6 @@ void VCmpLeI32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGtI32Vopc::execute_registered_ = register_exec_fn<VCmpGtI32Vopc>();
 
 void VCmpGtI32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -4544,8 +4428,6 @@ void VCmpGtI32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNeI32Vopc::execute_registered_ = register_exec_fn<VCmpNeI32Vopc>();
-
 void VCmpNeI32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -4621,8 +4503,6 @@ void VCmpNeI32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGeI32Vopc::execute_registered_ = register_exec_fn<VCmpGeI32Vopc>();
 
 void VCmpGeI32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -4700,8 +4580,6 @@ void VCmpGeI32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLtU32Vopc::execute_registered_ = register_exec_fn<VCmpLtU32Vopc>();
-
 void VCmpLtU32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -4777,8 +4655,6 @@ void VCmpLtU32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpEqU32Vopc::execute_registered_ = register_exec_fn<VCmpEqU32Vopc>();
 
 void VCmpEqU32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -4856,8 +4732,6 @@ void VCmpEqU32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLeU32Vopc::execute_registered_ = register_exec_fn<VCmpLeU32Vopc>();
-
 void VCmpLeU32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -4933,8 +4807,6 @@ void VCmpLeU32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGtU32Vopc::execute_registered_ = register_exec_fn<VCmpGtU32Vopc>();
 
 void VCmpGtU32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -5012,8 +4884,6 @@ void VCmpGtU32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNeU32Vopc::execute_registered_ = register_exec_fn<VCmpNeU32Vopc>();
-
 void VCmpNeU32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -5089,8 +4959,6 @@ void VCmpNeU32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGeU32Vopc::execute_registered_ = register_exec_fn<VCmpGeU32Vopc>();
 
 void VCmpGeU32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -5168,8 +5036,6 @@ void VCmpGeU32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLtI64Vopc::execute_registered_ = register_exec_fn<VCmpLtI64Vopc>();
-
 void VCmpLtI64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -5245,8 +5111,6 @@ void VCmpLtI64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpEqI64Vopc::execute_registered_ = register_exec_fn<VCmpEqI64Vopc>();
 
 void VCmpEqI64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -5324,8 +5188,6 @@ void VCmpEqI64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLeI64Vopc::execute_registered_ = register_exec_fn<VCmpLeI64Vopc>();
-
 void VCmpLeI64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -5401,8 +5263,6 @@ void VCmpLeI64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGtI64Vopc::execute_registered_ = register_exec_fn<VCmpGtI64Vopc>();
 
 void VCmpGtI64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -5480,8 +5340,6 @@ void VCmpGtI64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNeI64Vopc::execute_registered_ = register_exec_fn<VCmpNeI64Vopc>();
-
 void VCmpNeI64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -5557,8 +5415,6 @@ void VCmpNeI64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGeI64Vopc::execute_registered_ = register_exec_fn<VCmpGeI64Vopc>();
 
 void VCmpGeI64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -5636,8 +5492,6 @@ void VCmpGeI64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLtU64Vopc::execute_registered_ = register_exec_fn<VCmpLtU64Vopc>();
-
 void VCmpLtU64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -5713,8 +5567,6 @@ void VCmpLtU64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpEqU64Vopc::execute_registered_ = register_exec_fn<VCmpEqU64Vopc>();
 
 void VCmpEqU64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -5792,8 +5644,6 @@ void VCmpEqU64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpLeU64Vopc::execute_registered_ = register_exec_fn<VCmpLeU64Vopc>();
-
 void VCmpLeU64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -5869,8 +5719,6 @@ void VCmpLeU64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGtU64Vopc::execute_registered_ = register_exec_fn<VCmpGtU64Vopc>();
 
 void VCmpGtU64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -5948,8 +5796,6 @@ void VCmpGtU64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpNeU64Vopc::execute_registered_ = register_exec_fn<VCmpNeU64Vopc>();
-
 void VCmpNeU64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -6025,8 +5871,6 @@ void VCmpNeU64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpGeU64Vopc::execute_registered_ = register_exec_fn<VCmpGeU64Vopc>();
 
 void VCmpGeU64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
@@ -6104,8 +5948,6 @@ void VCmpGeU64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpClassF16Vopc::execute_registered_ = register_exec_fn<VCmpClassF16Vopc>();
-
 void VCmpClassF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -6182,8 +6024,6 @@ void VCmpClassF16Vopc::execute_impl(amdgpu::Wavefront &wf) {
   vsrc1.clear_delegate();
 }
 
-const bool VCmpClassF32Vopc::execute_registered_ = register_exec_fn<VCmpClassF32Vopc>();
-
 void VCmpClassF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();
   uint64_t dpp_write_mask_ = ~0ULL;
@@ -6259,8 +6099,6 @@ void VCmpClassF32Vopc::execute_impl(amdgpu::Wavefront &wf) {
   src0.clear_delegate();
   vsrc1.clear_delegate();
 }
-
-const bool VCmpClassF64Vopc::execute_registered_ = register_exec_fn<VCmpClassF64Vopc>();
 
 void VCmpClassF64Vopc::execute_impl(amdgpu::Wavefront &wf) {
   uint64_t dpp_old_vcc_ = wf.vcc();

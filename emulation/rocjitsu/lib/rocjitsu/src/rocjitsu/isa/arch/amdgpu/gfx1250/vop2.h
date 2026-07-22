@@ -21,7 +21,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VAddF64Vop2 : public Vop2 {
@@ -31,7 +30,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VAddF32Vop2 : public Vop2 {
@@ -41,7 +39,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VSubF32Vop2 : public Vop2 {
@@ -51,7 +48,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VSubrevF32Vop2 : public Vop2 {
@@ -61,7 +57,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMulF64Vop2 : public Vop2 {
@@ -71,7 +66,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMulDx9ZeroF32Vop2 : public Vop2 {
@@ -81,7 +75,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMulF32Vop2 : public Vop2 {
@@ -91,7 +84,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMulI32I24Vop2 : public Vop2 {
@@ -101,7 +93,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMulHiI32I24Vop2 : public Vop2 {
@@ -111,7 +102,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMulU32U24Vop2 : public Vop2 {
@@ -121,7 +111,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMulHiU32U24Vop2 : public Vop2 {
@@ -131,7 +120,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMinNumF64Vop2 : public Vop2 {
@@ -141,7 +129,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMaxNumF64Vop2 : public Vop2 {
@@ -151,7 +138,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMinI32Vop2 : public Vop2 {
@@ -161,7 +147,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMaxI32Vop2 : public Vop2 {
@@ -171,7 +156,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMinU32Vop2 : public Vop2 {
@@ -181,7 +165,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMaxU32Vop2 : public Vop2 {
@@ -191,7 +174,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMinNumF32Vop2 : public Vop2 {
@@ -201,7 +183,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMaxNumF32Vop2 : public Vop2 {
@@ -211,7 +192,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VFmacF64Vop2 : public Vop2 {
@@ -221,7 +201,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VLshlrevB32Vop2 : public Vop2 {
@@ -231,7 +210,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VLshrrevB32Vop2 : public Vop2 {
@@ -241,7 +219,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VAshrrevI32Vop2 : public Vop2 {
@@ -251,7 +228,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VAndB32Vop2 : public Vop2 {
@@ -261,7 +237,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VOrB32Vop2 : public Vop2 {
@@ -271,7 +246,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VXorB32Vop2 : public Vop2 {
@@ -281,7 +255,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VXnorB32Vop2 : public Vop2 {
@@ -291,7 +264,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VLshlrevB64Vop2 : public Vop2 {
@@ -301,7 +273,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VAddCoCiU32Vop2 : public Vop2 {
@@ -311,7 +282,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VSubCoCiU32Vop2 : public Vop2 {
@@ -321,7 +291,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VSubrevCoCiU32Vop2 : public Vop2 {
@@ -331,7 +300,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VFmamkF64Vop2 : public Vop2 {
@@ -342,7 +310,6 @@ public:
   Operand src0;
   Operand literal64;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VFmaakF64Vop2 : public Vop2 {
@@ -353,7 +320,6 @@ public:
   Operand src0;
   Operand vsrc1;
   Operand literal64;
-  static const bool execute_registered_;
 };
 
 class VAddNcU32Vop2 : public Vop2 {
@@ -363,7 +329,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VSubNcU32Vop2 : public Vop2 {
@@ -373,7 +338,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VSubrevNcU32Vop2 : public Vop2 {
@@ -383,7 +347,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VAddNcU64Vop2 : public Vop2 {
@@ -393,7 +356,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VSubNcU64Vop2 : public Vop2 {
@@ -403,7 +365,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMulU64Vop2 : public Vop2 {
@@ -413,7 +374,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VFmacF32Vop2 : public Vop2 {
@@ -423,7 +383,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VFmamkF32Vop2 : public Vop2 {
@@ -434,7 +393,6 @@ public:
   Operand src0;
   Operand literal;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VFmaakF32Vop2 : public Vop2 {
@@ -445,7 +403,6 @@ public:
   Operand src0;
   Operand vsrc1;
   Operand literal;
-  static const bool execute_registered_;
 };
 
 class VCvtPkRtzF16F32Vop2 : public Vop2 {
@@ -455,7 +412,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMinNumF16Vop2 : public Vop2 {
@@ -466,7 +422,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMaxNumF16Vop2 : public Vop2 {
@@ -477,7 +432,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VAddF16Vop2 : public Vop2 {
@@ -488,7 +442,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VSubF16Vop2 : public Vop2 {
@@ -499,7 +452,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VSubrevF16Vop2 : public Vop2 {
@@ -510,7 +462,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VMulF16Vop2 : public Vop2 {
@@ -521,7 +472,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VFmacF16Vop2 : public Vop2 {
@@ -532,7 +482,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VFmamkF16Vop2 : public Vop2 {
@@ -544,7 +493,6 @@ public:
   Operand src0;
   Operand literal;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VFmaakF16Vop2 : public Vop2 {
@@ -556,7 +504,6 @@ public:
   Operand src0;
   Operand vsrc1;
   Operand literal;
-  static const bool execute_registered_;
 };
 
 class VLdexpF16Vop2 : public Vop2 {
@@ -567,7 +514,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 class VPkFmacF16Vop2 : public Vop2 {
@@ -577,7 +523,6 @@ public:
   Operand vdst;
   Operand src0;
   Operand vsrc1;
-  static const bool execute_registered_;
 };
 
 } // namespace gfx1250

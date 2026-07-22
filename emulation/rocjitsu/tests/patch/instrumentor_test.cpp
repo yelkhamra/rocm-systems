@@ -811,9 +811,9 @@ TEST(Instrumentor, PreservesOuterCoverageAcrossOverlappingSClauses) {
 }
 
 TEST(Instrumentor, UnsupportedArchReportsErrorInsteadOfCrashing) {
-  // Decoder::create returns nullptr for RV32I/RV64I/INVALID. The Instrumentor
-  // must surface that as a structured ValidationResult error rather than
-  // dereferencing a null decoder during block construction.
+  // The RISC-V decoder is available through the generic target registry, but
+  // the AMDGPU Instrumentor must reject it explicitly rather than attempting
+  // to decode an AMDGPU code object with the wrong ISA.
   auto image = make_gfx950_elf_with_two_nops();
   AmdGpuCodeObject obj(image.data(), image.size());
   ASSERT_TRUE(obj.is_valid());

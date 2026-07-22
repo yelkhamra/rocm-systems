@@ -21,7 +21,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SLoadB64Smem : public Smem {
@@ -31,7 +30,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SLoadB128Smem : public Smem {
@@ -41,7 +39,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SLoadB256Smem : public Smem {
@@ -51,7 +48,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SLoadB512Smem : public Smem {
@@ -61,7 +57,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SLoadB96Smem : public Smem {
@@ -71,7 +66,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SLoadI8Smem : public Smem {
@@ -81,7 +75,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SLoadU8Smem : public Smem {
@@ -91,7 +84,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SLoadI16Smem : public Smem {
@@ -101,7 +93,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SLoadU16Smem : public Smem {
@@ -111,7 +102,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SBufferLoadB32Smem : public Smem {
@@ -121,7 +111,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SBufferLoadB64Smem : public Smem {
@@ -131,7 +120,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SBufferLoadB128Smem : public Smem {
@@ -141,7 +129,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SBufferLoadB256Smem : public Smem {
@@ -151,7 +138,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SBufferLoadB512Smem : public Smem {
@@ -161,7 +147,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SBufferLoadB96Smem : public Smem {
@@ -171,7 +156,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SBufferLoadI8Smem : public Smem {
@@ -181,7 +165,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SBufferLoadU8Smem : public Smem {
@@ -191,7 +174,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SBufferLoadI16Smem : public Smem {
@@ -201,7 +183,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SBufferLoadU16Smem : public Smem {
@@ -211,14 +192,12 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SDcacheInvSmem : public Smem {
 public:
   SDcacheInvSmem(const MachineInst *inst);
   void execute_impl(amdgpu::Wavefront &wf);
-  static const bool execute_registered_;
 };
 
 class SAtcProbeSmem : public Smem {
@@ -228,7 +207,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SAtcProbeBufferSmem : public Smem {
@@ -238,7 +216,6 @@ public:
   Operand sdata;
   Operand sbase;
   Operand soffset;
-  static const bool execute_registered_;
 };
 
 class SPrefetchInstSmem : public Smem {
@@ -249,7 +226,6 @@ public:
   Operand ioffset;
   Operand soffset;
   Operand sdata;
-  static const bool execute_registered_;
 };
 
 class SPrefetchInstPcRelSmem : public Smem {
@@ -259,7 +235,6 @@ public:
   Operand ioffset;
   Operand soffset;
   Operand sdata;
-  static const bool execute_registered_;
 };
 
 class SPrefetchDataSmem : public Smem {
@@ -270,7 +245,6 @@ public:
   Operand ioffset;
   Operand soffset;
   Operand sdata;
-  static const bool execute_registered_;
 };
 
 class SBufferPrefetchDataSmem : public Smem {
@@ -281,7 +255,6 @@ public:
   Operand ioffset;
   Operand soffset;
   Operand sdata;
-  static const bool execute_registered_;
 };
 
 class SPrefetchDataPcRelSmem : public Smem {
@@ -291,7 +264,6 @@ public:
   Operand ioffset;
   Operand soffset;
   Operand sdata;
-  static const bool execute_registered_;
 };
 
 } // namespace gfx1250
