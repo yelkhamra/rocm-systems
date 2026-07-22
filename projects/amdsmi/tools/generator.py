@@ -216,11 +216,16 @@ def main():
 #      ``/opt/rocm/lib`` so the dynamic linker resolves the SONAME
 #      ``libamd_smi.so.<SOVERSION>`` without further help.
 #
-# A user installs ONE of those two packages. We never combine paths
-# from both -- no ROCM_HOME / ROCM_PATH ladders, no walking up to a
-# ROCm root, no LD_LIBRARY_PATH probing. ``AMDSMI_LIB_OVERRIDE`` stays
-# as a single-purpose escape hatch for ABI tests that need to load an
-# alternate .so explicitly.
+#   3. TheRock artifact layout (pip / venv ROCm SDK)
+#      The wrapper ships at ``<root>/share/amd_smi/amdsmi`` with the library
+#      at ``<root>/lib``. There is no ``ld.so.conf.d`` entry in a venv, so the
+#      loader self-locates the SONAME relative to this file before relying on
+#      the dynamic linker.
+#
+# A user installs ONE of these paths. We never combine paths from both --
+# no ROCM_HOME / ROCM_PATH ladders, no walking up to a ROCm root, no
+# LD_LIBRARY_PATH probing. ``AMDSMI_LIB_OVERRIDE`` stays as a single-purpose
+# escape hatch for ABI tests that need to load an alternate .so explicitly.
 # ---------------------------------------------------------------------------
 
 _libraries = {{}}
@@ -244,8 +249,9 @@ def _load_library():
     Order:
       1. ``AMDSMI_LIB_OVERRIDE`` env var (ABI-test escape hatch).
       2. ``libamd_smi_python.so`` next to this file (pip wheel).
-      3. SONAME via the dynamic linker (system rpm / deb); skipped when
-         _AMDSMI_ALLOW_SYSTEM_FALLBACK is False (pip wheel).
+      3. SONAME relative to this file (TheRock share/amd_smi layout).
+      4. SONAME via the dynamic linker (system rpm / deb); steps 3-4 are
+         skipped when _AMDSMI_ALLOW_SYSTEM_FALLBACK is False (pip wheel).
     \"\"\"
     mode = getattr(ctypes, "RTLD_LOCAL", 0)
 
@@ -262,6 +268,13 @@ def _load_library():
             "bundled libamd_smi_python.so is missing from this amdsmi wheel; "
             "refusing to fall back to a system libamd_smi.so"
         )
+
+    # TheRock artifact layout: this file is at <root>/share/amd_smi/amdsmi,
+    # the library at <root>/lib. A venv has no ld.so.conf.d entry, so resolve
+    # the SONAME relative to this file before relying on the dynamic linker.
+    therock = Path(__file__).resolve().parents[3] / "lib" / _AMDSMI_LIB_SONAME
+    if therock.exists():
+        return ctypes.CDLL(str(therock), mode=mode), str(therock)
 
     return ctypes.CDLL(_AMDSMI_LIB_SONAME, mode=mode), _AMDSMI_LIB_SONAME
 
