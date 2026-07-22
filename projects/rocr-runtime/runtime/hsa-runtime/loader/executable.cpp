@@ -1731,6 +1731,11 @@ hsa_status_t ExecutableImpl::LoadDefinitionSymbol(hsa_agent_t agent,
                                                   code::Symbol* sym,
                                                   uint32_t majorVersion)
 {
+  // A definition symbol must reside in a real section. GetSection() returns
+  // nullptr for a crafted/reserved st_shndx; reject the code object here rather
+  // than dereferencing a null section pointer in the accessors below
+  // (IsAgent(), Allocation(), Alignment(), getData(), ...).
+  if (!sym->GetSection()) { return HSA_STATUS_ERROR_INVALID_CODE_OBJECT; }
   bool isAgent = sym->IsAgent();
   if (majorVersion >= 2) {
     isAgent = agent.handle != 0;
@@ -1899,6 +1904,9 @@ Segment* ExecutableImpl::VirtualAddressSegment(uint64_t vaddr)
 uint64_t ExecutableImpl::SymbolAddress(hsa_agent_t agent, code::Symbol* sym)
 {
   code::Section* sec = sym->GetSection();
+  // GetSection() returns nullptr for a crafted/reserved st_shndx; avoid
+  // dereferencing it in SectionSegment()/VAddr().
+  if (!sec) { return 0; }
   Segment* seg = SectionSegment(agent, sec);
   return nullptr == seg ? 0 : (uint64_t) (uintptr_t) seg->Address(sym->VAddr());
 }
@@ -1978,6 +1986,9 @@ hsa_status_t ExecutableImpl::ApplyStaticRelocation(hsa_agent_t agent, amd::hsa::
 {
   hsa_status_t status = HSA_STATUS_SUCCESS;
   amd::elf::Symbol* sym = rel->symbol();
+  // symbol() returns nullptr for a crafted r_info symbol index that is out of
+  // the symbol table's range; reject rather than dereferencing it below.
+  if (!sym) { return HSA_STATUS_ERROR_INVALID_CODE_OBJECT; }
   code::RelocationSection* rsec = rel->section();
   code::Section* sec = rsec->targetSection();
   Segment* rseg = SectionSegment(agent, sec);
@@ -2040,13 +2051,16 @@ hsa_status_t ExecutableImpl::ApplyStaticRelocation(hsa_agent_t agent, amd::hsa::
 
     case R_AMDGPU_V1_INIT_SAMPLER:
     {
+      // section() returns nullptr for a crafted/reserved st_shndx.
+      elf::Section* ssec = sym->section();
+      if (!ssec) { return HSA_STATUS_ERROR_INVALID_CODE_OBJECT; }
       if (STT_AMDGPU_HSA_METADATA != sym->type() ||
-          SHT_PROGBITS != sym->section()->type() ||
-          !(sym->section()->flags() & SHF_MERGE)) {
+          SHT_PROGBITS != ssec->type() ||
+          !(ssec->flags() & SHF_MERGE)) {
         return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
       }
       amdgpu_hsa_sampler_descriptor_t desc;
-      if (!sym->section()->getData(sym->value(), &desc, sizeof(desc))) {
+      if (!ssec->getData(sym->value(), &desc, sizeof(desc))) {
         return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
       }
       if (AMDGPU_HSA_METADATA_KIND_INIT_SAMP != desc.kind) {
@@ -2071,14 +2085,17 @@ hsa_status_t ExecutableImpl::ApplyStaticRelocation(hsa_agent_t agent, amd::hsa::
 
     case R_AMDGPU_V1_INIT_IMAGE:
     {
+      // section() returns nullptr for a crafted/reserved st_shndx.
+      elf::Section* ssec = sym->section();
+      if (!ssec) { return HSA_STATUS_ERROR_INVALID_CODE_OBJECT; }
       if (STT_AMDGPU_HSA_METADATA != sym->type() ||
-          SHT_PROGBITS != sym->section()->type() ||
-          !(sym->section()->flags() & SHF_MERGE)) {
+          SHT_PROGBITS != ssec->type() ||
+          !(ssec->flags() & SHF_MERGE)) {
         return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
       }
 
       amdgpu_hsa_image_descriptor_t desc;
-      if (!sym->section()->getData(sym->value(), &desc, sizeof(desc))) {
+      if (!ssec->getData(sym->value(), &desc, sizeof(desc))) {
         return HSA_STATUS_ERROR_INVALID_CODE_OBJECT;
       }
       if (AMDGPU_HSA_METADATA_KIND_INIT_ROIMG != desc.kind &&
@@ -2155,6 +2172,9 @@ hsa_status_t ExecutableImpl::ApplyDynamicRelocation(hsa_agent_t agent, amd::hsa:
   // VirtualAddressSegment() returns nullptr when no loaded segment covers the
   // attacker-controlled r_offset; reject rather than dereferencing it.
   if (!relSeg) { return HSA_STATUS_ERROR_INVALID_CODE_OBJECT; }
+  // symbol() returns nullptr for a crafted r_info symbol index that is out of
+  // the symbol table's range; reject rather than dereferencing it below.
+  if (!rel->symbol()) { return HSA_STATUS_ERROR_INVALID_CODE_OBJECT; }
   uint64_t symAddr = 0;
   switch (rel->symbol()->type()) {
     case STT_OBJECT:
