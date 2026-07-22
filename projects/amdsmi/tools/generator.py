@@ -319,7 +319,7 @@ except OSError as _load_err:
 
 
 #Add support for amdsmi_free_name_value_pairs
-amdsmi_free_name_value_pairs = _libraries['libamd_smi.so'].amdsmi_free_name_value_pairs
+amdsmi_free_name_value_pairs = _libraries['{library_name}'].amdsmi_free_name_value_pairs
 amdsmi_free_name_value_pairs.restype = None
 amdsmi_free_name_value_pairs.argtypes = [ctypes.POINTER(None)]"""
     else:
