@@ -62,7 +62,8 @@ ncclResult_t ncclDdaIpcCommInit(ncclComm* comm) {
     comm->archName != nullptr && (IsArchMatch(comm->archName, "gfx942") || IsArchMatch(comm->archName, "gfx950"));
   const bool nranksSupported =
     comm->nRanks == kDdaNranks ||
-    (ncclDdaNranksRelaxEnabled() && (comm->nRanks == 2 || comm->nRanks == 4 || comm->nRanks == 8));
+    // EXPERIMENT (sideline): admit all 2..8 to measure DDA vs ring at 3/5/6/7.
+    (ncclDdaNranksRelaxEnabled() && comm->nRanks >= 2 && comm->nRanks <= 8);
   if (!nranksSupported || comm->nNodes != 1 || comm->bootstrap == nullptr || comm->directMode ||
       comm->MNNVL || !ddaArchSupported) {
     return ncclSuccess;

@@ -2792,8 +2792,9 @@ static ncclResult_t ncclCommInitRankFunc(struct ncclAsyncJob* job_) {
     if (ncclDdaUseFabricPath(comm)) {
       NCCLCHECKGOTO(ncclDdaFabricCommInit(comm), res, fail);
     } else if (comm->nNodes == 1 &&
+               // EXPERIMENT (sideline): admit all 2..8 to measure DDA vs ring at 3/5/6/7.
                (comm->nRanks == 8 ||
-                (ncclDdaNranksRelaxEnabled() && (comm->nRanks == 2 || comm->nRanks == 4)))) {
+                (ncclDdaNranksRelaxEnabled() && comm->nRanks >= 2 && comm->nRanks <= 7))) {
       NCCLCHECKGOTO(ncclDdaIpcCommInit(comm), res, fail);
     }
   }

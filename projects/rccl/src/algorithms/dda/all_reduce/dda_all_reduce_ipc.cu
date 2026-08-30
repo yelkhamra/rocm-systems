@@ -45,7 +45,8 @@ static bool ddaNranksSupported(int nRanks) {
   if (!ncclDdaNranksRelaxEnabled()) {
     return false;
   }
-  return nRanks == 2 || nRanks == 4 || nRanks == 8;
+  // EXPERIMENT (sideline): admit all 2..8 to measure DDA vs ring at 3/5/6/7.
+  return nRanks >= 2 && nRanks <= 8;
 }
 
 template <typename T, int NRANKS>
@@ -103,8 +104,16 @@ static ncclResult_t ncclAllReduceDdaIpcTyped(const void* sendbuff, void* recvbuf
   switch (comm->nRanks) {
   case 8:
     return ncclAllReduceDdaIpcLaunch<T, 8>(sendbuff, recvbuff, count, comm, stream);
+  case 7:
+    return ncclAllReduceDdaIpcLaunch<T, 7>(sendbuff, recvbuff, count, comm, stream);
+  case 6:
+    return ncclAllReduceDdaIpcLaunch<T, 6>(sendbuff, recvbuff, count, comm, stream);
+  case 5:
+    return ncclAllReduceDdaIpcLaunch<T, 5>(sendbuff, recvbuff, count, comm, stream);
   case 4:
     return ncclAllReduceDdaIpcLaunch<T, 4>(sendbuff, recvbuff, count, comm, stream);
+  case 3:
+    return ncclAllReduceDdaIpcLaunch<T, 3>(sendbuff, recvbuff, count, comm, stream);
   case 2:
     return ncclAllReduceDdaIpcLaunch<T, 2>(sendbuff, recvbuff, count, comm, stream);
   default:
